@@ -163,16 +163,34 @@ function createFixture() {
   assert.match(missingExportFile.message, /未找到导出文件记录/);
 
   const speedExport = await exportHtmlVideoProject(WORKFLOW_ID, {
-    export_options: { playback_speed: 1.25, tail_protection: 'none' },
+    export_options: { playback_speed: 0.1, tail_protection: 'none' },
   }, options);
   assert.equal(speedExport.success, true);
-  assert.deepEqual(calls.slice(-1), [['export', false, 1.25, 'none']]);
+  assert.deepEqual(calls.slice(-1), [['export', false, 0.1, 'none']]);
+
+  const maxSpeedExport = await exportHtmlVideoProject(WORKFLOW_ID, {
+    export_options: { playback_speed: '2.0' },
+  }, options);
+  assert.equal(maxSpeedExport.success, true);
+  assert.deepEqual(calls.slice(-1), [['export', false, 2, 'pad_end']]);
 
   const invalidSpeedExport = await exportHtmlVideoProject(WORKFLOW_ID, {
-    export_options: { playback_speed: 3 },
+    export_options: { playback_speed: 2.1 },
   }, options);
   assert.equal(invalidSpeedExport.success, false);
   assert.match(invalidSpeedExport.message, /导出倍速无效/);
+
+  const tooSlowSpeedExport = await exportHtmlVideoProject(WORKFLOW_ID, {
+    export_options: { playback_speed: 0.09 },
+  }, options);
+  assert.equal(tooSlowSpeedExport.success, false);
+  assert.match(tooSlowSpeedExport.message, /导出倍速无效/);
+
+  const tooPreciseSpeedExport = await exportHtmlVideoProject(WORKFLOW_ID, {
+    export_options: { playback_speed: 1.25 },
+  }, options);
+  assert.equal(tooPreciseSpeedExport.success, false);
+  assert.match(tooPreciseSpeedExport.message, /最多 1 位小数/);
 
   let ttsSceneSpec = null;
   let ttsSceneId = null;

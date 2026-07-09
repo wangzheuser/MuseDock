@@ -254,7 +254,7 @@ function retimeTimelineStarts(project) {
 
 function normalizePlaybackSpeed(value) {
   const speed = Number(value);
-  return Number.isFinite(speed) && speed >= 0.5 && speed <= 2 ? speed : 1;
+  return Number.isFinite(speed) && speed >= 0.1 && speed <= 2 ? speed : 1;
 }
 
 function normalizeTailProtection(value) {

@@ -51,6 +51,8 @@ const composer = require('../server/services/creative-video/html-video/ffmpegCom
     '-filter_complex', '[0:v][1:v]concat=n=2:v=1:a=0[v]',
     '-map', '[v]',
     '-c:v', 'libx264',
+    '-preset', 'medium',
+    '-crf', '20',
     '-pix_fmt', 'yuv420p',
     '-r', '30',
     '-movflags', '+faststart',
@@ -154,17 +156,31 @@ const composer = require('../server/services/creative-video/html-video/ffmpegCom
   assert.deepEqual(commands.at(-1).args, [
     '-y',
     '-i', muxOutput,
-    '-filter_complex', '[0:v]setpts=PTS/1.25[v];[0:a]atempo=1.25[a]',
+    '-filter_complex', '[0:v]setpts=PTS/1.25,fps=30[v];[0:a]atempo=1.25[a]',
     '-map', '[v]',
     '-map', '[a]',
     '-c:v', 'libx264',
+    '-preset', 'medium',
+    '-crf', '20',
     '-pix_fmt', 'yuv420p',
-    '-r', '30',
+    '-vsync', 'cfr',
     '-c:a', 'aac',
     '-b:a', '192k',
     '-movflags', '+faststart',
     retimedOutput,
   ]);
+
+  const slowRetimedOutput = path.join(workDir, 'exports/retimed-slow.mp4');
+  const slowRetimed = await composer.retimeVideoWithFfmpeg({
+    inputPath: muxOutput,
+    outputPath: slowRetimedOutput,
+    playbackSpeed: 0.1,
+    includeAudio: true,
+    fps: 30,
+    runCommand,
+  });
+  assert.equal(slowRetimed.success, true);
+  assert.ok(commands.at(-1).args.includes('[0:v]setpts=PTS/0.1,fps=30[v];[0:a]atempo=0.5,atempo=0.5,atempo=0.5,atempo=0.8[a]'));
 
   const probe = await composer.verifyDurationWithFfprobe({
     videoPath: filterOutput,

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EditorInlineActions, EditorPanel, EditorPanelHeader } from './editorUi.jsx';
-import { formatExportTime, getExportPlaybackUrl } from './ExportsPanel.jsx';
+import { formatExportTime, getExportPlaybackUrl, parsePlaybackSpeedInput } from './ExportsPanel.jsx';
 
 export function PreviewPanel({ previews = [], disabled, generating, previewOutdated, onCreatePreview, getExportPlaybackUrl: resolveExportPlaybackUrl }) {
-  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [playbackSpeed, setPlaybackSpeed] = useState('1.0');
+  const [speedError, setSpeedError] = useState('');
   const videoRef = useRef(null);
   const latestPreview = useMemo(() => (
     [...(Array.isArray(previews) ? previews : [])]
@@ -12,8 +13,20 @@ export function PreviewPanel({ previews = [], disabled, generating, previewOutda
   const playbackUrl = latestPreview ? getExportPlaybackUrl(latestPreview, resolveExportPlaybackUrl) : '';
 
   useEffect(() => {
-    if (videoRef.current) videoRef.current.playbackRate = Number(playbackSpeed) || 1;
+    const parsed = parsePlaybackSpeedInput(playbackSpeed);
+    if (videoRef.current && parsed.ok) videoRef.current.playbackRate = parsed.speed;
   }, [playbackSpeed, playbackUrl]);
+
+  function createPreview() {
+    const parsed = parsePlaybackSpeedInput(playbackSpeed);
+    if (!parsed.ok) {
+      setSpeedError(parsed.message);
+      return;
+    }
+    setSpeedError('');
+    setPlaybackSpeed(parsed.formatted);
+    onCreatePreview?.({ preview: true, export_options: { playback_speed: parsed.speed } });
+  }
 
   return (
     <EditorPanel>
@@ -22,17 +35,31 @@ export function PreviewPanel({ previews = [], disabled, generating, previewOutda
         <EditorInlineActions>
           <label className="inline-flex items-center gap-1 text-xs">
             预览倍速
-            <select value={playbackSpeed} disabled={disabled} onChange={event => setPlaybackSpeed(Number(event.target.value))}>
-              {[0.5, 0.75, 1, 1.25, 1.5, 2].map(speed => <option value={speed} key={speed}>{speed}x</option>)}
-            </select>
+            <input
+              className="w-16"
+              value={playbackSpeed}
+              disabled={disabled}
+              inputMode="decimal"
+              placeholder="1.0"
+              aria-describedby="preview-playback-speed-help"
+              onBlur={() => {
+                const parsed = parsePlaybackSpeedInput(playbackSpeed);
+                if (parsed.ok) setPlaybackSpeed(parsed.formatted);
+              }}
+              onChange={event => setPlaybackSpeed(event.target.value)}
+            />
+            x
           </label>
-          <button type="button" disabled={disabled} onClick={() => onCreatePreview?.({ preview: true, export_options: { playback_speed: playbackSpeed } })}>
+          <button type="button" disabled={disabled} onClick={createPreview}>
             {generating ? '正在生成预览...' : '生成全片预览'}
           </button>
         </EditorInlineActions>
       </EditorPanelHeader>
       <p className="m-0 text-xs leading-relaxed text-[#6b7280]">
         预览用于导出前确认整体节奏。这里调整预览播放速度；重新生成预览时会按当前倍速生成文件。
+      </p>
+      <p id="preview-playback-speed-help" className={`m-0 text-xs ${speedError ? 'font-semibold text-red-600' : 'text-[#6b7280]'}`}>
+        {speedError || '0.1 到 2.0，最多 1 位小数。'}
       </p>
       {previewOutdated ? <p className="m-0 rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">项目修改后尚未重新生成预览。</p> : null}
       {playbackUrl ? (

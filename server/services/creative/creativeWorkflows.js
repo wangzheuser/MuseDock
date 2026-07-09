@@ -143,14 +143,20 @@ function exportOptionsFromPayload(payload = {}) {
   const height = Number(input.height ?? input.resolution?.height);
   const fps = Number(input.fps);
   const playbackSpeedRaw = input.playback_speed ?? input.playbackSpeed;
-  const playbackSpeed = playbackSpeedRaw == null || playbackSpeedRaw === '' ? 1 : Number(playbackSpeedRaw);
+  const playbackSpeedText = String(playbackSpeedRaw ?? '').trim();
+  const playbackSpeed = playbackSpeedText ? Number(playbackSpeedText) : 1;
   const output = {};
   if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
     output.resolution = { width: Math.round(width), height: Math.round(height) };
   }
   if (Number.isFinite(fps) && fps > 0) output.fps = fps;
-  if (!Number.isFinite(playbackSpeed) || playbackSpeed < 0.5 || playbackSpeed > 2) {
-    return { error: '导出倍速无效，请选择 0.5x 到 2.0x。' };
+  if (
+    (playbackSpeedText && !/^\d+(\.\d)?$/.test(playbackSpeedText))
+    || !Number.isFinite(playbackSpeed)
+    || playbackSpeed < 0.1
+    || playbackSpeed > 2
+  ) {
+    return { error: '导出倍速无效，请输入 0.1x 到 2.0x，最多 1 位小数。' };
   }
   return {
     output,

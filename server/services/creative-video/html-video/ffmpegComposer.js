@@ -292,6 +292,8 @@ async function concatFramesWithFfmpeg(frameMp4s, outputPath, workDir, opts = {})
       '-filter_complex', `${labels}concat=n=${frames.length}:v=1:a=0[v]`,
       '-map', '[v]',
       '-c:v', 'libx264',
+      '-preset', 'medium',
+      '-crf', '20',
       '-pix_fmt', 'yuv420p',
       '-r', fps,
       '-movflags', '+faststart',
@@ -434,6 +436,26 @@ async function muxAudioWithFfmpeg({
   return { success: true, output_path: outputPath, args };
 }
 
+function formatFilterNumber(value) {
+  return String(Number(Number(value).toFixed(3))).replace(/\.0$/, '');
+}
+
+function buildAtempoFilter(speed) {
+  const factors = [];
+  let remaining = Number(speed);
+  if (!Number.isFinite(remaining) || remaining <= 0) return 'atempo=1';
+  while (remaining < 0.5) {
+    factors.push(0.5);
+    remaining /= 0.5;
+  }
+  while (remaining > 2) {
+    factors.push(2);
+    remaining /= 2;
+  }
+  factors.push(remaining);
+  return factors.map(item => `atempo=${formatFilterNumber(item)}`).join(',');
+}
+
 /**
  * 按导出倍速重编码最终成片，并在有音频时保持音画同步。
  * @param {object} options 调速参数。
@@ -461,16 +483,22 @@ async function retimeVideoWithFfmpeg({
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   const ffmpeg = await getFfmpegCommand({ ffmpegPath, runCommand: runCommandImpl });
-  const videoFilter = `[0:v]setpts=PTS/${speed}[v]`;
+  const outputFps = Number.isFinite(Number(fps)) && Number(fps) > 0 ? Number(fps) : 30;
+  const videoFilter = `[0:v]setpts=PTS/${formatFilterNumber(speed)},fps=${formatFilterNumber(outputFps)}[v]`;
+  const videoEncodeArgs = [
+    '-c:v', 'libx264',
+    '-preset', 'medium',
+    '-crf', '20',
+    '-pix_fmt', 'yuv420p',
+    '-vsync', 'cfr',
+  ];
   const args = includeAudio ? [
     '-y',
     '-i', inputPath,
-    '-filter_complex', `${videoFilter};[0:a]atempo=${speed}[a]`,
+    '-filter_complex', `${videoFilter};[0:a]${buildAtempoFilter(speed)}[a]`,
     '-map', '[v]',
     '-map', '[a]',
-    '-c:v', 'libx264',
-    '-pix_fmt', 'yuv420p',
-    '-r', String(fps || 30),
+    ...videoEncodeArgs,
     '-c:a', 'aac',
     '-b:a', '192k',
     '-movflags', '+faststart',
@@ -481,9 +509,7 @@ async function retimeVideoWithFfmpeg({
     '-filter_complex', videoFilter,
     '-map', '[v]',
     '-an',
-    '-c:v', 'libx264',
-    '-pix_fmt', 'yuv420p',
-    '-r', String(fps || 30),
+    ...videoEncodeArgs,
     '-movflags', '+faststart',
     outputPath,
   ];

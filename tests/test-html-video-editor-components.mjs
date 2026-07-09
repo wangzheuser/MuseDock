@@ -189,11 +189,23 @@ assert.ok(exportsPanel.includes('导出倍速'), 'exports panel should expose ex
 assert.ok(exportsPanel.includes('尾音保护'), 'exports panel should expose tail protection');
 assert.ok(exportsPanel.includes('playback_speed'), 'exports panel should submit playback_speed');
 assert.ok(exportsPanel.includes('tail_protection'), 'exports panel should submit tail_protection');
+assert.ok(exportsPanel.includes('inputMode="decimal"'), 'exports panel should use manual decimal speed input');
+assert.ok(exportsPanel.includes('1.0'), 'exports panel should default speed to 1.0');
+assert.ok(exportsPanel.includes('0.1 到 2.0'), 'exports panel should describe the speed range');
+assert.ok(exportsPanel.includes('最多 1 位小数'), 'exports panel should describe one decimal limit');
+assert.doesNotMatch(exportsPanel, /SPEED_OPTIONS/, 'exports panel should not use fixed speed options');
+assert.ok(exportsPanel.includes('localStorage'), 'exports panel should persist export draft in browser localStorage');
+assert.ok(exportsPanel.includes('musedock.htmlVideo.exportDraft.v1'), 'exports panel should use a stable localStorage key');
+assert.ok(exportsPanel.includes('抖音横屏'), 'exports panel should include Douyin landscape preset');
+assert.ok(exportsPanel.includes('小红书横屏'), 'exports panel should include Xiaohongshu landscape preset');
+assert.match(exportsPanel, /douyin_landscape:[^}]*width:\s*1920[^}]*height:\s*1080/s, 'Douyin landscape should use 1920x1080');
+assert.match(exportsPanel, /xiaohongshu_landscape:[^}]*width:\s*1920[^}]*height:\s*1080/s, 'Xiaohongshu landscape should use 1920x1080');
 
 const previewPanel = fs.readFileSync('frontend-react/src/components/creative-video-editor/PreviewPanel.jsx', 'utf-8');
 assert.ok(previewPanel.includes('预览倍速'), 'preview panel should expose preview speed');
 assert.ok(previewPanel.includes('playbackRate'), 'preview panel should update native video playbackRate');
 assert.ok(previewPanel.includes('playback_speed'), 'preview panel should send playback speed when regenerating preview');
+assert.ok(previewPanel.includes('inputMode="decimal"'), 'preview panel should use manual decimal speed input');
 
 const frameInputsPanel = fs.readFileSync('frontend-react/src/components/creative-video-editor/FrameInputsPanel.jsx', 'utf-8');
 const frameInputsPayload = fs.readFileSync('frontend-react/src/components/creative-video-editor/frameInputsPayload.mjs', 'utf-8');
