@@ -41,10 +41,12 @@ function createDraft(frame) {
 
 export function FrameInputsPanel({ frame, disabled, onSave, onRenderPreview }) {
   const [draft, setDraft] = useState(() => createDraft(frame));
+  const [inputsError, setInputsError] = useState('');
   const canRenderPreview = typeof onRenderPreview === 'function';
 
   useEffect(() => {
     setDraft(createDraft(frame));
+    setInputsError('');
   }, [frame]);
 
   if (!draft) {
@@ -59,7 +61,7 @@ export function FrameInputsPanel({ frame, disabled, onSave, onRenderPreview }) {
           {canRenderPreview ? (
             <button type="button" disabled={disabled} onClick={() => onRenderPreview(draft.id)}>渲染单帧预览</button>
           ) : null}
-          <button type="button" disabled={disabled} onClick={() => onSave(buildFrameSavePayload(draft))}>保存帧</button>
+          <button type="button" disabled={disabled || Boolean(inputsError)} onClick={() => onSave(buildFrameSavePayload(draft))}>保存帧</button>
         </EditorInlineActions>
       </EditorPanelHeader>
       <label>
@@ -105,13 +107,17 @@ export function FrameInputsPanel({ frame, disabled, onSave, onRenderPreview }) {
           onChange={event => {
             const inputsText = event.target.value;
             try {
-              setDraft({ ...draft, inputs: JSON.parse(inputsText || '{}'), inputsText });
-            } catch {
+              const inputs = JSON.parse(inputsText || '{}');
+              setInputsError('');
+              setDraft({ ...draft, inputs, inputsText });
+            } catch (error) {
+              setInputsError(`JSON 格式错误：${error.message}`);
               setDraft({ ...draft, inputsText });
             }
           }}
         />
       </label>
+      {inputsError ? <p className="m-0 rounded-md bg-red-50 px-2 py-1 text-xs font-semibold text-red-600">{inputsError}</p> : null}
     </EditorPanel>
   );
 }

@@ -96,7 +96,7 @@ function createFixture() {
       };
     },
     exportHtmlVideoProject: async options => {
-      calls.push(['export', Boolean(options.skipRender)]);
+      calls.push(['export', Boolean(options.skipRender), options.playbackSpeed, options.tailProtection]);
       return {
         success: true,
         message: '成片已导出。',
@@ -143,7 +143,7 @@ function createFixture() {
 
   const exported = await exportHtmlVideoProject(WORKFLOW_ID, { skip_render: true }, options);
   assert.equal(exported.success, true);
-  assert.deepEqual(calls.slice(-1), [['export', false]]);
+  assert.deepEqual(calls.slice(-1), [['export', false, 1, 'pad_end']]);
   const workflowAfterExport = JSON.parse(fs.readFileSync(getWorkflowPath(WORKFLOW_ID, rootDir), 'utf8'));
   const composeSubstage = workflowAfterExport.project_substages.find(item => item.id === 'compose');
   assert.deepEqual(composeSubstage, {
@@ -161,6 +161,18 @@ function createFixture() {
   const missingExportFile = await getHtmlVideoProjectExportFile(WORKFLOW_ID, 'missing_export', { rootDir });
   assert.equal(missingExportFile.success, false);
   assert.match(missingExportFile.message, /未找到导出文件记录/);
+
+  const speedExport = await exportHtmlVideoProject(WORKFLOW_ID, {
+    export_options: { playback_speed: 1.25, tail_protection: 'none' },
+  }, options);
+  assert.equal(speedExport.success, true);
+  assert.deepEqual(calls.slice(-1), [['export', false, 1.25, 'none']]);
+
+  const invalidSpeedExport = await exportHtmlVideoProject(WORKFLOW_ID, {
+    export_options: { playback_speed: 3 },
+  }, options);
+  assert.equal(invalidSpeedExport.success, false);
+  assert.match(invalidSpeedExport.message, /导出倍速无效/);
 
   let ttsSceneSpec = null;
   let ttsSceneId = null;
@@ -218,7 +230,7 @@ function createFixture() {
 
   const disabledSfx = await patchHtmlVideoProjectSfxEvent(WORKFLOW_ID, 'sfx_001', { enabled: false }, options);
   assert.equal(disabledSfx.success, true);
-  assert.equal(disabledSfx.message, '音效已删除，重新导出后生效。');
+  assert.equal(disabledSfx.message, '已停用音效。');
   assert.equal(disabledSfx.requires_export, true);
   assert.equal(disabledSfx.render_scope, 'export_only');
   assert.equal(disabledSfx.html_video_project.audio.sfx.events[0].enabled, false);

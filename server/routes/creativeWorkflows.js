@@ -59,6 +59,7 @@ function getStatusCode(result) {
     || result?.code === 'FRAME_NOT_FOUND'
     || result?.code === 'DRAFT_NOT_FOUND'
     || result?.code === 'EDIT_PLAN_NOT_FOUND'
+    || result?.code === 'REVISION_NOT_FOUND'
     || /未找到|不存在/.test(getMessage(result, ''))
   ) return 404;
   return 400;
@@ -244,7 +245,7 @@ router.patch('/:workflow_id/html-video-project/sfx/events/:event_id', async (req
     const service = getService(req);
     const result = await service.patchHtmlVideoProjectSfxEvent(workflowId, eventId, req.body || {});
     if (!result || result.success === false) {
-      const message = getMessage(result, '删除音效失败，请重试。');
+      const message = getMessage(result, '更新音效失败，请重试。');
       return res.status(getStatusCode(result)).json({ success: false, workflow_id: workflowId, event_id: eventId, message, code: result?.code });
     }
     return res.json(result);
@@ -253,7 +254,7 @@ router.patch('/:workflow_id/html-video-project/sfx/events/:event_id', async (req
       success: false,
       workflow_id: workflowId,
       event_id: eventId,
-      message: `删除音效失败：${error.message}`,
+      message: `更新音效失败：${error.message}`,
     });
   }
 });
@@ -650,6 +651,156 @@ router.post('/:workflow_id/html-video-project/export', async (req, res) => {
   }
 });
 
+
+router.post('/:workflow_id/html-video-project/preview', async (req, res) => {
+  const validation = validateWorkflowId(req.params.workflow_id);
+  if (!validation.success) {
+    return res.status(400).json(validation);
+  }
+  const workflowId = validation.workflow_id;
+
+  try {
+    const service = getService(req);
+    const result = await service.createHtmlVideoProjectPreview(workflowId, req.body || {});
+    if (!result || result.success === false) {
+      const message = getMessage(result, '生成低清预览失败。');
+      return res.status(getStatusCode(result)).json({ success: false, code: result?.code, workflow_id: workflowId, message });
+    }
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      workflow_id: workflowId,
+      message: `生成低清预览失败：${error.message}`,
+    });
+  }
+});
+
+router.get('/:workflow_id/html-video-project/previews', async (req, res) => {
+  const validation = validateWorkflowId(req.params.workflow_id);
+  if (!validation.success) {
+    return res.status(400).json(validation);
+  }
+  const workflowId = validation.workflow_id;
+
+  try {
+    const service = getService(req);
+    const result = await service.listHtmlVideoProjectPreviews(workflowId);
+    if (!result || result.success === false) {
+      const message = getMessage(result, '读取预览记录失败。');
+      return res.status(getStatusCode(result)).json({ success: false, workflow_id: workflowId, message });
+    }
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      workflow_id: workflowId,
+      message: `读取预览记录失败：${error.message}`,
+    });
+  }
+});
+
+router.get('/:workflow_id/html-video-project/revisions', async (req, res) => {
+  const validation = validateWorkflowId(req.params.workflow_id);
+  if (!validation.success) {
+    return res.status(400).json(validation);
+  }
+  const workflowId = validation.workflow_id;
+
+  try {
+    const service = getService(req);
+    const result = await service.listHtmlVideoProjectRevisions(workflowId);
+    if (!result || result.success === false) {
+      const message = getMessage(result, '读取版本历史失败。');
+      return res.status(getStatusCode(result)).json({ success: false, workflow_id: workflowId, message });
+    }
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      workflow_id: workflowId,
+      message: `读取版本历史失败：${error.message}`,
+    });
+  }
+});
+
+router.post('/:workflow_id/html-video-project/revisions/:revision_id/restore', async (req, res) => {
+  const validation = validateWorkflowId(req.params.workflow_id);
+  if (!validation.success) {
+    return res.status(400).json(validation);
+  }
+  const workflowId = validation.workflow_id;
+  const revisionId = safeString(req.params.revision_id);
+  if (!revisionId) {
+    return res.status(400).json({ success: false, workflow_id: workflowId, message: '版本 ID 无效。' });
+  }
+
+  try {
+    const service = getService(req);
+    const result = await service.restoreHtmlVideoProjectRevision(workflowId, revisionId);
+    if (!result || result.success === false) {
+      const message = getMessage(result, '恢复版本失败。');
+      return res.status(getStatusCode(result)).json({ success: false, code: result?.code, workflow_id: workflowId, revision_id: revisionId, message });
+    }
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      workflow_id: workflowId,
+      revision_id: revisionId,
+      message: `恢复版本失败：${error.message}`,
+    });
+  }
+});
+
+router.get('/:workflow_id/html-video-project/frames/:frame_id/narration/file', async (req, res) => {
+  const validation = validateWorkflowId(req.params.workflow_id);
+  if (!validation.success) {
+    return res.status(400).json(validation);
+  }
+  const workflowId = validation.workflow_id;
+  const frameId = String(req.params.frame_id || '').trim();
+  if (!frameId) {
+    return res.status(400).json({ success: false, workflow_id: workflowId, message: '帧 ID 无效。' });
+  }
+
+  try {
+    const service = getService(req);
+    const result = await service.getHtmlVideoProjectNarrationFile(workflowId, frameId);
+    if (!result || result.success === false) {
+      const message = getMessage(result, '读取旁白音频失败。');
+      return res.status(getStatusCode(result)).json({ success: false, code: result?.code, workflow_id: workflowId, frame_id: frameId, message });
+    }
+    return res.sendFile(result.file_path);
+  } catch (error) {
+    return res.status(500).json({ success: false, workflow_id: workflowId, frame_id: frameId, message: `读取旁白音频失败：${error.message}` });
+  }
+});
+
+router.get('/:workflow_id/html-video-project/sfx/events/:event_id/file', async (req, res) => {
+  const validation = validateWorkflowId(req.params.workflow_id);
+  if (!validation.success) {
+    return res.status(400).json(validation);
+  }
+  const workflowId = validation.workflow_id;
+  const eventId = String(req.params.event_id || '').trim();
+  if (!eventId) {
+    return res.status(400).json({ success: false, workflow_id: workflowId, message: '音效 ID 无效。' });
+  }
+
+  try {
+    const service = getService(req);
+    const result = await service.getHtmlVideoProjectSfxEventFile(workflowId, eventId);
+    if (!result || result.success === false) {
+      const message = getMessage(result, '读取音效文件失败。');
+      return res.status(getStatusCode(result)).json({ success: false, code: result?.code, workflow_id: workflowId, event_id: eventId, message });
+    }
+    return res.sendFile(result.file_path);
+  } catch (error) {
+    return res.status(500).json({ success: false, workflow_id: workflowId, event_id: eventId, message: `读取音效文件失败：${error.message}` });
+  }
+});
+
 router.get('/:workflow_id/html-video-project/exports', async (req, res) => {
   const validation = validateWorkflowId(req.params.workflow_id);
   if (!validation.success) {
@@ -671,6 +822,54 @@ router.get('/:workflow_id/html-video-project/exports', async (req, res) => {
       workflow_id: workflowId,
       message: `读取导出记录失败：${error.message}`,
     });
+  }
+});
+
+router.patch('/:workflow_id/html-video-project/exports/:export_id', async (req, res) => {
+  const validation = validateWorkflowId(req.params.workflow_id);
+  if (!validation.success) {
+    return res.status(400).json(validation);
+  }
+  const workflowId = validation.workflow_id;
+  const exportId = safeString(req.params.export_id);
+  if (!exportId) {
+    return res.status(400).json({ success: false, workflow_id: workflowId, message: '导出记录 ID 无效。' });
+  }
+
+  try {
+    const service = getService(req);
+    const result = await service.patchHtmlVideoProjectExport(workflowId, exportId, req.body || {});
+    if (!result || result.success === false) {
+      const message = getMessage(result, '更新导出记录失败。');
+      return res.status(getStatusCode(result)).json({ success: false, code: result?.code, workflow_id: workflowId, export_id: exportId, message });
+    }
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({ success: false, workflow_id: workflowId, export_id: exportId, message: `更新导出记录失败：${error.message}` });
+  }
+});
+
+router.delete('/:workflow_id/html-video-project/exports/:export_id', async (req, res) => {
+  const validation = validateWorkflowId(req.params.workflow_id);
+  if (!validation.success) {
+    return res.status(400).json(validation);
+  }
+  const workflowId = validation.workflow_id;
+  const exportId = safeString(req.params.export_id);
+  if (!exportId) {
+    return res.status(400).json({ success: false, workflow_id: workflowId, message: '导出记录 ID 无效。' });
+  }
+
+  try {
+    const service = getService(req);
+    const result = await service.deleteHtmlVideoProjectExport(workflowId, exportId);
+    if (!result || result.success === false) {
+      const message = getMessage(result, '删除导出记录失败。');
+      return res.status(getStatusCode(result)).json({ success: false, code: result?.code, workflow_id: workflowId, export_id: exportId, message });
+    }
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({ success: false, workflow_id: workflowId, export_id: exportId, message: `删除导出记录失败：${error.message}` });
   }
 });
 

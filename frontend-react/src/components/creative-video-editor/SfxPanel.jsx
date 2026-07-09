@@ -1,4 +1,5 @@
-import { EditorSection } from './editorUi.jsx';
+import { useEffect, useState } from 'react';
+import { EditorInlineActions, EditorSection } from './editorUi.jsx';
 
 function getEvents(project) {
   return Array.isArray(project?.audio?.sfx?.events) ? project.audio.sfx.events : [];
@@ -32,55 +33,97 @@ function formatTime(event) {
   return '未指定时间';
 }
 
+function editableDraft(event) {
+  return {
+    volume_db: Number.isFinite(Number(event?.volume_db)) ? Number(event.volume_db) : -18,
+    time_sec: Number.isFinite(Number(event?.time_sec)) ? Number(event.time_sec) : 0,
+    global_time_sec: Number.isFinite(Number(event?.global_time_sec)) ? Number(event.global_time_sec) : 0,
+  };
+}
+
 export function SfxPanel({
   project,
   frames = [],
   disabled,
   deletingSfxEventId = '',
   onDisableEvent,
+  onUpdateEvent,
+  getSfxEventPlaybackUrl,
 }) {
   const events = getEvents(project);
+  const [showDisabled, setShowDisabled] = useState(false);
+  const [drafts, setDrafts] = useState({});
   const visibleEvents = events
-    .filter(event => event?.enabled !== false)
+    .filter(event => showDisabled || event?.enabled !== false)
     .map((event, index) => ({ event, index }))
     .sort((a, b) => getSortTime(a.event) - getSortTime(b.event) || a.index - b.index);
-  const deletedCount = events.length - visibleEvents.length;
+  const disabledCount = events.filter(event => event?.enabled === false).length;
+
+  useEffect(() => {
+    setDrafts(Object.fromEntries(events.map(event => [getEventId(event), editableDraft(event)])));
+  }, [project]);
+
+  function patchDraft(eventId, patch) {
+    setDrafts(prev => ({ ...prev, [eventId]: { ...(prev[eventId] || {}), ...patch } }));
+  }
 
   return (
     <div className="grid min-w-0 gap-2 text-sm text-[#4b5563]">
       <p className="m-0 text-xs leading-5 text-[#4b5563]">
-        这些音效会在重新导出时混入成片。删除音效本身不会重新生成画面，但导出操作仍沿用当前导出链路。
+        这些音效会在重新导出时混入成片。停用是非破坏式操作，可随时恢复。
       </p>
+      <label className="flex items-center gap-2 text-xs font-semibold text-[#4b5563]">
+        <input type="checkbox" checked={showDisabled} disabled={disabled} onChange={event => setShowDisabled(event.target.checked)} />
+        显示已停用音效
+      </label>
 
       {visibleEvents.length ? (
         <EditorSection className="overflow-hidden p-0">
           {visibleEvents.map(({ event, index }, rowIndex) => {
             const eventId = getEventId(event);
-            const deleting = String(deletingSfxEventId) === String(eventId);
+            const mutating = String(deletingSfxEventId) === String(eventId);
+            const draft = drafts[eventId] || editableDraft(event);
+            const audioUrl = getSfxEventPlaybackUrl?.(eventId) || '';
             return (
               <div className={`grid gap-2 px-3 py-3 ${rowIndex < visibleEvents.length - 1 ? 'border-b border-[#e5e7eb]' : ''}`} key={eventId || `sfx-${index}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold text-[#111827]">
-                      {event?.label_zh || event?.label || '未命名音效'}
+                      {event?.label_zh || event?.label || '未命名音效'}{event?.enabled === false ? '（已停用）' : ''}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[#6b7280]">
                       <span>{getSceneLabel(event, frames, index)}</span>
                       <span>时间：{formatTime(event)}</span>
+                      <span>音量：{event?.volume_db ?? -18}dB</span>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="min-h-8 flex-none rounded-md border border-red-200 bg-white px-3 text-xs font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-55"
-                    disabled={disabled || deleting || !eventId}
-                    onClick={() => onDisableEvent?.(eventId)}
-                  >
-                    {deleting ? '删除中...' : '删除'}
-                  </button>
+                  <EditorInlineActions>
+                    {event?.enabled === false ? (
+                      <button type="button" disabled={disabled || mutating || !eventId} onClick={() => onUpdateEvent?.(eventId, { enabled: true })}>恢复</button>
+                    ) : (
+                      <button type="button" disabled={disabled || mutating || !eventId} onClick={() => onDisableEvent?.(eventId)}>{mutating ? '停用中...' : '停用'}</button>
+                    )}
+                  </EditorInlineActions>
                 </div>
-                {event?.reason ? (
-                  <p className="m-0 text-xs leading-5 text-[#4b5563]">{event.reason}</p>
-                ) : null}
+                {audioUrl ? <audio className="w-full" src={audioUrl} controls preload="none"><track kind="captions" /></audio> : null}
+                <div className="grid grid-cols-3 gap-2">
+                  <label>
+                    <span>场景时间（秒）</span>
+                    <input type="number" min="0" step="0.01" value={draft.time_sec} disabled={disabled || mutating} onChange={event => patchDraft(eventId, { time_sec: Number(event.target.value) })} />
+                  </label>
+                  <label>
+                    <span>全片时间（秒）</span>
+                    <input type="number" min="0" step="0.01" value={draft.global_time_sec} disabled={disabled || mutating} onChange={event => patchDraft(eventId, { global_time_sec: Number(event.target.value) })} />
+                  </label>
+                  <label>
+                    <span>音量 dB</span>
+                    <input type="number" min="-28" max="-10" step="1" value={draft.volume_db} disabled={disabled || mutating} onChange={event => patchDraft(eventId, { volume_db: Number(event.target.value) })} />
+                  </label>
+                </div>
+                <EditorInlineActions>
+                  <button type="button" disabled={disabled || mutating || !eventId} onClick={() => onUpdateEvent?.(eventId, draft)}>保存音效设置</button>
+                </EditorInlineActions>
+                {event?.reason ? <p className="m-0 text-xs leading-5 text-[#4b5563]">来源：{event.reason}</p> : null}
               </div>
             );
           })}
@@ -88,12 +131,12 @@ export function SfxPanel({
       ) : (
         <EditorSection>
           <p className="m-0 text-sm font-semibold text-[#111827]">当前工程还没有自动音效。</p>
-          <p className="m-0 mt-1 text-xs text-[#6b7280]">开启“自动音效增强”后，新生成的视频会在这里显示可删除的音效。</p>
+          <p className="m-0 mt-1 text-xs text-[#6b7280]">开启“自动音效增强”后，新生成的视频会在这里显示可停用的音效。</p>
         </EditorSection>
       )}
 
       <div className="text-right text-xs text-[#6b7280]">
-        共 {visibleEvents.length} 条，已删除 {deletedCount} 条
+        共 {events.length} 条，已停用 {disabledCount} 条
       </div>
     </div>
   );

@@ -171,15 +171,62 @@ function normalizeSfxEvents({ aiEvents = [], project = {}, sceneSpec = {}, libra
   return { events };
 }
 
-function disableSfxEvent({ project, eventId } = {}) {
+function findSfxEvent(project, eventId) {
   const events = Array.isArray(project?.audio?.sfx?.events) ? project.audio.sfx.events : [];
   const id = String(eventId || '').trim();
-  const event = events.find(item => item && item.id === id);
+  return events.find(item => item && String(item.id || '') === id) || null;
+}
+
+function disableSfxEvent({ project, eventId } = {}) {
+  const event = findSfxEvent(project, eventId);
   if (!event) {
-    return { success: false, code: 'SFX_EVENT_NOT_FOUND', message: '未找到要删除的音效。', project };
+    return { success: false, code: 'SFX_EVENT_NOT_FOUND', message: '未找到要停用的音效。', project };
   }
   event.enabled = false;
   return { success: true, message: '已停用音效。', project };
+}
+
+/**
+ * 非破坏式更新音效事件，支持停用、恢复、音量和时间点微调。
+ * @param {object} options 更新参数。
+ * @returns {object} 更新结果。
+ */
+function patchSfxEvent({ project, eventId, patch = {} } = {}) {
+  const event = findSfxEvent(project, eventId);
+  if (!event) {
+    return { success: false, code: 'SFX_EVENT_NOT_FOUND', message: '未找到要更新的音效。', project };
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'enabled')) {
+    event.enabled = patch.enabled !== false;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'volume_db') || Object.prototype.hasOwnProperty.call(patch, 'volumeDb')) {
+    const volume = Number(patch.volume_db ?? patch.volumeDb);
+    if (!Number.isFinite(volume)) {
+      return { success: false, code: 'SFX_VOLUME_INVALID', message: '音效音量必须是有效数字。', project };
+    }
+    event.volume_db = clamp(volume, SFX_VOLUME_MIN_DB, SFX_VOLUME_MAX_DB);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'time_sec') || Object.prototype.hasOwnProperty.call(patch, 'timeSec')) {
+    const timeSec = Number(patch.time_sec ?? patch.timeSec);
+    if (!Number.isFinite(timeSec) || timeSec < 0) {
+      return { success: false, code: 'SFX_TIME_INVALID', message: '音效时间点必须是大于等于 0 的数字。', project };
+    }
+    event.time_sec = timeSec;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'global_time_sec') || Object.prototype.hasOwnProperty.call(patch, 'globalTimeSec')) {
+    const globalTimeSec = Number(patch.global_time_sec ?? patch.globalTimeSec);
+    if (!Number.isFinite(globalTimeSec) || globalTimeSec < 0) {
+      return { success: false, code: 'SFX_TIME_INVALID', message: '音效全片时间点必须是大于等于 0 的数字。', project };
+    }
+    event.global_time_sec = globalTimeSec;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'sfx_id') || Object.prototype.hasOwnProperty.call(patch, 'sfxId')) {
+    const sfxId = String(patch.sfx_id ?? patch.sfxId ?? '').trim();
+    if (!sfxId) return { success: false, code: 'SFX_ID_INVALID', message: '替换音效失败：音效 ID 不能为空。', project };
+    event.sfx_id = sfxId;
+  }
+  event.updated_at = new Date().toISOString();
+  return { success: true, message: event.enabled === false ? '已停用音效。' : '音效设置已更新。', event, project };
 }
 
 function markSfxSkipped(project, message = '自动音效编排失败，已跳过音效增强。') {
@@ -348,6 +395,7 @@ function resolveProjectSfxEventsForMux({ project = {}, projectDir, library } = {
 module.exports = {
   normalizeSfxEvents,
   disableSfxEvent,
+  patchSfxEvent,
   markSfxSkipped,
   writeSfxEventsFileAsync,
   persistProjectSfxMirror,

@@ -115,6 +115,7 @@ async function runEditPlan({
   iterateService,
   layoutQaService,
   model,
+  selectedFrameIds = [],
 } = {}) {
   const plan = findEditPlan(project, planId);
   if (!plan) {
@@ -140,7 +141,12 @@ async function runEditPlan({
   plan.layout_qa_reports = [];
   plan.updated_at = timestamp();
 
-  const affectedFrames = Array.isArray(plan.affected_frames) ? plan.affected_frames : [];
+  const selected = new Set((Array.isArray(selectedFrameIds) ? selectedFrameIds : [])
+    .map(value => String(value || '').trim())
+    .filter(Boolean));
+  const affectedFrames = (Array.isArray(plan.affected_frames) ? plan.affected_frames : [])
+    .filter(frameId => !selected.size || selected.has(String(frameId || '').trim()));
+  plan.selected_frames = affectedFrames;
   for (const frameId of affectedFrames) {
     const result = await iterateService.iterateFrameHtml({
       projectDir,

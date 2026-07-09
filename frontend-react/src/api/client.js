@@ -302,8 +302,46 @@ export const api = {
       body: JSON.stringify(payload || {}),
     });
   },
+  createHtmlVideoProjectPreview(workflowId, payload) {
+    return requestJson(`/api/creative-workflows/${encodeURIComponent(workflowId)}/html-video-project/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {}),
+    });
+  },
+  listHtmlVideoProjectPreviews(workflowId) {
+    return requestJson(`/api/creative-workflows/${encodeURIComponent(workflowId)}/html-video-project/previews`);
+  },
+  listHtmlVideoProjectRevisions(workflowId) {
+    return requestJson(`/api/creative-workflows/${encodeURIComponent(workflowId)}/html-video-project/revisions`);
+  },
+  restoreHtmlVideoProjectRevision(workflowId, revisionId) {
+    return requestJson(`/api/creative-workflows/${encodeURIComponent(workflowId)}/html-video-project/revisions/${encodeURIComponent(revisionId)}/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+  },
+  getHtmlVideoProjectNarrationFileUrl(workflowId, frameId) {
+    return `/api/creative-workflows/${encodeURIComponent(workflowId)}/html-video-project/frames/${encodeURIComponent(frameId)}/narration/file`;
+  },
+  getHtmlVideoProjectSfxEventFileUrl(workflowId, eventId) {
+    return `/api/creative-workflows/${encodeURIComponent(workflowId)}/html-video-project/sfx/events/${encodeURIComponent(eventId)}/file`;
+  },
   listHtmlVideoProjectExports(workflowId) {
     return requestJson(`/api/creative-workflows/${encodeURIComponent(workflowId)}/html-video-project/exports`);
+  },
+  patchHtmlVideoProjectExport(workflowId, exportId, payload) {
+    return requestJson(`/api/creative-workflows/${encodeURIComponent(workflowId)}/html-video-project/exports/${encodeURIComponent(exportId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {}),
+    });
+  },
+  deleteHtmlVideoProjectExport(workflowId, exportId) {
+    return requestJson(`/api/creative-workflows/${encodeURIComponent(workflowId)}/html-video-project/exports/${encodeURIComponent(exportId)}`, {
+      method: 'DELETE',
+    });
   },
   getHtmlVideoProjectExportFileUrl(workflowId, exportId) {
     return `/api/creative-workflows/${encodeURIComponent(workflowId)}/html-video-project/exports/${encodeURIComponent(exportId)}/file`;

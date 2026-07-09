@@ -147,7 +147,7 @@ assert.doesNotMatch(inspector, /function MiniList/);
 
 assert.match(projectEditor, /HtmlVideoCanvasEditor/);
 assert.doesNotMatch(projectEditor, /useState\(['"]canvas['"]\)/, 'project editor should not have canvas tab state');
-assert.match(projectEditor, /Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger/, 'project editor should use Dialog components');
+assert.match(projectEditor, /Dialog, DialogContent,[^\n]*DialogHeader,[^\n]*DialogTitle,[^\n]*DialogTrigger/, 'project editor should use Dialog components');
 assert.match(projectEditor, /PanelDialog/, 'project editor should have PanelDialog component');
 assert.doesNotMatch(projectEditor, /id: 'canvas', label: '画布'/, 'project editor should no longer have tab definitions');
 

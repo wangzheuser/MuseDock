@@ -762,6 +762,20 @@ export function HtmlVideoCanvasEditor({ editor }) {
       };
       event.target.setPointerCapture?.(event.pointerId);
     }, true);
+    doc.addEventListener('keydown', event => {
+      if (!editingReadyRef.current || !selectedElementRef.current) return;
+      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      event.preventDefault();
+      const info = readElementInfo(selectedElementRef.current);
+      const step = event.shiftKey ? 10 : 1;
+      const delta = {
+        ArrowUp: { top: info.top - step },
+        ArrowDown: { top: info.top + step },
+        ArrowLeft: { left: info.left - step },
+        ArrowRight: { left: info.left + step },
+      }[event.key];
+      updateSelectedGeometry(delta);
+    }, true);
     doc.addEventListener('pointermove', event => {
       const drag = dragRef.current;
       if (!drag?.element) return;

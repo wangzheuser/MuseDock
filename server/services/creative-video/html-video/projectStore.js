@@ -147,6 +147,16 @@ function nextEntryId(prefix, entries) {
   return `${prefix}_${String((entries || []).length + 1).padStart(4, '0')}`;
 }
 
+function createRevisionSnapshot(project = {}) {
+  const snapshot = JSON.parse(JSON.stringify(project || {}));
+  snapshot.revisions = (Array.isArray(project.revisions) ? project.revisions : []).map(revision => {
+    const copy = { ...(revision || {}) };
+    delete copy.snapshot;
+    return copy;
+  });
+  return snapshot;
+}
+
 function addRevision(project, change = {}) {
   if (!Array.isArray(project.revisions)) {
     project.revisions = [];
@@ -157,6 +167,7 @@ function addRevision(project, change = {}) {
     summary: change.summary || '',
     author: change.author || null,
     change: change.change || null,
+    snapshot: change.snapshot === false ? null : (change.snapshot || createRevisionSnapshot(project)),
   };
   project.revisions.push(revision);
   return revision;
@@ -219,6 +230,7 @@ module.exports = {
   loadSceneSpec,
   writeRawFrameHtml,
   addRevision,
+  createRevisionSnapshot,
   addExport,
   resolveProjectPath,
 };

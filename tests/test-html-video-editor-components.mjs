@@ -13,6 +13,7 @@ const componentPaths = [
   'frontend-react/src/components/creative-video-editor/NarrationPanel.jsx',
   'frontend-react/src/components/creative-video-editor/CaptionsPanel.jsx',
   'frontend-react/src/components/creative-video-editor/ExportsPanel.jsx',
+  'frontend-react/src/components/creative-video-editor/PreviewPanel.jsx',
   'frontend-react/src/components/creative-video-editor/NaturalLanguageEditBox.jsx',
   'frontend-react/src/components/creative-video-editor/HtmlVideoSourcePanel.jsx',
   'frontend-react/src/components/creative-video-editor/HtmlVideoDraftPanel.jsx',
@@ -184,6 +185,15 @@ assert.ok(exportsPanel.includes('播放'), 'exports panel should provide a playb
 assert.ok(exportsPanel.includes('formatExportTime'), 'exports panel should format export timestamps before rendering');
 assert.match(exportsPanel, /toLocaleString\('zh-CN'/, 'exports panel should render export timestamps in local Chinese format');
 assert.ok(exportsPanel.includes('getExportPlaybackUrl'), 'exports panel should resolve a safe playback URL for exported videos');
+assert.ok(exportsPanel.includes('导出倍速'), 'exports panel should expose export playback speed');
+assert.ok(exportsPanel.includes('尾音保护'), 'exports panel should expose tail protection');
+assert.ok(exportsPanel.includes('playback_speed'), 'exports panel should submit playback_speed');
+assert.ok(exportsPanel.includes('tail_protection'), 'exports panel should submit tail_protection');
+
+const previewPanel = fs.readFileSync('frontend-react/src/components/creative-video-editor/PreviewPanel.jsx', 'utf-8');
+assert.ok(previewPanel.includes('预览倍速'), 'preview panel should expose preview speed');
+assert.ok(previewPanel.includes('playbackRate'), 'preview panel should update native video playbackRate');
+assert.ok(previewPanel.includes('playback_speed'), 'preview panel should send playback speed when regenerating preview');
 
 const frameInputsPanel = fs.readFileSync('frontend-react/src/components/creative-video-editor/FrameInputsPanel.jsx', 'utf-8');
 const frameInputsPayload = fs.readFileSync('frontend-react/src/components/creative-video-editor/frameInputsPayload.mjs', 'utf-8');
@@ -250,6 +260,7 @@ assert.ok(
   narrationPanel.includes('重新生成旁白会使用设置中心已保存的最新 TTS 音色和情绪化配音配置。'),
   'NarrationPanel should explain latest saved TTS config for regeneration',
 );
+assert.ok(narrationPanel.includes('导出时会自动保留尾音'), 'NarrationPanel should explain automatic tail protection');
 
 assert.match(frameInputsPanel, /typeof onRenderPreview === 'function'/, 'FrameInputsPanel should hide preview action when no preview handler exists');
 assert.match(editor, /frames\s*=\s*Array\.isArray\(editor\.frames\)\s*\?\s*editor\.frames\s*:\s*\[\]/, 'HtmlVideoProjectEditor should fallback to an empty frames array');

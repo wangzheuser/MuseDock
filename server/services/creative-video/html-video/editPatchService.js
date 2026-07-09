@@ -136,6 +136,7 @@ function applyFramePatch(project, patch, flags) {
     frame.narration_text_user_edited = true;
     if (nextNarration !== previousNarration) {
       flags.requires_tts = true;
+      frame.narration_audio_stale = true;
     }
   }
 

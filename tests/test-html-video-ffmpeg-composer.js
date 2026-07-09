@@ -84,6 +84,7 @@ const composer = require('../server/services/creative-video/html-video/ffmpegCom
   assert.ok(filterComplex.includes('volume=-18dB'));
   assert.ok(filterComplex.includes('afade=t=in:st=0:d=0.2'));
   assert.ok(filterComplex.includes('afade=t=out:st=4.5:d=1.5'));
+  assert.doesNotMatch(filterComplex, /\[1:a\][^;]*afade=t=out/, '旁白轨不应淡出，避免尾字变小');
   assert.ok(filterComplex.includes('amix=inputs=2:duration=longest:dropout_transition=0[mixed]'));
   assert.ok(filterComplex.includes('[mixed]apad[aout]'));
   assert.deepEqual(commands[2].args.slice(-9), [
@@ -139,6 +140,31 @@ const composer = require('../server/services/creative-video/html-video/ffmpegCom
   });
   assert.equal(noAudio.success, true);
   assert.equal(noAudio.skipped, true);
+
+  const retimedOutput = path.join(workDir, 'exports/retimed.mp4');
+  const retimed = await composer.retimeVideoWithFfmpeg({
+    inputPath: muxOutput,
+    outputPath: retimedOutput,
+    playbackSpeed: 1.25,
+    includeAudio: true,
+    fps: 30,
+    runCommand,
+  });
+  assert.equal(retimed.success, true);
+  assert.deepEqual(commands.at(-1).args, [
+    '-y',
+    '-i', muxOutput,
+    '-filter_complex', '[0:v]setpts=PTS/1.25[v];[0:a]atempo=1.25[a]',
+    '-map', '[v]',
+    '-map', '[a]',
+    '-c:v', 'libx264',
+    '-pix_fmt', 'yuv420p',
+    '-r', '30',
+    '-c:a', 'aac',
+    '-b:a', '192k',
+    '-movflags', '+faststart',
+    retimedOutput,
+  ]);
 
   const probe = await composer.verifyDurationWithFfprobe({
     videoPath: filterOutput,

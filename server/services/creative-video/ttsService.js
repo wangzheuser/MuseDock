@@ -1,6 +1,8 @@
 const fs = require('fs/promises');
 const path = require('path');
+const crypto = require('crypto');
 const defaultTtsModel = require('../ai/aiTtsModel');
+const ttsTimeline = require('../tts/ttsTimeline');
 const {
   computeSceneSpecSpeechHash,
   getSceneSpecSpeechSignature,
@@ -52,6 +54,10 @@ function relativeAudioPath(fileName) {
   return `tts/${fileName}`.replace(/\\/g, '/');
 }
 
+function hashText(value) {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex');
+}
+
 function getScenes(sceneSpec, sceneId) {
   const scenes = Array.isArray(sceneSpec && sceneSpec.scenes) ? sceneSpec.scenes : [];
   if (!sceneId) {
@@ -79,8 +85,16 @@ function createSceneSpecManifestBase(projectDir, sceneSpec, { status = 'ready' }
   };
 }
 
-async function defaultReadAudioDuration() {
-  return 0;
+/**
+ * 读取新生成 TTS 文件的真实时长，失败时返回 0 让调用方保持兼容。
+ * @param {string} filePath 音频文件路径。
+ * @param {object} options ffprobe 选项。
+ * @returns {Promise<number>} 音频时长秒数。
+ */
+async function defaultReadAudioDuration(filePath, options = {}) {
+  const result = await ttsTimeline.readAudioDuration(filePath, options);
+  if (Number.isFinite(Number(result))) return Number(result);
+  return result?.success ? Number(result.duration || 0) : 0;
 }
 
 function firstNonEmptyString(...values) {
@@ -122,6 +136,28 @@ function applyManifestToProjectAudio(project, sceneSpec, audioManifest = {}) {
   project.audio.status = manifest.status || 'ready';
   project.audio.tts_manifest_path = manifestPath || (narrationPath || hasManifestSceneAudio(manifest) ? 'tts/audio_manifest.json' : null);
   project.audio.narration_path = narrationPath || null;
+
+  // 将 manifest 的文本 hash 回写到帧，导出前可精确判断旁白音频是否过期。
+  const manifestByScene = new Map((Array.isArray(manifest.scenes) ? manifest.scenes : [])
+    .map(scene => [String(scene?.scene_id || scene?.id || '').trim(), scene])
+    .filter(([id]) => id));
+  for (const frame of Array.isArray(project.frames) ? project.frames : []) {
+    const sceneId = String(frame?.scene_id || frame?.id || '').trim();
+    const manifestScene = manifestByScene.get(sceneId);
+    if (!manifestScene) continue;
+    const scene = scenes.find(item => String(item?.id || '').trim() === sceneId) || {};
+    const expectedHash = hashText(scene.narration_text || frame.narration_text || '');
+    const audioHash = firstNonEmptyString(manifestScene.narration_text_hash, manifestScene.text_hash);
+    if (audioHash && audioHash === expectedHash) {
+      frame.narration_audio_text_hash = audioHash;
+      frame.narration_audio_stale = false;
+      frame.narration_audio_updated_at = new Date().toISOString();
+    }
+    const duration = Number(manifestScene.duration ?? manifestScene.duration_sec ?? manifestScene.durationSec);
+    if (Number.isFinite(duration) && duration > 0) {
+      frame.narration_audio_duration_sec = Math.round(duration * 1000) / 1000;
+    }
+  }
   return project.audio;
 }
 
@@ -210,6 +246,8 @@ async function synthesizeSceneNarration({
         format,
         voice: response.voice || '',
         model: response.model || {},
+        narration_text_hash: hashText(text),
+        text_hash: hashText(text),
       });
     }
 

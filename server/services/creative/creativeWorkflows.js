@@ -34,6 +34,9 @@ const {
   findFrameByAnyId,
   createTemplateRegistry: createHtmlVideoTemplateRegistry,
   sfxEventService,
+  normalizeProject: normalizeHtmlVideoProject,
+  buildProjectEditState,
+  collectStaleNarrationFrames,
 } = htmlVideoProjectApi;
 const { computeSceneSpecSpeechHash } = require('../creative-video/sceneSpecHash');
 const { DEFAULT_TTS_VOICE, normalizeTtsVoice } = require('../tts/voiceOptions');
@@ -110,6 +113,52 @@ async function resolveLatestTtsOptions(services, options = {}) {
 
 function plainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function decorateHtmlVideoProject(project = {}) {
+  const editState = buildProjectEditState(project);
+  return {
+    ...project,
+    edit_state: editState,
+  };
+}
+
+function latestProjectRevisionId(project = {}) {
+  const revisions = Array.isArray(project.revisions) ? project.revisions : [];
+  return revisions.length ? String(revisions[revisions.length - 1]?.id || '') : '';
+}
+
+function sanitizeExportFileName(value, fallback = 'output') {
+  const text = safeString(value || fallback)
+    .replace(/\.[A-Za-z0-9]+$/, '')
+    .replace(/[^\p{L}\p{N}_.-]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  return text || fallback;
+}
+
+function exportOptionsFromPayload(payload = {}) {
+  const input = plainObject(payload.export_options || payload.exportOptions || payload);
+  const width = Number(input.width ?? input.resolution?.width);
+  const height = Number(input.height ?? input.resolution?.height);
+  const fps = Number(input.fps);
+  const playbackSpeedRaw = input.playback_speed ?? input.playbackSpeed;
+  const playbackSpeed = playbackSpeedRaw == null || playbackSpeedRaw === '' ? 1 : Number(playbackSpeedRaw);
+  const output = {};
+  if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
+    output.resolution = { width: Math.round(width), height: Math.round(height) };
+  }
+  if (Number.isFinite(fps) && fps > 0) output.fps = fps;
+  if (!Number.isFinite(playbackSpeed) || playbackSpeed < 0.5 || playbackSpeed > 2) {
+    return { error: '导出倍速无效，请选择 0.5x 到 2.0x。' };
+  }
+  return {
+    output,
+    fileName: sanitizeExportFileName(input.file_name || input.fileName, payload.preview === true ? 'preview' : 'output'),
+    platform: safeString(input.platform),
+    playbackSpeed,
+    tailProtection: safeString(input.tail_protection || input.tailProtection) === 'none' ? 'none' : 'pad_end',
+  };
 }
 
 function inferMediaRootFromProjectDir(projectDir, workflowId) {
@@ -2231,11 +2280,13 @@ async function getCreativeWorkflowHtmlVideoProject(workflowId, options = {}) {
   const rootDir = options.rootDir || DEFAULT_ROOT;
   const { project, projectDir, error } = await loadWorkflowWithHtmlVideoProject(workflowId, rootDir);
   if (error) return error;
+  const htmlVideoProject = decorateHtmlVideoProject(project);
   return {
     success: true,
     workflow_id: workflowId,
-    html_video_project: project,
+    html_video_project: htmlVideoProject,
     html_video_project_path: projectDir,
+    edit_state: htmlVideoProject.edit_state,
   };
 }
 
@@ -2325,25 +2376,21 @@ async function patchHtmlVideoProjectSfxEvent(workflowId, eventId, payload = {}, 
   const rootDir = options.rootDir || DEFAULT_ROOT;
   const { project, projectDir, error } = await loadWorkflowWithHtmlVideoProject(workflowId, rootDir);
   if (error) return error;
-  if (payload.enabled !== false) {
-    return {
-      success: false,
-      code: 'SFX_EVENT_PATCH_UNSUPPORTED',
-      workflow_id: workflowId,
-      message: '首版只支持删除音效。',
-    };
-  }
-  const result = sfxEventService.disableSfxEvent({ project, eventId });
+  const result = sfxEventService.patchSfxEvent({ project, eventId, patch: payload });
   if (!result.success) {
     return { ...result, workflow_id: workflowId };
   }
-  // 先落权威 project.json 再写镜像：save 失败时镜像不会先说"已删"（spec §4.3 同步要求）
+  htmlVideoProjectStore.addRevision(result.project, {
+    summary: result.event?.enabled === false ? '音效已停用。' : '音效设置已更新。',
+    change: { type: 'sfx_event_patch', event_id: eventId },
+  });
+  // 先落权威 project.json 再写镜像：save 失败时镜像不会先说“已更新”（spec §4.3 同步要求）
   const saved = await htmlVideoProjectStore.saveProject(projectDir, result.project);
   await sfxEventService.persistProjectSfxMirror(projectDir, saved);
   return {
     success: true,
     workflow_id: workflowId,
-    message: '音效已删除，重新导出后生效。',
+    message: result.message || '音效设置已更新，重新导出后生效。',
     html_video_project: saved,
     html_video_project_path: projectDir,
     requires_render: true,
@@ -2391,6 +2438,9 @@ async function runHtmlVideoProjectEditPlan(workflowId, planId, payload = {}, opt
     planId,
     confirm: payload.confirm === true,
     runLayoutQa: payload.run_layout_qa !== false && payload.runLayoutQa !== false,
+    selectedFrameIds: Array.isArray(payload.selected_frame_ids || payload.selectedFrameIds)
+      ? (payload.selected_frame_ids || payload.selectedFrameIds)
+      : [],
     iterateService: options.htmlVideoIterateService || htmlVideoIterateService,
     layoutQaService: options.layoutQaService || layoutQaService,
     model: options.aiTextModel || aiTextModel,
@@ -2522,6 +2572,29 @@ async function iterateHtmlVideoProjectFrame(workflowId, frameId, payload = {}, o
     model: options.aiTextModel || aiTextModel,
   });
   if (!result.success) return { ...result, workflow_id: workflowId, frame_id: frameId };
+  let layoutQa = null;
+  if ((payload.run_layout_qa === true || payload.runLayoutQa === true) && result.draft?.html_path) {
+    const layoutService = options.layoutQaService || layoutQaService;
+    const frame = findFrameByAnyId(project, frameId) || { id: frameId };
+    const htmlPath = path.isAbsolute(result.draft.html_path) ? result.draft.html_path : path.join(projectDir, result.draft.html_path);
+    layoutQa = await layoutService.inspectFrameHtmlLayout({
+      htmlPath,
+      frame: { ...frame, html_path: result.draft.html_path },
+      resolution: project.output?.resolution || { width: 1920, height: 1080 },
+      durationSec: frame.duration_sec,
+    });
+    project.layout_qa_reports = Array.isArray(project.layout_qa_reports) ? project.layout_qa_reports : [];
+    project.layout_qa_reports.push({
+      id: `layout_qa_${String(project.layout_qa_reports.length + 1).padStart(4, '0')}`,
+      created_at: new Date().toISOString(),
+      frame_id: frameId,
+      checked_count: 1,
+      skipped_count: 0,
+      issues: Array.isArray(layoutQa?.issues) ? layoutQa.issues : [],
+      reports: [layoutQa],
+      success: layoutQa?.success !== false,
+    });
+  }
   const saved = await htmlVideoProjectStore.saveProject(projectDir, project);
   return {
     ...result,
@@ -2529,6 +2602,7 @@ async function iterateHtmlVideoProjectFrame(workflowId, frameId, payload = {}, o
     frame_id: frameId,
     html_video_project: saved,
     html_video_project_path: projectDir,
+    ...(layoutQa ? { layout_qa: layoutQa } : {}),
   };
 }
 
@@ -2565,8 +2639,12 @@ async function inspectHtmlVideoProjectLayout(workflowId, payload = {}, options =
 
   const frames = frameId ? [targetFrame] : (Array.isArray(project.frames) ? project.frames : []);
   const reports = [];
+  let skippedCount = 0;
   for (const frame of frames) {
-    if (frame.source_mode !== 'raw_html' || !frame.html_path) continue;
+    if (frame.source_mode !== 'raw_html' || !frame.html_path) {
+      skippedCount += 1;
+      continue;
+    }
     const htmlPath = path.isAbsolute(frame.html_path) ? frame.html_path : path.join(projectDir, frame.html_path);
     reports.push(await layoutQaService.inspectFrameHtmlLayout({
       htmlPath,
@@ -2581,6 +2659,9 @@ async function inspectHtmlVideoProjectLayout(workflowId, payload = {}, options =
     success: issues.every(issue => issue.severity === 'warning' || issue.severity === 'info'),
     issues,
     reports,
+    checked_count: reports.length,
+    skipped_count: skippedCount,
+    environment_skipped: reports.some(report => report?.skipped === true || report?.environment_skipped === true),
   };
   project.layout_qa_reports = Array.isArray(project.layout_qa_reports) ? project.layout_qa_reports : [];
   project.layout_qa_reports.push({
@@ -2742,8 +2823,9 @@ async function editHtmlVideoProject(workflowId, payload = {}, options = {}) {
   return {
     success: true,
     workflow_id: workflowId,
-    html_video_project: result.project,
+    html_video_project: result.project ? decorateHtmlVideoProject(result.project) : result.project,
     html_video_project_path: projectDir,
+    edit_state: result.project ? buildProjectEditState(result.project) : null,
     revision: result.revision,
     requires_tts: result.requires_tts,
     requires_render: result.requires_render,
@@ -2761,6 +2843,42 @@ async function renderCreativeWorkflowHtmlVideoProject(workflowId, payload = {}, 
 
   const templateRegistry = options.htmlVideoTemplateRegistry || createHtmlVideoTemplateRegistry(options.htmlVideoTemplateOptions || {});
   const orchestrator = options.htmlVideoProjectOrchestrator || htmlVideoProjectOrchestrator;
+  const mode = safeString(payload.mode || payload.action || '');
+  const isExportMode = mode === 'export' || (!mode && payload.preview !== true);
+  const staleNarrationFrames = collectStaleNarrationFrames(project);
+  if (isExportMode && staleNarrationFrames.length && payload.force_use_stale_tts !== true && payload.forceUseStaleTts !== true) {
+    return {
+      success: false,
+      code: 'NARRATION_AUDIO_STALE',
+      workflow_id: workflowId,
+      html_video_project: decorateHtmlVideoProject(project),
+      html_video_project_path: projectDir,
+      stale_narration_frames: staleNarrationFrames,
+      requires_tts: true,
+      message: '旁白文本已更新，但音频尚未重新生成。请先重新生成旁白，或确认继续使用旧旁白导出。',
+    };
+  }
+
+  const exportOptions = exportOptionsFromPayload(payload);
+  if (exportOptions.error) {
+    return {
+      success: false,
+      code: 'HTML_VIDEO_EXPORT_SPEED_INVALID',
+      workflow_id: workflowId,
+      message: exportOptions.error,
+    };
+  }
+  if (Object.keys(exportOptions.output).length > 0) {
+    project = normalizeHtmlVideoProject({
+      ...project,
+      output: {
+        ...(project.output || {}),
+        ...exportOptions.output,
+      },
+    });
+    await htmlVideoProjectStore.saveProject(projectDir, project);
+  }
+
   const baseOptions = {
     rootDir,
     workflowId,
@@ -2768,13 +2886,17 @@ async function renderCreativeWorkflowHtmlVideoProject(workflowId, payload = {}, 
     projectDir,
     project,
     templateRegistry,
+    exportKind: payload.preview === true ? 'preview' : 'export',
+    exportFileName: exportOptions.fileName,
+    exportPlatform: exportOptions.platform,
+    playbackSpeed: exportOptions.playbackSpeed,
+    tailProtection: exportOptions.tailProtection,
     services: {
       ...(options.services || {}),
       ...(options.htmlVideoServices || {}),
       ttsService: options.htmlVideoServices?.ttsService || (options.services || {}).ttsService || defaultCreativeVideoTtsService,
     },
   };
-  const mode = safeString(payload.mode || payload.action || '');
   let result;
   if (mode === 'materialize') {
     result = await orchestrator.materializeHtmlVideoProject(baseOptions);
@@ -2839,6 +2961,127 @@ async function exportHtmlVideoProject(workflowId, payload = {}, options = {}) {
   return renderCreativeWorkflowHtmlVideoProject(workflowId, { ...payload, skip_render: false, mode: 'export' }, options);
 }
 
+async function createHtmlVideoProjectPreview(workflowId, payload = {}, options = {}) {
+  return renderCreativeWorkflowHtmlVideoProject(workflowId, {
+    ...payload,
+    mode: 'export',
+    preview: true,
+    export_options: {
+      ...(payload.export_options || payload.exportOptions || {}),
+      file_name: payload.export_options?.file_name || payload.exportOptions?.fileName || 'preview',
+    },
+  }, options);
+}
+
+async function listHtmlVideoProjectPreviews(workflowId, options = {}) {
+  const listed = await listHtmlVideoProjectExports(workflowId, options);
+  if (!listed.success) return listed;
+  return {
+    ...listed,
+    previews: (Array.isArray(listed.exports) ? listed.exports : []).filter(item => item?.kind === 'preview'),
+  };
+}
+
+async function listHtmlVideoProjectRevisions(workflowId, options = {}) {
+  const rootDir = options.rootDir || DEFAULT_ROOT;
+  const { project, projectDir, error } = await loadWorkflowWithHtmlVideoProject(workflowId, rootDir);
+  if (error) return error;
+  return {
+    success: true,
+    workflow_id: workflowId,
+    html_video_project_path: projectDir,
+    revisions: Array.isArray(project.revisions) ? project.revisions.map(revision => {
+      const item = { ...(revision || {}) };
+      delete item.snapshot;
+      item.restorable = Boolean(revision?.snapshot);
+      return item;
+    }) : [],
+  };
+}
+
+async function restoreHtmlVideoProjectRevision(workflowId, revisionId, options = {}) {
+  const rootDir = options.rootDir || DEFAULT_ROOT;
+  const { project, projectDir, error } = await loadWorkflowWithHtmlVideoProject(workflowId, rootDir);
+  if (error) return error;
+  const id = safeString(revisionId);
+  const revision = (Array.isArray(project.revisions) ? project.revisions : []).find(item => safeString(item?.id) === id);
+  if (!revision) {
+    return { success: false, code: 'REVISION_NOT_FOUND', workflow_id: workflowId, revision_id: id, message: '未找到要恢复的版本。' };
+  }
+  if (!revision.snapshot) {
+    return { success: false, code: 'REVISION_SNAPSHOT_MISSING', workflow_id: workflowId, revision_id: id, message: '该历史版本没有快照，无法恢复。' };
+  }
+  const restored = normalizeHtmlVideoProject({
+    ...revision.snapshot,
+    revisions: Array.isArray(project.revisions) ? project.revisions : [],
+  });
+  htmlVideoProjectStore.addRevision(restored, {
+    summary: `已恢复到版本 ${id}。`,
+    change: { type: 'restore_revision', revision_id: id },
+  });
+  const saved = await htmlVideoProjectStore.saveProject(projectDir, restored);
+  return {
+    success: true,
+    workflow_id: workflowId,
+    revision_id: id,
+    html_video_project: decorateHtmlVideoProject(saved),
+    html_video_project_path: projectDir,
+    requires_render: true,
+    message: `已恢复到版本 ${id}，需要重新导出成片。`,
+  };
+}
+
+async function readProjectTtsManifest(projectDir, project = {}) {
+  const manifestPath = safeString(project.audio?.tts_manifest_path);
+  if (!manifestPath) return null;
+  try {
+    const absolute = htmlVideoProjectStore.resolveProjectPath(projectDir, manifestPath);
+    return JSON.parse(await fsp.readFile(absolute, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+async function getHtmlVideoProjectNarrationFile(workflowId, frameId, options = {}) {
+  const rootDir = options.rootDir || DEFAULT_ROOT;
+  const { project, projectDir, error } = await loadWorkflowWithHtmlVideoProject(workflowId, rootDir);
+  if (error) return error;
+  const target = findFrameByAnyId(project, frameId);
+  if (!target) return { success: false, code: 'FRAME_NOT_FOUND', workflow_id: workflowId, frame_id: frameId, message: '未找到旁白所属帧。' };
+  const manifest = await readProjectTtsManifest(projectDir, project);
+  const sceneId = safeString(target.scene_id || target.id);
+  const scene = (Array.isArray(manifest?.scenes) ? manifest.scenes : []).find(item => safeString(item?.scene_id || item?.id) === sceneId);
+  const relativePath = safeString(scene?.relative_path || scene?.relativePath);
+  if (!relativePath) return { success: false, code: 'NARRATION_FILE_NOT_FOUND', workflow_id: workflowId, frame_id: frameId, message: '未找到该帧旁白音频文件。' };
+  try {
+    const filePath = htmlVideoProjectStore.resolveProjectPath(projectDir, relativePath);
+    const stat = await fsp.stat(filePath);
+    if (!stat.isFile()) throw new Error('not file');
+    return { success: true, workflow_id: workflowId, frame_id: frameId, file_path: filePath };
+  } catch {
+    return { success: false, code: 'NARRATION_FILE_NOT_FOUND', workflow_id: workflowId, frame_id: frameId, message: '旁白音频文件不存在。' };
+  }
+}
+
+async function getHtmlVideoProjectSfxEventFile(workflowId, eventId, options = {}) {
+  const rootDir = options.rootDir || DEFAULT_ROOT;
+  const { project, projectDir, error } = await loadWorkflowWithHtmlVideoProject(workflowId, rootDir);
+  if (error) return error;
+  const event = (Array.isArray(project.audio?.sfx?.events) ? project.audio.sfx.events : [])
+    .find(item => safeString(item?.id) === safeString(eventId));
+  if (!event) return { success: false, code: 'SFX_EVENT_NOT_FOUND', workflow_id: workflowId, event_id: eventId, message: '未找到音效。' };
+  const relativePath = safeString(event.asset_path || event.assetPath);
+  if (!relativePath) return { success: false, code: 'SFX_FILE_NOT_FOUND', workflow_id: workflowId, event_id: eventId, message: '该音效没有可试听文件。' };
+  try {
+    const filePath = htmlVideoProjectStore.resolveProjectPath(projectDir, relativePath);
+    const stat = await fsp.stat(filePath);
+    if (!stat.isFile()) throw new Error('not file');
+    return { success: true, workflow_id: workflowId, event_id: eventId, file_path: filePath };
+  } catch {
+    return { success: false, code: 'SFX_FILE_NOT_FOUND', workflow_id: workflowId, event_id: eventId, message: '音效文件不存在。' };
+  }
+}
+
 async function listHtmlVideoProjectExports(workflowId, options = {}) {
   const rootDir = options.rootDir || DEFAULT_ROOT;
   const { project, projectDir, error } = await loadWorkflowWithHtmlVideoProject(workflowId, rootDir);
@@ -2848,6 +3091,64 @@ async function listHtmlVideoProjectExports(workflowId, options = {}) {
     workflow_id: workflowId,
     html_video_project_path: projectDir,
     exports: Array.isArray(project.exports) ? project.exports : [],
+  };
+}
+
+async function patchHtmlVideoProjectExport(workflowId, exportId, payload = {}, options = {}) {
+  const rootDir = options.rootDir || DEFAULT_ROOT;
+  const { project, projectDir, error } = await loadWorkflowWithHtmlVideoProject(workflowId, rootDir);
+  if (error) return error;
+  const safeExportId = safeString(exportId);
+  const exportItem = (Array.isArray(project.exports) ? project.exports : [])
+    .find(item => String(item?.id || '') === safeExportId);
+  if (!exportItem) {
+    return { success: false, code: 'EXPORT_NOT_FOUND', workflow_id: workflowId, export_id: safeExportId, message: '未找到导出记录。' };
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'note')) exportItem.note = String(payload.note || '');
+  if (Object.prototype.hasOwnProperty.call(payload, 'file_name') || Object.prototype.hasOwnProperty.call(payload, 'fileName')) {
+    exportItem.file_name = sanitizeExportFileName(payload.file_name || payload.fileName, exportItem.id || 'export');
+  }
+  exportItem.updated_at = getNow(options.services || {});
+  const saved = await htmlVideoProjectStore.saveProject(projectDir, project);
+  return {
+    success: true,
+    workflow_id: workflowId,
+    export_id: safeExportId,
+    export: exportItem,
+    html_video_project: decorateHtmlVideoProject(saved),
+    html_video_project_path: projectDir,
+    message: '导出记录已更新。',
+  };
+}
+
+async function deleteHtmlVideoProjectExport(workflowId, exportId, options = {}) {
+  const rootDir = options.rootDir || DEFAULT_ROOT;
+  const { project, projectDir, error } = await loadWorkflowWithHtmlVideoProject(workflowId, rootDir);
+  if (error) return error;
+  const safeExportId = safeString(exportId);
+  const exportsList = Array.isArray(project.exports) ? project.exports : [];
+  const index = exportsList.findIndex(item => String(item?.id || '') === safeExportId);
+  if (index < 0) {
+    return { success: false, code: 'EXPORT_NOT_FOUND', workflow_id: workflowId, export_id: safeExportId, message: '未找到导出记录。' };
+  }
+  const [exportItem] = exportsList.splice(index, 1);
+  if (exportItem?.path) {
+    try {
+      await fsp.rm(htmlVideoProjectStore.resolveProjectPath(projectDir, exportItem.path), { force: true });
+    } catch {}
+  }
+  htmlVideoProjectStore.addRevision(project, {
+    summary: '导出记录已删除。',
+    change: { type: 'delete_export', export_id: safeExportId },
+  });
+  const saved = await htmlVideoProjectStore.saveProject(projectDir, project);
+  return {
+    success: true,
+    workflow_id: workflowId,
+    export_id: safeExportId,
+    html_video_project: decorateHtmlVideoProject(saved),
+    html_video_project_path: projectDir,
+    message: '导出记录和本地文件已删除。',
   };
 }
 
@@ -2976,7 +3277,15 @@ module.exports = {
   editHtmlVideoProject,
   renderHtmlVideoProject,
   exportHtmlVideoProject,
+  createHtmlVideoProjectPreview,
+  listHtmlVideoProjectPreviews,
+  listHtmlVideoProjectRevisions,
+  restoreHtmlVideoProjectRevision,
+  getHtmlVideoProjectNarrationFile,
+  getHtmlVideoProjectSfxEventFile,
   listHtmlVideoProjectExports,
+  patchHtmlVideoProjectExport,
+  deleteHtmlVideoProjectExport,
   getHtmlVideoProjectExportFile,
   getCreativeWorkflowAssetFile,
   extractHtmlVideoProjectPathFromWorkflow,

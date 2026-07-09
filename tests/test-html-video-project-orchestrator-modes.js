@@ -131,6 +131,57 @@ async function writeFile(filePath, content) {
   assert.equal(autoFitExport.project.timeline.tracks[0].items[0].duration_sec, 3.2);
   assert.ok(autoFitExport.diagnostics.some(item => item.code === 'frame_duration_auto_extended'));
 
+  const ttsFitDir = path.join(rootDir, 'tts-fit-project');
+  await writeFile(path.join(ttsFitDir, 'tts', 'audio_manifest.json'), JSON.stringify({
+    scenes: [
+      { scene_id: 'scene_tts_01', relative_path: 'tts/scene_tts_01.mp3', duration: 2.8 },
+      { scene_id: 'scene_tts_02', relative_path: 'tts/scene_tts_02.mp3', duration: 3.6 },
+    ],
+  }));
+  const ttsFitRenderCalls = [];
+  const ttsFitExport = await orchestrator.exportHtmlVideoProject({
+    projectDir: ttsFitDir,
+    project: {
+      ...project,
+      project_id: 'wf_tts_fit',
+      run_id: 'tts-fit',
+      audio: { status: 'ready', tts_manifest_path: 'tts/audio_manifest.json' },
+      frames: [
+        { id: 'frame_tts_01', scene_id: 'scene_tts_01', template_id: 'simple', inputs: { headline: '一' }, duration_sec: 2 },
+        { id: 'frame_tts_02', scene_id: 'scene_tts_02', template_id: 'simple', inputs: { headline: '二' }, duration_sec: 3 },
+      ],
+      timeline: {
+        tracks: [{
+          id: 'main',
+          type: 'video',
+          items: [
+            { id: 'item_tts_01', kind: 'frame', frame_id: 'frame_tts_01', start_sec: 0, duration_sec: 2 },
+            { id: 'item_tts_02', kind: 'frame', frame_id: 'frame_tts_02', start_sec: 2, duration_sec: 3 },
+          ],
+        }],
+      },
+    },
+    templateRegistry,
+    services: {
+      frameRenderer: {
+        renderFrame: async (frame, options) => {
+          ttsFitRenderCalls.push({ id: frame.id, duration_sec: frame.duration_sec });
+          await writeFile(options.outputPath, 'mp4');
+          return { success: true, output_path: options.outputPath, diagnostics: [] };
+        },
+      },
+      ffmpegComposer: services.ffmpegComposer,
+    },
+  });
+  assert.equal(ttsFitExport.success, true);
+  assert.deepEqual(ttsFitRenderCalls, [
+    { id: 'frame_tts_01', duration_sec: 2.8 },
+    { id: 'frame_tts_02', duration_sec: 4 },
+  ]);
+  assert.equal(ttsFitExport.project.audio.tail_padding_sec, 0.4);
+  assert.ok(ttsFitExport.diagnostics.some(item => item.code === 'frame_duration_auto_extended_for_narration'));
+  assert.ok(ttsFitExport.diagnostics.some(item => item.code === 'narration_tail_padding_added'));
+
   const lockedRenderCalls = [];
   const lockedExport = await orchestrator.exportHtmlVideoProject({
     rootDir,

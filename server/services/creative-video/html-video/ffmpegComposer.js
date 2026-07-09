@@ -339,7 +339,8 @@ function buildAudioFilter(inputs, options) {
         ? input.volume_db
         : options.narrationVolumeDb;
     const fadeIn = input.role === 'sfx' ? 0 : Number(options.fadeInSec || 0);
-    const fadeOut = input.role === 'sfx' ? 0 : Number(options.fadeOutSec || 0);
+    // 旁白不能淡出，否则结尾一两个字会像被截断；保留音乐淡出即可。
+    const fadeOut = input.role === 'music' ? Number(options.fadeOutSec || 0) : 0;
     const outLabel = `${label}${index}`;
     const filters = [`volume=${Number(volume || 0)}dB`];
     if (input.role === 'sfx') {
@@ -433,10 +434,77 @@ async function muxAudioWithFfmpeg({
   return { success: true, output_path: outputPath, args };
 }
 
+/**
+ * 按导出倍速重编码最终成片，并在有音频时保持音画同步。
+ * @param {object} options 调速参数。
+ * @returns {Promise<object>} ffmpeg 执行结果。
+ */
+async function retimeVideoWithFfmpeg({
+  inputPath,
+  outputPath,
+  playbackSpeed = 1,
+  includeAudio = false,
+  fps = 30,
+  runCommand: runCommandImpl = runCommand,
+  ffmpegPath,
+} = {}) {
+  const speed = Number(playbackSpeed);
+  if (!inputPath || !outputPath) {
+    return { success: false, message: '视频调速失败：缺少输入或输出路径。' };
+  }
+  if (!Number.isFinite(speed) || speed <= 0) {
+    return { success: false, message: '视频调速失败：导出倍速无效。' };
+  }
+  if (Math.abs(speed - 1) < 0.001) {
+    return { success: true, skipped: true, output_path: inputPath, message: '导出倍速为 1x，跳过调速。' };
+  }
+
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  const ffmpeg = await getFfmpegCommand({ ffmpegPath, runCommand: runCommandImpl });
+  const videoFilter = `[0:v]setpts=PTS/${speed}[v]`;
+  const args = includeAudio ? [
+    '-y',
+    '-i', inputPath,
+    '-filter_complex', `${videoFilter};[0:a]atempo=${speed}[a]`,
+    '-map', '[v]',
+    '-map', '[a]',
+    '-c:v', 'libx264',
+    '-pix_fmt', 'yuv420p',
+    '-r', String(fps || 30),
+    '-c:a', 'aac',
+    '-b:a', '192k',
+    '-movflags', '+faststart',
+    outputPath,
+  ] : [
+    '-y',
+    '-i', inputPath,
+    '-filter_complex', videoFilter,
+    '-map', '[v]',
+    '-an',
+    '-c:v', 'libx264',
+    '-pix_fmt', 'yuv420p',
+    '-r', String(fps || 30),
+    '-movflags', '+faststart',
+    outputPath,
+  ];
+
+  const result = await runCommandImpl(ffmpeg, args);
+  if (!result.ok) {
+    return {
+      success: false,
+      message: `视频调速失败：${result.stderr || result.error || `ffmpeg exited ${result.code}`}`,
+      stderr: result.stderr || '',
+      args,
+    };
+  }
+  return { success: true, output_path: outputPath, args };
+}
+
 module.exports = {
   concatFramesWithFfmpeg,
   concatAudioWithFfmpeg,
   muxAudioWithFfmpeg,
+  retimeVideoWithFfmpeg,
   verifyDurationWithFfprobe,
   verifyAudioStreamWithFfprobe,
   getFfmpegCommand,

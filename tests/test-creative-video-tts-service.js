@@ -43,6 +43,7 @@ const {
   assert.deepEqual(calls.map(call => call.stylePrompt), ['', '']);
   assert.ok(result.audio_manifest.scenes[0].path.endsWith('scene_01.mp3'));
   assert.equal(result.audio_manifest.scenes[0].relative_path, 'tts/scene_01.mp3');
+  assert.equal(result.audio_manifest.scenes[0].duration, 1.5);
   assert.equal(await fs.readFile(result.audio_manifest.scenes[0].path, 'utf8'), 'audio:第一段旁白');
   assert.ok(await fs.readFile(path.join(projectDir, 'tts', 'audio_manifest.json'), 'utf8'));
 
@@ -92,10 +93,19 @@ const {
   assert.equal(local.audio_manifest.scenes[1].scene_id, 'scene_02');
   assert.equal(await fs.readFile(local.audio_manifest.scenes[1].path, 'utf8'), 'local:第二段旁白');
 
-  const projectAudio = { audio: { narration_path: 'old-combined.wav' } };
+  const projectAudio = {
+    frames: [
+      { id: 'scene_01', scene_id: 'scene_01', narration_text: '第一段旁白', narration_audio_stale: true },
+      { id: 'scene_02', scene_id: 'scene_02', narration_text: '第二段旁白', narration_audio_stale: true },
+    ],
+    audio: { narration_path: 'old-combined.wav' },
+  };
   tts.applyManifestToProjectAudio(projectAudio, sceneSpec, local.audio_manifest);
   assert.equal(projectAudio.audio.narration_path, null);
   assert.equal(projectAudio.audio.tts_manifest_path, 'tts/audio_manifest.json');
+  assert.equal(projectAudio.frames[0].narration_audio_stale, false);
+  assert.ok(projectAudio.frames[0].narration_audio_text_hash);
+  assert.equal(projectAudio.frames[0].narration_audio_duration_sec, 1.5);
 
   await fs.writeFile(path.join(projectDir, 'tts', 'scene_01.mp3'), 'old audio');
   const failed = await tts.synthesizeSceneNarration({

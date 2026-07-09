@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { CaptionsPanel } from './CaptionsPanel.jsx';
 import { ExportsPanel } from './ExportsPanel.jsx';
 import { HtmlVideoAiEditPanel } from './HtmlVideoAiEditPanel.jsx';
@@ -10,7 +10,9 @@ import { HtmlVideoQualityPanel } from './HtmlVideoQualityPanel.jsx';
 import { HtmlVideoSourcePanel } from './HtmlVideoSourcePanel.jsx';
 import { NarrationPanel } from './NarrationPanel.jsx';
 import { NaturalLanguageEditBox } from './NaturalLanguageEditBox.jsx';
+import { PreviewPanel } from './PreviewPanel.jsx';
 import { ProjectStatusBar } from './ProjectStatusBar.jsx';
+import { RevisionsPanel } from './RevisionsPanel.jsx';
 import { SfxPanel } from './SfxPanel.jsx';
 
 const TOOL_BUTTON_CLASS = 'min-h-8 rounded-md border border-slate-700 bg-slate-800 px-2.5 text-xs font-bold text-slate-100 transition hover:border-[#25f4ee]/60 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-55';
@@ -39,10 +41,14 @@ export function HtmlVideoProjectEditor({ editor, onExported }) {
     frame.id === editor.selectedFrameId || frame.scene_id === editor.selectedFrameId
   )) || editor.selectedFrame || null;
   const selectedFrameId = selectedFrame?.id || selectedFrame?.scene_id || '';
+  const selectedTailRisk = (editor.editState?.narration_tail_risk_frames || []).find(item => (
+    item.frame_id === selectedFrame?.id || item.frame_id === selectedFrame?.scene_id || item.scene_id === selectedFrame?.scene_id
+  )) || null;
 
   // 低频面板收进“更多”菜单，菜单项打开受控 Dialog；
   // onSelect 必须 preventDefault，否则菜单关闭的焦点归还会和 Dialog 焦点陷阱竞态
   const [activePanel, setActivePanel] = useState(null);
+  const [pendingExportPayload, setPendingExportPayload] = useState(null);
 
   function openPanel(event, panel) {
     event.preventDefault();
@@ -51,9 +57,28 @@ export function HtmlVideoProjectEditor({ editor, onExported }) {
     if (panel === 'source' && selectedFrameId) editor.loadFrameHtml(selectedFrameId);
   }
 
-  async function handleExport(payload) {
+  async function handleExport(payload = {}) {
+    if (editor.editState?.has_narration_text_outdated_audio && payload.force_use_stale_tts !== true) {
+      setPendingExportPayload(payload);
+      return null;
+    }
     const result = await editor.exportProject(payload);
     if (result) onExported?.(result);
+    return result;
+  }
+
+  async function continueExportWithStaleNarration() {
+    const payload = pendingExportPayload || {};
+    setPendingExportPayload(null);
+    await handleExport({ ...payload, force_use_stale_tts: true });
+  }
+
+  async function regenerateNarrationAndExport() {
+    const payload = pendingExportPayload || {};
+    const regenerated = await editor.regenerateAllNarration?.();
+    if (!regenerated || regenerated.requires_tts === true) return;
+    setPendingExportPayload(null);
+    await handleExport(payload);
   }
 
   function patchFrame(payload) {
@@ -63,19 +88,23 @@ export function HtmlVideoProjectEditor({ editor, onExported }) {
 
   return (
     <section className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-2 rounded-lg border border-slate-700 bg-slate-900 p-2 text-slate-100 shadow-[0_18px_48px_rgba(15,23,42,.18)]">
-      <ProjectStatusBar status={editor.status} message={editor.message} dirtyRequiresRender={editor.dirtyRequiresRender} />
+      <ProjectStatusBar status={editor.status} message={editor.message} dirtyRequiresRender={editor.dirtyRequiresRender} editState={editor.editState} />
       <div className="flex flex-wrap items-center gap-2">
         <PanelDialog label="字幕 / 旁白" title="字幕 / 旁白">
           <div className="grid content-start gap-3">
             <CaptionsPanel captions={selectedFrame?.captions || []} selectedFrameId={selectedFrameId} disabled={disabled} onSave={patchFrame} />
             <NarrationPanel
               narration={selectedFrame?.narration_text || ''}
+              audioUrl={selectedFrameId ? editor.getNarrationPlaybackUrl?.(selectedFrameId) : ''}
+              stale={selectedFrame?.narration_audio_stale === true}
+              tailRisk={selectedTailRisk}
               disabled={disabled || !selectedFrameId}
               onSave={(payload) => editor.saveFrame(selectedFrameId, {
                 type: 'frame_patch',
                 narration_text: payload.text || '',
               })}
               onRegenerate={(payload) => editor.regenerateNarration(selectedFrameId, payload)}
+              onRegenerateAll={editor.regenerateAllNarration}
             />
           </div>
         </PanelDialog>
@@ -112,6 +141,8 @@ export function HtmlVideoProjectEditor({ editor, onExported }) {
           </DropdownMenuPrimitive.Trigger>
           <DropdownMenuPrimitive.Portal>
             <DropdownMenuPrimitive.Content align="start" sideOffset={6} className="z-50 min-w-[168px] rounded-md border border-slate-700 bg-slate-800 p-1 shadow-[0_16px_40px_rgba(2,6,23,.5)]">
+              <DropdownMenuPrimitive.Item className={MENU_ITEM_CLASS} onSelect={(event) => openPanel(event, 'preview')}>全片预览</DropdownMenuPrimitive.Item>
+              <DropdownMenuPrimitive.Item className={MENU_ITEM_CLASS} onSelect={(event) => openPanel(event, 'revisions')}>版本历史</DropdownMenuPrimitive.Item>
               <DropdownMenuPrimitive.Item className={MENU_ITEM_CLASS} onSelect={(event) => openPanel(event, 'layout-qa')}>布局检查</DropdownMenuPrimitive.Item>
               <DropdownMenuPrimitive.Item className={MENU_ITEM_CLASS} onSelect={(event) => openPanel(event, 'source')}>源码</DropdownMenuPrimitive.Item>
               <DropdownMenuPrimitive.Item className={MENU_ITEM_CLASS} onSelect={(event) => openPanel(event, 'exports')}>导出记录</DropdownMenuPrimitive.Item>
@@ -128,6 +159,40 @@ export function HtmlVideoProjectEditor({ editor, onExported }) {
           {editor.status === 'exporting' ? '正在导出成片...' : '导出成片'}
         </button>
       </div>
+      <Dialog open={Boolean(pendingExportPayload)} onOpenChange={(open) => { if (!open) setPendingExportPayload(null); }}>
+        <DialogContent className="bg-[#f8fafc] text-[#111827]">
+          <DialogHeader>
+            <DialogTitle>旁白音频待重生成</DialogTitle>
+            <DialogDescription>
+              当前有 {editor.editState?.stale_narration_count || 0} 个镜头的旁白文本已更新，但音频仍是旧版本。建议先重新生成旁白再导出。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex flex-wrap justify-end gap-2">
+            <button className={TOOL_BUTTON_CLASS} type="button" disabled={disabled} onClick={() => setPendingExportPayload(null)}>取消</button>
+            <button className={TOOL_BUTTON_CLASS} type="button" disabled={disabled} onClick={continueExportWithStaleNarration}>继续使用旧旁白导出</button>
+            <button className={PRIMARY_TOOL_BUTTON_CLASS} type="button" disabled={disabled} onClick={regenerateNarrationAndExport}>重新生成旁白并导出</button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={activePanel === 'preview'} onOpenChange={(open) => { if (!open) setActivePanel(null); }}>
+        <DialogContent className={`max-h-[84vh] overflow-y-auto overflow-x-hidden ${LIGHT_SCROLLBAR_CLASS}`}>
+          <DialogHeader><DialogTitle>全片预览</DialogTitle></DialogHeader>
+          <PreviewPanel
+            previews={editor.previewsList}
+            disabled={disabled}
+            generating={editor.status === 'previewing'}
+            previewOutdated={editor.editState?.preview_outdated}
+            onCreatePreview={editor.createPreview}
+            getExportPlaybackUrl={editor.getExportPlaybackUrl}
+          />
+        </DialogContent>
+      </Dialog>
+      <Dialog open={activePanel === 'revisions'} onOpenChange={(open) => { if (!open) setActivePanel(null); }}>
+        <DialogContent className={`max-h-[84vh] overflow-y-auto overflow-x-hidden ${LIGHT_SCROLLBAR_CLASS}`}>
+          <DialogHeader><DialogTitle>版本历史</DialogTitle></DialogHeader>
+          <RevisionsPanel revisions={editor.revisionsList} disabled={disabled} onRestore={editor.restoreRevision} />
+        </DialogContent>
+      </Dialog>
       <Dialog open={activePanel === 'layout-qa'} onOpenChange={(open) => { if (!open) setActivePanel(null); }}>
         <DialogContent className={`max-h-[84vh] overflow-y-auto overflow-x-hidden ${LIGHT_SCROLLBAR_CLASS}`}>
           <DialogHeader><DialogTitle>布局检查</DialogTitle></DialogHeader>
@@ -166,6 +231,8 @@ export function HtmlVideoProjectEditor({ editor, onExported }) {
             onExport={handleExport}
             onRefresh={editor.refreshExports}
             getExportPlaybackUrl={editor.getExportPlaybackUrl}
+            onPatchExport={editor.patchExportRecord}
+            onDeleteExport={editor.deleteExportRecord}
           />
         </DialogContent>
       </Dialog>
@@ -178,6 +245,8 @@ export function HtmlVideoProjectEditor({ editor, onExported }) {
             disabled={disabled}
             deletingSfxEventId={editor.deletingSfxEventId}
             onDisableEvent={editor.disableSfxEvent}
+            onUpdateEvent={editor.updateSfxEvent}
+            getSfxEventPlaybackUrl={editor.getSfxEventPlaybackUrl}
           />
         </DialogContent>
       </Dialog>

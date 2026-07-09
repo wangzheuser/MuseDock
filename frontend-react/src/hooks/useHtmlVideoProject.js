@@ -46,6 +46,102 @@ function getLatestEditPlan(project) {
   return [...sessions].reverse().find(session => session?.kind === 'edit_plan') || null;
 }
 
+function timeMs(value) {
+  const ms = Date.parse(String(value || ''));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function latestItem(items = []) {
+  return [...(Array.isArray(items) ? items : [])]
+    .sort((a, b) => timeMs(b?.created_at || b?.createdAt) - timeMs(a?.created_at || a?.createdAt))[0] || null;
+}
+
+function activeDrafts(project) {
+  return (Array.isArray(project?.frames) ? project.frames : []).flatMap((frame, index) => {
+    const drafts = Array.isArray(frame?.drafts) ? frame.drafts : [];
+    const activeDraftId = String(frame?.active_draft_id || frame?.activeDraftId || '');
+    return drafts
+      .filter(draft => draft?.status !== 'discarded' && draft?.status !== 'accepted' && (activeDraftId ? draft?.id === activeDraftId : true))
+      .map(draft => ({
+        frame_id: frame?.id || frame?.scene_id || '',
+        order: Number.isFinite(Number(frame?.order)) ? Number(frame.order) : index + 1,
+        draft_id: draft?.id || '',
+        summary: draft?.summary || draft?.instruction || '',
+      }));
+  });
+}
+
+function latestLayoutQaReport(project, currentLayoutQa) {
+  if (currentLayoutQa) return currentLayoutQa;
+  return latestItem(project?.layout_qa_reports || project?.layoutQaReports || []);
+}
+
+function blockingLayoutIssues(layoutQa) {
+  const issues = Array.isArray(layoutQa?.issues) ? layoutQa.issues : [];
+  return issues.filter(issue => !['warning', 'info'].includes(String(issue?.severity || '').toLowerCase()));
+}
+
+function staleNarrationFrames(project) {
+  return (Array.isArray(project?.frames) ? project.frames : [])
+    .filter(frame => frame?.narration_audio_stale === true && String(frame?.narration_text || '').trim())
+    .map((frame, index) => ({
+      frame_id: frame?.id || frame?.scene_id || '',
+      order: Number.isFinite(Number(frame?.order)) ? Number(frame.order) : index + 1,
+      title: frame?.title || frame?.metadata?.visual_text?.headline || frame?.inputs?.headline || '',
+    }));
+}
+
+function narrationTailRiskFrames(project) {
+  return (Array.isArray(project?.frames) ? project.frames : [])
+    .map((frame, index) => {
+      const duration = Number(frame?.duration_sec ?? frame?.durationSec ?? frame?.duration ?? 0);
+      const audioDuration = Number(frame?.narration_audio_duration_sec ?? frame?.narrationAudioDurationSec ?? 0);
+      return {
+        frame_id: frame?.id || frame?.scene_id || '',
+        order: Number.isFinite(Number(frame?.order)) ? Number(frame.order) : index + 1,
+        title: frame?.title || frame?.metadata?.visual_text?.headline || frame?.inputs?.headline || '',
+        overflow_sec: Math.round((audioDuration - duration) * 1000) / 1000,
+      };
+    })
+    .filter(frame => frame.overflow_sec > 0.05 && frame.frame_id);
+}
+
+function buildEditState(project, exportsList, layoutQa) {
+  const serverState = project?.edit_state || project?.editState || {};
+  const drafts = activeDrafts(project);
+  const staleFrames = staleNarrationFrames(project);
+  const tailRiskFrames = narrationTailRiskFrames(project);
+  const qa = latestLayoutQaReport(project, layoutQa);
+  const issues = blockingLayoutIssues(qa);
+  const revisions = Array.isArray(project?.revisions) ? project.revisions : [];
+  const latestRevision = latestItem(revisions);
+  const latestExport = latestItem((Array.isArray(exportsList) ? exportsList : []).filter(item => item?.kind !== 'preview')) || latestItem(exportsList);
+  const latestPreview = latestItem((Array.isArray(exportsList) ? exportsList : []).filter(item => item?.kind === 'preview'));
+  const latestRevisionMs = timeMs(latestRevision?.created_at || latestRevision?.createdAt);
+  const latestExportMs = timeMs(latestExport?.created_at || latestExport?.createdAt);
+  const latestPreviewMs = timeMs(latestPreview?.created_at || latestPreview?.createdAt);
+  return {
+    ...serverState,
+    active_drafts: serverState.active_drafts || drafts,
+    active_draft_count: serverState.active_draft_count ?? drafts.length,
+    has_pending_html_draft: serverState.has_pending_html_draft ?? drafts.length > 0,
+    stale_narration_frames: serverState.stale_narration_frames || staleFrames,
+    stale_narration_count: serverState.stale_narration_count ?? staleFrames.length,
+    has_narration_text_outdated_audio: serverState.has_narration_text_outdated_audio ?? staleFrames.length > 0,
+    narration_tail_risk_frames: serverState.narration_tail_risk_frames || tailRiskFrames,
+    narration_tail_risk_count: serverState.narration_tail_risk_count ?? tailRiskFrames.length,
+    has_narration_tail_risk: serverState.has_narration_tail_risk ?? tailRiskFrames.length > 0,
+    narration_tail_risk_max_overflow_sec: serverState.narration_tail_risk_max_overflow_sec ?? Math.max(0, ...tailRiskFrames.map(frame => frame.overflow_sec || 0)),
+    layout_issue_count: serverState.layout_issue_count ?? issues.length,
+    has_layout_issues: serverState.has_layout_issues ?? issues.length > 0,
+    latest_revision: serverState.latest_revision || latestRevision || null,
+    latest_export: serverState.latest_export || latestExport || null,
+    latest_preview: serverState.latest_preview || latestPreview || null,
+    export_outdated: serverState.export_outdated ?? (latestRevisionMs > 0 && (!latestExportMs || latestRevisionMs > latestExportMs)),
+    preview_outdated: serverState.preview_outdated ?? (latestRevisionMs > 0 && (!latestPreviewMs || latestRevisionMs > latestPreviewMs)),
+  };
+}
+
 function hasExplicitProjectResult(result) {
   return Boolean(result?.html_video_project || result?.project || result?.data?.html_video_project || result?.data?.project);
 }
@@ -74,6 +170,9 @@ const STATUS_MESSAGES = {
   rendering: '正在渲染单帧预览...',
   exporting: '正在导出成片（合成较慢，请保持页面打开）...',
   tts: '正在重新生成旁白...',
+  tts_all: '正在重新生成全片旁白...',
+  previewing: '正在生成全片预览...',
+  restoring_revision: '正在恢复历史版本...',
   sfx: '正在更新自动音效...',
   loading_source: '正在加载当前帧源码...',
   saving_source: '正在保存帧源码草稿...',
@@ -232,8 +331,9 @@ export function useHtmlVideoProject({ workflowId, api }) {
     }
   }, [workflowId, api, applyProjectResult, setFailure]);
 
-  const loadFrameHtml = useCallback((frameId) => (
-    runMutatingAction({
+  const loadFrameHtml = useCallback((frameId) => {
+    setFrameHtml('');
+    return runMutatingAction({
       nextStatus: 'loading_source',
       loadingMessage: STATUS_MESSAGES.loading_source,
       successMessage: '当前帧源码已加载。',
@@ -244,8 +344,8 @@ export function useHtmlVideoProject({ workflowId, api }) {
         applySecondaryResult(result);
         setFrameHtml(getFrameHtml(result));
       },
-    })
-  ), [api, workflowId, runMutatingAction, applySecondaryResult]);
+    });
+  }, [api, workflowId, runMutatingAction, applySecondaryResult]);
 
   const saveFrameHtmlDraft = useCallback((frameId, payload) => (
     runMutatingAction({
@@ -457,21 +557,82 @@ export function useHtmlVideoProject({ workflowId, api }) {
     })
   ), [api, workflowId, runMutatingAction]);
 
-  const disableSfxEvent = useCallback((eventId) => {
+  const regenerateAllNarration = useCallback(() => (
+    runMutatingAction({
+      nextStatus: 'tts_all',
+      loadingMessage: STATUS_MESSAGES.tts_all,
+      successMessage: '全片旁白已更新，需要重新导出成片。',
+      fallbackMessage: '重新生成全片旁白失败。',
+      action: () => api.editHtmlVideoProject(workflowId, { type: 'tts' }),
+    })
+  ), [api, workflowId, runMutatingAction]);
+
+  const updateSfxEvent = useCallback((eventId, payload = {}) => {
     const id = String(eventId || '').trim();
     if (!id) return null;
     setDeletingSfxEventId(id);
     return runMutatingAction({
       nextStatus: 'sfx',
       loadingMessage: STATUS_MESSAGES.sfx,
-      successMessage: '音效已删除，重新导出后生效。',
-      fallbackMessage: '删除音效失败，请重试。',
-      action: () => api.patchHtmlVideoProjectSfxEvent(workflowId, id, { enabled: false }),
+      successMessage: payload.enabled === false ? '音效已停用，重新导出后生效。' : '音效设置已更新，重新导出后生效。',
+      fallbackMessage: '更新音效失败，请重试。',
+      action: () => api.patchHtmlVideoProjectSfxEvent(workflowId, id, payload),
       onSuccess: () => setDeletingSfxEventId(''),
     }).finally(() => {
       if (mountedRef.current) setDeletingSfxEventId('');
     });
   }, [api, workflowId, runMutatingAction]);
+
+  const disableSfxEvent = useCallback((eventId) => updateSfxEvent(eventId, { enabled: false }), [updateSfxEvent]);
+
+  const createPreview = useCallback((payload = {}) => (
+    runMutatingAction({
+      nextStatus: 'previewing',
+      loadingMessage: Number(payload?.export_options?.playback_speed || payload?.exportOptions?.playbackSpeed || 1) === 1
+        ? STATUS_MESSAGES.previewing
+        : `正在按 ${payload.export_options?.playback_speed || payload.exportOptions?.playbackSpeed}x 生成全片预览...`,
+      successMessage: '全片预览已生成。',
+      fallbackMessage: '生成全片预览失败。',
+      action: async () => {
+        const result = await api.createHtmlVideoProjectPreview(workflowId, payload);
+        if (api.listHtmlVideoProjectExports) {
+          const exportResult = await api.listHtmlVideoProjectExports(workflowId);
+          return { ...result, exports: getExports(exportResult) };
+        }
+        return result;
+      },
+    })
+  ), [api, workflowId, runMutatingAction]);
+
+  const restoreRevision = useCallback((revisionId) => (
+    runMutatingAction({
+      nextStatus: 'restoring_revision',
+      loadingMessage: STATUS_MESSAGES.restoring_revision,
+      successMessage: '历史版本已恢复，需要重新导出成片。',
+      fallbackMessage: '恢复历史版本失败。',
+      action: () => api.restoreHtmlVideoProjectRevision(workflowId, revisionId),
+    })
+  ), [api, workflowId, runMutatingAction]);
+
+  const patchExportRecord = useCallback((exportId, payload = {}) => (
+    runMutatingAction({
+      nextStatus: 'saving',
+      loadingMessage: '正在更新导出记录...',
+      successMessage: '导出记录已更新。',
+      fallbackMessage: '更新导出记录失败。',
+      action: () => api.patchHtmlVideoProjectExport(workflowId, exportId, payload),
+    })
+  ), [api, workflowId, runMutatingAction]);
+
+  const deleteExportRecord = useCallback((exportId) => (
+    runMutatingAction({
+      nextStatus: 'saving',
+      loadingMessage: '正在删除导出记录...',
+      successMessage: '导出记录和本地文件已删除。',
+      fallbackMessage: '删除导出记录失败。',
+      action: () => api.deleteHtmlVideoProjectExport(workflowId, exportId),
+    })
+  ), [api, workflowId, runMutatingAction]);
 
   const refreshExports = useCallback(async () => {
     if (!workflowId || !api?.listHtmlVideoProjectExports || loadingRef.current) return null;
@@ -504,10 +665,22 @@ export function useHtmlVideoProject({ workflowId, api }) {
     return api.getHtmlVideoProjectExportFileUrl(workflowId, exportId);
   }, [api, workflowId]);
 
+  const getNarrationPlaybackUrl = useCallback((frameId) => {
+    if (!workflowId || !frameId || !api?.getHtmlVideoProjectNarrationFileUrl) return '';
+    return api.getHtmlVideoProjectNarrationFileUrl(workflowId, frameId);
+  }, [api, workflowId]);
+
+  const getSfxEventPlaybackUrl = useCallback((eventId) => {
+    if (!workflowId || !eventId || !api?.getHtmlVideoProjectSfxEventFileUrl) return '';
+    return api.getHtmlVideoProjectSfxEventFileUrl(workflowId, eventId);
+  }, [api, workflowId]);
+
   const exportProject = useCallback((payload = {}) => (
     runMutatingAction({
       nextStatus: 'exporting',
-      loadingMessage: STATUS_MESSAGES.exporting,
+      loadingMessage: Number(payload?.export_options?.playback_speed || payload?.exportOptions?.playbackSpeed || 1) === 1
+        ? STATUS_MESSAGES.exporting
+        : `正在按 ${payload.export_options?.playback_speed || payload.exportOptions?.playbackSpeed}x 导出成片...`,
       successMessage: '成片已导出。',
       fallbackMessage: '导出成片失败。',
       action: async () => {
@@ -520,6 +693,10 @@ export function useHtmlVideoProject({ workflowId, api }) {
       },
     })
   ), [api, workflowId, runMutatingAction]);
+
+  const editState = useMemo(() => buildEditState(project, exportsList, layoutQa), [project, exportsList, layoutQa]);
+  const previewsList = useMemo(() => exportsList.filter(item => item?.kind === 'preview'), [exportsList]);
+  const revisionsList = useMemo(() => (Array.isArray(project?.revisions) ? project.revisions : []), [project]);
 
   return {
     project,
@@ -535,6 +712,9 @@ export function useHtmlVideoProject({ workflowId, api }) {
     frameHtml,
     layoutQa,
     editPlan,
+    editState,
+    previewsList,
+    revisionsList,
     deletingSfxEventId,
     disabled: loading || isMutating,
     dirtyRequiresRender,
@@ -557,9 +737,17 @@ export function useHtmlVideoProject({ workflowId, api }) {
     materializeProject,
     renderFramePreview,
     regenerateNarration,
+    regenerateAllNarration,
+    updateSfxEvent,
     disableSfxEvent,
+    createPreview,
+    restoreRevision,
     exportProject,
     refreshExports,
+    patchExportRecord,
+    deleteExportRecord,
     getExportPlaybackUrl,
+    getNarrationPlaybackUrl,
+    getSfxEventPlaybackUrl,
   };
 }

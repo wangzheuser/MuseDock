@@ -19,19 +19,20 @@ assert.match(editor, /SfxPanel/);
 assert.match(editor, />音效</);
 assert.match(editor, /activePanel === 'sfx'/);
 assert.match(panel, /当前工程还没有自动音效。/);
-assert.match(panel, /删除中\.\.\./);
-assert.match(panel, /删除/);
+assert.match(panel, /停用中\.\.\./);
+assert.match(panel, /停用/);
 // 面板复用 editorUi 共享原语，不再自造卡片样式
 assert.match(panel, /EditorSection/);
 assert.doesNotMatch(panel, /data-success-message/);
 assert.match(panel, /time_sec/);
 assert.match(panel, /global_time_sec/);
-assert.match(panel, /border-red-200/);
+assert.match(panel, /保存音效设置/);
+assert.match(panel, /显示已停用音效/);
 assert.doesNotMatch(panel, /start_seconds/);
 assert.match(hook, /disableSfxEvent/);
 assert.match(hook, /deletingSfxEventId/);
-// 删除成功文案属于 hook（真正展示它的地方），不在面板里造死属性
-assert.match(hook, /音效已删除，重新导出后生效。/);
+// 停用成功文案属于 hook（真正展示它的地方），不在面板里造死属性
+assert.match(hook, /音效已停用|音效设置已更新/);
 assert.match(api, /patchHtmlVideoProjectSfxEvent/);
 
 console.log('html-video sfx panel tests passed');

@@ -1,4 +1,6 @@
 const projectStore = require('./html-video/projectStore');
+const projectSchema = require('./html-video/projectSchema');
+const projectEditState = require('./html-video/projectEditState');
 const editPatchService = require('./html-video/editPatchService');
 const frameHtmlEditService = require('./html-video/frameHtmlEditService');
 const iterateService = require('./html-video/htmlVideoIterateService');
@@ -14,6 +16,9 @@ const sfxEventService = require('./html-video/sfxEventService');
 
 module.exports = {
   projectStore,
+  normalizeProject: projectSchema.normalizeProject,
+  buildProjectEditState: projectEditState.buildProjectEditState,
+  collectStaleNarrationFrames: projectEditState.collectStaleNarrationFrames,
   editPatchService,
   frameHtmlEditService,
   iterateService,
