@@ -36,6 +36,7 @@ function createDefaults(overrides = {}) {
     generateCaptions: true,
     autoSfxEnabled: true,
     emotionalVoice: false,
+    ttsVoice: 'mimo_default',
     sourceImageAnalysisEnabled: false,
     extractDouyinFrames: false,
     frameHtmlConcurrency: 1,
@@ -128,6 +129,7 @@ function assertSnapshotRecord(record, {
   generateCaptions = true,
   autoSfxEnabled = true,
   emotionalVoice = false,
+  ttsVoice = 'mimo_default',
   sourceImageAnalysisEnabled = false,
   extractDouyinFrames = false,
   frameHtmlConcurrency = 1,
@@ -142,6 +144,7 @@ function assertSnapshotRecord(record, {
   assert.equal(record.creative_defaults_snapshot.generateCaptions, generateCaptions);
   assert.equal(record.creative_defaults_snapshot.autoSfxEnabled, autoSfxEnabled);
   assert.equal(record.creative_defaults_snapshot.emotionalVoice, emotionalVoice);
+  assert.equal(record.creative_defaults_snapshot.ttsVoice, ttsVoice);
   assert.equal(record.creative_defaults_snapshot.sourceImageAnalysisEnabled, sourceImageAnalysisEnabled);
   assert.equal(record.creative_defaults_snapshot.extractDouyinFrames, extractDouyinFrames);
   assert.equal(record.creative_defaults_snapshot.frameHtmlConcurrency, frameHtmlConcurrency);
@@ -154,6 +157,7 @@ function assertSnapshotRecord(record, {
   assert.equal(record.target.generateCaptions, generateCaptions);
   assert.equal(record.target.autoSfxEnabled, autoSfxEnabled);
   assert.equal(record.target.emotionalVoice, emotionalVoice);
+  assert.equal(record.target.ttsVoice, ttsVoice);
   assert.equal(record.target.extractDouyinFrames, extractDouyinFrames);
   assert.equal(record.target.frameHtmlConcurrency, frameHtmlConcurrency);
   assert.equal(record.input.use_research, useResearch);
@@ -234,6 +238,16 @@ async function testCreativeDefaultsOverrideSourceImageAnalysisWins() {
   assertSnapshotRecord(record, { sourceImageAnalysisEnabled: true, extractDouyinFrames: true, frameHtmlConcurrency: 3 });
 }
 
+async function testCreativeDefaultsOverrideTtsVoiceWins() {
+  const { record } = await createAndRead({
+    creativeDefaultsOverride: {
+      ttsVoice: '茉莉',
+      emotionalVoice: true,
+    },
+  });
+  assertSnapshotRecord(record, { ttsVoice: '茉莉', emotionalVoice: true });
+}
+
 async function testMissingDefaultUseResearchDefaultsToTrue() {
   const defaults = createDefaults();
   delete defaults.useResearch;
@@ -286,6 +300,7 @@ async function testEmotionalVoiceDefaultPassesToAudioStage() {
 
   const audioCall = calls.find(call => call.name === 'audio');
   assert.ok(audioCall, 'audio stage should run');
+  assert.equal(audioCall.options.voice, 'mimo_default');
   assert.match(audioCall.options.stylePrompt, /情绪|停顿|语气/);
 }
 
@@ -307,6 +322,7 @@ async function testDisabledEmotionalVoicePassesNeutralAudioStyle() {
 
   const audioCall = calls.find(call => call.name === 'audio');
   assert.ok(audioCall, 'audio stage should run');
+  assert.equal(audioCall.options.voice, 'mimo_default');
   assert.match(audioCall.options.stylePrompt, /自然|清晰|语速稳定/);
   assert.doesNotMatch(audioCall.options.stylePrompt, /情绪起伏|停顿|加强语气/);
 }
@@ -330,7 +346,32 @@ async function testMiniMaxSpeech28KeepsEmotionalVoiceStyle() {
 
   const audioCall = calls.find(call => call.name === 'audio');
   assert.ok(audioCall, 'audio stage should run');
+  assert.equal(audioCall.options.voice, 'mimo_default');
   assert.match(audioCall.options.stylePrompt, /情绪|停顿|语气/);
+}
+
+async function testTtsVoiceDefaultPassesToAudioStage() {
+  const workflowId = '202606230000000009';
+  const { rootDir, mediaRoot } = createTempDirs();
+  const { services, calls } = createServices({
+    workflowId,
+    defaults: createDefaults({ ttsVoice: '白桃' }),
+  });
+
+  const created = await createCreativeWorkflow({
+    input: '旁白音色默认值测试',
+  }, { rootDir, mediaRoot, services });
+  assert.equal(created.success, true);
+
+  const record = readWorkflow(workflowId, rootDir);
+  assertSnapshotRecord(record, { ttsVoice: '白桃' });
+
+  const run = await runCreativeWorkflow(workflowId, { rootDir, mediaRoot, services });
+  assert.equal(run.success, true);
+
+  const audioCall = calls.find(call => call.name === 'audio');
+  assert.ok(audioCall, 'audio stage should run');
+  assert.equal(audioCall.options.voice, '白桃');
 }
 
 async function testSkipValidationUsesAppSettingsAndRunUsesRecordTarget() {
@@ -410,11 +451,13 @@ async function testSkipValidationUsesAppSettingsAndRunUsesRecordTarget() {
   await testCreativeDefaultsOverrideTemplateIdWins();
   await testCreativeDefaultsOverrideBeatsLegacyUseResearch();
   await testCreativeDefaultsOverrideSourceImageAnalysisWins();
+  await testCreativeDefaultsOverrideTtsVoiceWins();
   await testMissingDefaultUseResearchDefaultsToTrue();
   await testAutoSfxDefaultAndOverrideReachWorkflowTarget();
   await testEmotionalVoiceDefaultPassesToAudioStage();
   await testDisabledEmotionalVoicePassesNeutralAudioStyle();
   await testMiniMaxSpeech28KeepsEmotionalVoiceStyle();
+  await testTtsVoiceDefaultPassesToAudioStage();
   await testSkipValidationUsesAppSettingsAndRunUsesRecordTarget();
   console.log('creative workflow defaults tests passed');
 })().catch(error => {

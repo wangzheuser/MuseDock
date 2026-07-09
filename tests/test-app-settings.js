@@ -31,6 +31,7 @@ async function run() {
     autoSfxEnabled: true,
     generateCaptions: true,
     emotionalVoice: false,
+    ttsVoice: 'mimo_default',
     sourceImageAnalysisEnabled: false,
     extractDouyinFrames: false,
     frameHtmlConcurrency: 1,
@@ -58,6 +59,7 @@ async function run() {
       autoSfxEnabled: false,
       generateCaptions: false,
       emotionalVoice: true,
+      ttsVoice: '茉莉',
       sourceImageAnalysisEnabled: true,
       extractDouyinFrames: true,
       frameHtmlConcurrency: 99,
@@ -84,6 +86,7 @@ async function run() {
     autoSfxEnabled: false,
     generateCaptions: false,
     emotionalVoice: true,
+    ttsVoice: '茉莉',
     sourceImageAnalysisEnabled: true,
     extractDouyinFrames: true,
     frameHtmlConcurrency: 5,
@@ -135,6 +138,9 @@ async function run() {
   assert.equal(appSettings.normalizeCreativeDefaults({}).generateAudio, true);
   assert.equal(appSettings.normalizeCreativeDefaults({}).generateCaptions, true);
   assert.equal(appSettings.normalizeCreativeDefaults({}).emotionalVoice, false);
+  assert.equal(appSettings.normalizeCreativeDefaults({}).ttsVoice, 'mimo_default');
+  assert.equal(appSettings.normalizeCreativeDefaults({ ttsVoice: '茉莉' }).ttsVoice, '茉莉');
+  assert.equal(appSettings.normalizeCreativeDefaults({ ttsVoice: 'bad' }).ttsVoice, 'mimo_default');
   assert.equal(appSettings.normalizeCreativeDefaults({}).sourceImageAnalysisEnabled, false);
   assert.equal(appSettings.normalizeCreativeDefaults({}).extractDouyinFrames, false);
   assert.equal(appSettings.normalizeCreativeDefaults({}).frameHtmlConcurrency, 1);

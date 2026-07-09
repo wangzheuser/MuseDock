@@ -17,6 +17,9 @@ export function NarrationPanel({ narration, disabled, onSave, onRegenerate }) {
           <button type="button" disabled={disabled} onClick={() => onSave({ text: draft })}>保存旁白</button>
         </EditorInlineActions>
       </EditorPanelHeader>
+      <p className="m-0 text-xs leading-relaxed text-[#6b7280]">
+        重新生成旁白会使用设置中心已保存的最新 TTS 音色和情绪化配音配置。
+      </p>
       <textarea value={draft} disabled={disabled} rows={5} onChange={event => setDraft(event.target.value)} />
     </EditorPanel>
   );

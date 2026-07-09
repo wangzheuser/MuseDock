@@ -1,8 +1,15 @@
 const express = require('express');
 const storedCookies = require('../state/cookies');
 const aiModelConfig = require('../services/ai/aiModelConfig');
+const aiTtsModel = require('../services/ai/aiTtsModel');
 const appSettings = require('../services/appSettings');
 const { cleanupTargets, getSystemHealth } = require('../services/systemMaintenance');
+const {
+  DEFAULT_TTS_VOICE,
+  getTtsVoiceOptions,
+  normalizeTtsVoice,
+} = require('../services/tts/voiceOptions');
+const { getVoiceStylePrompt } = require('../services/tts/stylePrompts');
 const {
   DEFAULT_ROOT_DIR,
   DEFAULT_ROOT_DIRS,
@@ -15,6 +22,7 @@ const {
 
 const router = express.Router();
 const SUPPORTED_CLEANUP_TARGETS = new Set(['creative-workflows', 'media-cache', 'render-outputs', 'browser-data', 'cookies']);
+const TTS_PREVIEW_TEXT = '你好，这是一段 MuseDock 旁白音色试听。';
 
 async function getAppSettingsRoute(req, res) {
   try {
@@ -76,6 +84,99 @@ async function getConfigSystemHealthRoute(req, res) {
   }
 }
 
+/**
+ * 返回当前支持的 MiMo 旁白音色列表。
+ * @param {import('express').Request} req Express 请求。
+ * @param {import('express').Response} res Express 响应。
+ */
+async function getTtsVoicesRoute(req, res) {
+  res.json({
+    success: true,
+    data: {
+      defaultVoice: DEFAULT_TTS_VOICE,
+      voices: getTtsVoiceOptions(),
+    },
+  });
+}
+
+/**
+ * 判断运行时配置是否指向 MiMo TTS。
+ * @param {object} runtime TTS 运行时配置。
+ * @returns {boolean} 是否为 MiMo。
+ */
+function isMimoTtsRuntime(runtime = {}) {
+  const provider = String(runtime.provider || '').trim().toLowerCase();
+  const providerName = String(runtime.providerName || '').trim().toLowerCase();
+  const modelId = String(runtime.modelId || '').trim().toLowerCase();
+  return ['mimo', 'xiaomi', 'xiaomimimo'].includes(provider)
+    || ['mimo', 'xiaomi', 'xiaomimimo', '小米 mimo'].includes(providerName)
+    || modelId.startsWith('mimo');
+}
+
+/**
+ * 根据音频格式返回浏览器可播放的 MIME。
+ * @param {string} format TTS 返回的音频格式。
+ * @returns {string} MIME 类型。
+ */
+function audioMimeFromFormat(format) {
+  const value = String(format || '').trim().toLowerCase();
+  if (value === 'mp3' || value === 'mpeg') return 'audio/mpeg';
+  if (value === 'm4a' || value === 'mp4') return 'audio/mp4';
+  return 'audio/wav';
+}
+
+/**
+ * 使用当前 TTS 配置生成一段固定文案试听音频。
+ * @param {import('express').Request} req Express 请求。
+ * @param {import('express').Response} res Express 响应。
+ */
+async function previewTtsRoute(req, res) {
+  try {
+    const runtime = await aiModelConfig.getRuntimeConfig('tts');
+    if (!runtime || runtime.enabled !== true || !runtime.apiKey || !runtime.baseUrl || !runtime.modelId) {
+      return res.status(400).json({
+        success: false,
+        message: 'TTS 语音合成模型未配置。请先在设置页启用 TTS 模型，并填写 API Key、Base URL 和模型 ID。',
+      });
+    }
+    if (!isMimoTtsRuntime(runtime)) {
+      return res.status(400).json({
+        success: false,
+        message: '当前试听音色仅支持小米 MiMo TTS。请切换到 MiMo TTS 后再试听。',
+      });
+    }
+
+    const voice = normalizeTtsVoice(req.body?.voice);
+    const stylePrompt = getVoiceStylePrompt(req.body?.emotionalVoice === true);
+    // 试听不落盘，仅把临时音频转成 base64 返回给浏览器播放。
+    const result = await aiTtsModel.callTtsModel({
+      text: TTS_PREVIEW_TEXT,
+      voice,
+      stylePrompt,
+      ttsConfig: runtime,
+    });
+    if (!result?.success || !result.audioBuffer) {
+      return res.status(400).json({
+        success: false,
+        message: result?.message || '试听音色失败，请检查 TTS 配置。',
+      });
+    }
+
+    return res.json({
+      success: true,
+      voice: result.voice || voice,
+      model: result.model || {},
+      audio: {
+        mime: audioMimeFromFormat(result.format),
+        base64: result.audioBuffer.toString('base64'),
+      },
+      message: '试听音频已生成。',
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: `试听音色失败：${error.message}` });
+  }
+}
+
 async function cleanupConfigDataRoute(req, res) {
   const targets = Array.isArray(req.body?.targets)
     ? req.body.targets.map(target => String(target || '').trim()).filter(Boolean)
@@ -103,6 +204,8 @@ router.get('/app-settings', getAppSettingsRoute);
 router.post('/app-settings', saveAppSettingsRoute);
 router.get('/templates', getConfigTemplatesRoute);
 router.get('/system-health', getConfigSystemHealthRoute);
+router.get('/tts-voices', getTtsVoicesRoute);
+router.post('/tts-preview', previewTtsRoute);
 router.post('/maintenance/cleanup', cleanupConfigDataRoute);
 
 router.get('/ai-models', async (req, res) => {
@@ -125,3 +228,5 @@ router.post('/ai-models', async (req, res) => {
 
 module.exports = router;
 module.exports.cleanupConfigDataRoute = cleanupConfigDataRoute;
+module.exports.audioMimeFromFormat = audioMimeFromFormat;
+module.exports.isMimoTtsRuntime = isMimoTtsRuntime;

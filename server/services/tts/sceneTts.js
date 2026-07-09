@@ -8,20 +8,9 @@ const defaultTtsTimeline = require('./ttsTimeline');
 const defaultPhraseTimeline = require('./phraseTimeline');
 const defaultAudioQuality = require('./ttsAudioQuality');
 const { stripSpeechStageDirections } = require('./speechText');
+const { DEFAULT_TTS_VOICE, normalizeTtsVoice } = require('./voiceOptions');
 
-const DEFAULT_VOICE = 'mimo_default';
-const SUPPORTED_VOICES = new Set([
-  DEFAULT_VOICE,
-  '冰糖',
-  '茉莉',
-  '苏打',
-  '白桃',
-  '白桦',
-  'Mia',
-  'Chloe',
-  'Milo',
-  'Dean',
-]);
+const DEFAULT_VOICE = DEFAULT_TTS_VOICE;
 
 function roundTime(value) {
   return Math.round(Number(value || 0) * 1000) / 1000;
@@ -85,8 +74,7 @@ function getSceneAudioFileName(index, format = 'wav') {
 }
 
 function normalizeVoice(voice) {
-  const value = String(voice || '').trim();
-  return SUPPORTED_VOICES.has(value) ? value : DEFAULT_VOICE;
+  return normalizeTtsVoice(voice);
 }
 
 function fail(message, extra = {}) {

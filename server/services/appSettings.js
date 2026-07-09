@@ -2,6 +2,7 @@ const fsp = require('fs/promises');
 const path = require('path');
 
 const aiModelConfig = require('./ai/aiModelConfig');
+const { DEFAULT_TTS_VOICE, normalizeTtsVoice } = require('./tts/voiceOptions');
 
 const DEFAULT_CONFIG_PATH = path.join(require('../dataRoot'), 'data/config/app-settings.json');
 const DEFAULT_AI_CONFIG_PATH = aiModelConfig.DEFAULT_CONFIG_PATH
@@ -26,6 +27,7 @@ const DEFAULT_CONFIG = {
     autoSfxEnabled: true,
     generateCaptions: true,
     emotionalVoice: false,
+    ttsVoice: DEFAULT_TTS_VOICE,
     sourceImageAnalysisEnabled: false,
     extractDouyinFrames: false,
     frameHtmlConcurrency: 1,
@@ -88,6 +90,8 @@ function normalizeCreativeDefaults(input = {}) {
       ? source.generateCaptions
       : DEFAULT_CONFIG.creativeDefaults.generateCaptions,
     emotionalVoice: source.emotionalVoice === true,
+    // 旁白音色进入所有创作入口前先归一化，避免无效 voice 透传给 TTS 供应商。
+    ttsVoice: normalizeTtsVoice(source.ttsVoice),
     sourceImageAnalysisEnabled: source.sourceImageAnalysisEnabled === true,
     extractDouyinFrames: source.extractDouyinFrames === true,
     frameHtmlConcurrency: normalizeSmallInteger(

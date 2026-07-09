@@ -22,8 +22,8 @@ const {
     sceneSpec,
     services: {
       ttsModel: {
-        callTtsModel: async ({ text }) => {
-          calls.push(text);
+        callTtsModel: async ({ text, voice, stylePrompt }) => {
+          calls.push({ text, voice, stylePrompt });
           return { success: true, audioBuffer: Buffer.from(`audio:${text}`), format: 'mp3', voice: 'test_voice', model: {} };
         },
       },
@@ -39,10 +39,36 @@ const {
   assert.deepEqual(result.audio_manifest.scene_ids, sceneSpec.scenes.map(scene => scene.id));
   assert.equal(result.audio_manifest.status, 'ready');
   assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map(call => call.voice), ['mimo_default', 'mimo_default']);
+  assert.deepEqual(calls.map(call => call.stylePrompt), ['', '']);
   assert.ok(result.audio_manifest.scenes[0].path.endsWith('scene_01.mp3'));
   assert.equal(result.audio_manifest.scenes[0].relative_path, 'tts/scene_01.mp3');
   assert.equal(await fs.readFile(result.audio_manifest.scenes[0].path, 'utf8'), 'audio:第一段旁白');
   assert.ok(await fs.readFile(path.join(projectDir, 'tts', 'audio_manifest.json'), 'utf8'));
+
+  const voiceCalls = [];
+  const voiceProjectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tts-voice-'));
+  const voiceResult = await tts.synthesizeSceneNarration({
+    projectDir: voiceProjectDir,
+    sceneSpec: { scenes: [{ id: 'scene_voice', narration_text: '音色透传' }] },
+    voice: '茉莉',
+    stylePrompt: '请使用更有情绪的语气。',
+    services: {
+      ttsModel: {
+        callTtsModel: async ({ text, voice, stylePrompt }) => {
+          voiceCalls.push({ text, voice, stylePrompt });
+          return { success: true, audioBuffer: Buffer.from(text), format: 'mp3', voice, model: {} };
+        },
+      },
+      readAudioDuration: async () => 1,
+    },
+  });
+  assert.equal(voiceResult.success, true);
+  assert.deepEqual(voiceCalls, [{
+    text: '音色透传',
+    voice: '茉莉',
+    stylePrompt: '请使用更有情绪的语气。',
+  }]);
 
   const local = await tts.synthesizeSceneNarration({
     projectDir,

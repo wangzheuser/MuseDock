@@ -5,6 +5,7 @@ const {
   computeSceneSpecSpeechHash,
   getSceneSpecSpeechSignature,
 } = require('./sceneSpecHash');
+const { normalizeTtsVoice } = require('../tts/voiceOptions');
 
 function safeSceneId(sceneId) {
   return String(sceneId || 'scene')
@@ -133,10 +134,17 @@ async function readExistingManifestScenes(ttsDir) {
   }
 }
 
+/**
+ * 根据 scene_spec 生成或增量重生成旁白音频。
+ * @param {object} options 合成参数。
+ * @returns {Promise<{success: boolean, message?: string, audio_manifest: object}>} TTS 合成结果。
+ */
 async function synthesizeSceneNarration({
   projectDir,
   sceneSpec,
   sceneId,
+  voice,
+  stylePrompt,
   services = {},
 } = {}) {
   if (!projectDir) {
@@ -164,11 +172,19 @@ async function synthesizeSceneNarration({
   const manifest = createSceneSpecManifestBase(projectDir, sceneSpec);
   const pendingFiles = [];
   const usedNames = new Set();
+  // 统一在服务边界归一化音色，保证外部调用传入旧值或空值时仍可生成。
+  const normalizedVoice = normalizeTtsVoice(voice);
+  const normalizedStylePrompt = firstNonEmptyString(stylePrompt);
 
   try {
     for (const scene of scenes) {
       const text = String(scene.narration_text || '').trim();
-      const response = await callTtsModel({ text, scene_id: scene.id });
+      const response = await callTtsModel({
+        text,
+        scene_id: scene.id,
+        voice: normalizedVoice,
+        stylePrompt: normalizedStylePrompt,
+      });
       if (!response || response.success === false || !response.audioBuffer) {
         manifest.status = 'failed';
         return {

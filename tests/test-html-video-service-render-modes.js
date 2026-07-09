@@ -164,13 +164,25 @@ function createFixture() {
 
   let ttsSceneSpec = null;
   let ttsSceneId = null;
+  let ttsVoice = null;
+  let ttsStylePrompt = null;
   const ttsResult = await editHtmlVideoProject(WORKFLOW_ID, { type: 'tts', frame_id: 'frame_01', text: '新旁白' }, {
     rootDir,
+    services: {
+      appSettings: {
+        getCreativeDefaults: async () => ({ ttsVoice: '茉莉', emotionalVoice: true }),
+      },
+      aiModelConfig: {
+        getRuntimeConfig: async () => ({ provider: 'mimo', modelId: 'mimo-v2.5-tts' }),
+      },
+    },
     htmlVideoServices: {
       ttsService: {
-        synthesizeSceneNarration: async ({ sceneSpec, sceneId }) => {
+        synthesizeSceneNarration: async ({ sceneSpec, sceneId, voice, stylePrompt }) => {
           ttsSceneSpec = sceneSpec;
           ttsSceneId = sceneId;
+          ttsVoice = voice;
+          ttsStylePrompt = stylePrompt;
           return {
             success: true,
             message: '场景旁白音频已生成。',
@@ -191,6 +203,8 @@ function createFixture() {
   assert.equal(ttsSceneId, 'scene_01');
   assert.equal(ttsSceneSpec.scenes[0].narration_text, '新旁白');
   assert.equal(ttsSceneSpec.scenes[1].narration_text, '第二幕只在 scene-spec 的旁白');
+  assert.equal(ttsVoice, '茉莉');
+  assert.match(ttsStylePrompt, /情绪|停顿|语气/);
   assert.equal(ttsResult.html_video_project.frames[0].narration_text, '新旁白');
   assert.equal(ttsResult.html_video_project.audio.tts_manifest_path, 'tts/audio_manifest.json');
   assert.equal(ttsResult.html_video_project.audio.narration_path, null);

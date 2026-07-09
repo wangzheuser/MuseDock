@@ -1,4 +1,5 @@
 const aiModelConfig = require('./aiModelConfig');
+const { isSupportedTtsVoice } = require('../tts/voiceOptions');
 
 const DEFAULT_MIMO_BASE_URL = 'https://api.xiaomimimo.com/v1';
 const DEFAULT_MIMO_TTS_MODEL = 'mimo-v2.5-tts';
@@ -142,7 +143,7 @@ async function callTtsModel(options = {}) {
   const runtime = await resolveTtsRuntime(options);
   const requestedVoice = normalizeString(options.voice);
   const voice = runtime.provider === 'minimax'
-    ? (requestedVoice && requestedVoice !== DEFAULT_MIMO_VOICE ? requestedVoice : DEFAULT_MINIMAX_VOICE)
+    ? (requestedVoice && !isSupportedTtsVoice(requestedVoice) ? requestedVoice : DEFAULT_MINIMAX_VOICE)
     : (requestedVoice || DEFAULT_MIMO_VOICE);
   const model = toModelInfo(runtime.provider, runtime.modelId);
 

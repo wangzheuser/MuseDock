@@ -1,102 +1,41 @@
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils.js';
+import {
+  ASPECT_RATIOS,
+  DEFAULT_TTS_VOICE,
+  getCreativeDefaults,
+  getTemplateId,
+  hasBlockingCompatibilityReason,
+  isTemplateShownForAspect,
+  normalizeTtsVoiceOptions,
+  optionLabel,
+} from '@/lib/creativeDefaultsOptions.js';
+import { api } from '../../api/client.js';
 import { Switch } from './Switch.jsx';
 
-export const ASPECT_RATIOS = ['9:16', '16:9', '1:1', '4:5'];
-
-const DEFAULT_CREATIVE_DEFAULTS = {
-  aspectRatio: '9:16',
-  targetDurationSec: 60,
-  templateByAspectRatio: {
-    '9:16': '',
-    '16:9': '',
-    '1:1': '',
-    '4:5': '',
-  },
-  lockTemplate: false,
-  useResearch: true,
-  generateAudio: true,
-  autoSfxEnabled: true,
-  generateCaptions: true,
-  emotionalVoice: false,
-  sourceImageAnalysisEnabled: false,
-  extractDouyinFrames: false,
-  frameHtmlConcurrency: 1,
-};
-
-const TEMPLATE_NAME_ZH = {
-  bold_signal: '信号卡片',
-  glitch_title: '故障风格标题',
-  news_signal_vertical: '竖屏财经信号',
-  'frame-bold-poster': '醒目海报',
-  'frame-bold-signal': '强信号卡片',
-  'frame-build-minimal': '极简构建',
-  'frame-creative-voltage': '创意电压',
-  'frame-data-chart-nyt': '数据图表',
-  'frame-data-rollup': '数据汇总',
-  'frame-decision-tree': '决策树',
-  'frame-electric-studio': '电光工作室',
-  'frame-glitch-title': '故障标题',
-  'frame-kinetic-type': '动态文字',
-  'frame-light-leak-cinema': '漏光电影',
-  'frame-liquid-bg-hero': '液态背景主视觉',
-  'frame-logo-outro': 'Logo 片尾',
-  'frame-nyt-graph': '新闻图表',
-  'frame-pentagram-stat': '醒目数据',
-  'frame-play-mode': '播放模式',
-  'frame-product-promo': '产品推广',
-  'frame-product-promo-30s': '产品推广 30 秒',
-  'frame-swiss-grid': '瑞士网格',
-  'frame-takram-organic': '有机视觉',
-  'frame-vignelli': '维涅利版式',
-  'frame-warm-grain': '暖色颗粒',
-  'vfx-text-cursor': '文字光标特效',
-};
-
-function getCreativeDefaults(appSettings) {
-  return {
-    ...DEFAULT_CREATIVE_DEFAULTS,
-    ...(appSettings?.creativeDefaults || {}),
-    templateByAspectRatio: {
-      ...DEFAULT_CREATIVE_DEFAULTS.templateByAspectRatio,
-      ...(appSettings?.creativeDefaults?.templateByAspectRatio || {}),
-    },
-  };
+/**
+ * 判断当前激活的 TTS 模型是否为 MiMo，以决定是否允许试听 MiMo 音色。
+ * @param {object} model 设置中心激活模型信息。
+ * @returns {boolean} 是否为 MiMo TTS。
+ */
+function isMimoTtsModel(model) {
+  const providerName = String(model?.providerName || '').trim().toLowerCase();
+  const providerId = String(model?.providerId || '').trim().toLowerCase();
+  const modelId = String(model?.modelId || '').trim().toLowerCase();
+  return ['mimo', 'xiaomi', 'xiaomimimo'].includes(providerName)
+    || ['mimo', 'xiaomi', 'xiaomimimo'].includes(providerId)
+    || modelId.startsWith('mimo');
 }
 
-function getTemplateAspect(template) {
-  return template?.aspect_ratio || template?.aspectRatio || template?.aspect || '';
-}
-
-function getTemplateAspects(template) {
-  const aspects = template?.supported_aspects || template?.supportedAspects;
-  if (Array.isArray(aspects)) return aspects.map(item => String(item || '').trim()).filter(Boolean);
-  const aspect = getTemplateAspect(template);
-  return aspect ? [aspect] : [];
-}
-
-function getTemplateId(template) {
-  return typeof template?.id === 'string' ? template.id : '';
-}
-
-function isTemplateShownForAspect(template, aspectRatio) {
-  const aspects = getTemplateAspects(template);
-  return !aspects.length || aspects.includes(aspectRatio);
-}
-
-function hasBlockingCompatibilityReason(template) {
-  const reasons = Array.isArray(template?.compatibility_reasons) ? template.compatibility_reasons : [];
-  return reasons.some(reason => reason?.code && reason.code !== 'unsupported-aspect');
-}
-
-function getTemplateDisplayName(template) {
-  const id = getTemplateId(template);
-  return TEMPLATE_NAME_ZH[id] || template?.name || id;
-}
-
-function optionLabel(template, aspectRatio) {
-  const compatible = isTemplateShownForAspect(template, aspectRatio) && !hasBlockingCompatibilityReason(template);
-  return `${getTemplateDisplayName(template)}${compatible ? '' : '（不兼容）'}`;
+/**
+ * 播放后端返回的 base64 试听音频。
+ * @param {{mime?: string, base64?: string}} audio 试听音频数据。
+ * @returns {Promise<void>} 播放完成的 Promise。
+ */
+async function playPreviewAudio(audio = {}) {
+  if (!audio.base64) throw new Error('试听音频为空。');
+  const player = new Audio(`data:${audio.mime || 'audio/wav'};base64,${audio.base64}`);
+  await player.play();
 }
 
 export function CreativeDefaultsSettings({
@@ -104,14 +43,20 @@ export function CreativeDefaultsSettings({
   activeModels,
   modelSettingsLoading = false,
   templates,
+  ttsVoices,
   disabled,
   saving,
   onChange,
   onSave,
 }) {
   const [sourceImageAnalysisMessage, setSourceImageAnalysisMessage] = useState('');
+  const [previewStatus, setPreviewStatus] = useState(null);
+  const [previewing, setPreviewing] = useState(false);
   const creativeDefaults = getCreativeDefaults(appSettings);
   const safeTemplates = Array.isArray(templates) ? templates : [];
+  const voiceOptions = normalizeTtsVoiceOptions(ttsVoices);
+  const activeTtsModel = activeModels?.tts || null;
+  const mimoTtsActive = activeTtsModel?.enabled === true && isMimoTtsModel(activeTtsModel);
   const sourceImageAnalysisEnabled = creativeDefaults.sourceImageAnalysisEnabled === true;
   const canUseSourceImageAnalysis = activeModels?.text?.enabled === true
     && activeModels?.text?.modelId
@@ -163,6 +108,27 @@ export function CreativeDefaultsSettings({
     }
     setSourceImageAnalysisMessage('');
     updateCreativeDefaults({ sourceImageAnalysisEnabled: checked });
+  }
+
+  async function previewTtsVoice() {
+    if (!mimoTtsActive) {
+      setPreviewStatus({ type: 'error', message: '当前试听音色仅支持小米 MiMo TTS。请先在模型配置中启用 MiMo TTS。' });
+      return;
+    }
+    setPreviewing(true);
+    setPreviewStatus({ type: 'loading', message: '正在生成试听音频...' });
+    try {
+      const result = await api.previewTts({
+        voice: creativeDefaults.ttsVoice || DEFAULT_TTS_VOICE,
+        emotionalVoice: creativeDefaults.emotionalVoice === true,
+      });
+      await playPreviewAudio(result.audio);
+      setPreviewStatus({ type: 'success', message: result.message || '试听音频已播放。' });
+    } catch (error) {
+      setPreviewStatus({ type: 'error', message: error.message || '试听音色失败，请检查 TTS 配置。' });
+    } finally {
+      setPreviewing(false);
+    }
   }
 
   return (
@@ -324,6 +290,51 @@ export function CreativeDefaultsSettings({
           <span className={cn('min-w-[42px]', creativeDefaults.generateAudio !== false ? 'text-[#111827]' : 'text-[#69717e]')}>{creativeDefaults.generateAudio !== false ? '已开启' : '已关闭'}</span>
           <span>生成旁白音频</span>
         </label>
+
+        <div className="rounded-lg border border-[#edf0f4] bg-[#fafbfc] p-3 md:col-span-2">
+          <div className="mb-2 flex items-center justify-between gap-3 max-[720px]:flex-col max-[720px]:items-start">
+            <div>
+              <span className="text-[13px] font-semibold text-[#30343b]">默认旁白音色</span>
+              <p className="mt-1 text-xs font-normal leading-relaxed text-[#69717e]">
+                首版支持小米 MiMo 内置音色；重新生成旁白会使用最近保存的默认音色。
+              </p>
+            </div>
+            <button
+              type="button"
+              className="min-h-8 rounded-lg border border-[#d9dde5] bg-white px-3 text-xs font-bold text-[#30343b] transition hover:border-[#cbd5e1] hover:bg-white disabled:cursor-not-allowed disabled:opacity-55"
+              disabled={disabled || previewing || creativeDefaults.generateAudio === false || !mimoTtsActive}
+              onClick={previewTtsVoice}
+            >
+              {previewing ? '正在试听...' : '试听音色'}
+            </button>
+          </div>
+          <select
+            value={creativeDefaults.ttsVoice || DEFAULT_TTS_VOICE}
+            disabled={disabled || creativeDefaults.generateAudio === false}
+            onChange={event => updateCreativeDefaults({ ttsVoice: event.target.value })}
+            className="h-[38px] w-full rounded-lg border border-[#d9dde5] bg-white px-2.5 text-[13px] text-[#30343b] outline-none transition focus:border-[#25f4ee] focus:ring-2 focus:ring-[#25f4ee]/15 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {voiceOptions.map(voice => (
+              <option key={voice.id} value={voice.id}>{voice.label}</option>
+            ))}
+          </select>
+          {!mimoTtsActive ? (
+            <p className="mt-2 text-xs font-semibold leading-relaxed text-[#b45309]">
+              当前未启用 MiMo TTS，音色选择会保存，但试听和实际生效需要切换到 MiMo TTS。
+            </p>
+          ) : null}
+          {previewStatus ? (
+            <p
+              className={cn(
+                'mt-2 text-xs font-semibold leading-relaxed',
+                previewStatus.type === 'error' ? 'text-red-600' : previewStatus.type === 'success' ? 'text-emerald-700' : 'text-[#69717e]',
+              )}
+              role="status"
+            >
+              {previewStatus.message}
+            </p>
+          ) : null}
+        </div>
 
         <div className="rounded-lg border border-[#edf0f4] bg-[#fafbfc] p-3">
           <label className="inline-flex min-h-7 cursor-pointer select-none items-center gap-2 text-[13px] font-semibold text-[#30343b]">

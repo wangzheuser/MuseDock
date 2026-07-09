@@ -36,14 +36,17 @@ const {
   sfxEventService,
 } = htmlVideoProjectApi;
 const { computeSceneSpecSpeechHash } = require('../creative-video/sceneSpecHash');
+const { DEFAULT_TTS_VOICE, normalizeTtsVoice } = require('../tts/voiceOptions');
+const {
+  EMOTIONAL_VOICE_STYLE_PROMPT,
+  NEUTRAL_VOICE_STYLE_PROMPT,
+} = require('../tts/stylePrompts');
 
 const DEFAULT_ROOT = path.join(require('../../dataRoot'), 'data/creative-workflows');
 const DEFAULT_MEDIA_ROOT = path.join(require('../../dataRoot'), 'data/media/douyin');
 const WORKFLOW_ID_PATTERN = /^\d{5,32}$/;
 const DEFAULT_STALE_STAGE_TIMEOUT_MS = 10 * 60 * 1000;
 const WORKFLOW_STOPPED = Symbol('workflow-stopped');
-const NEUTRAL_VOICE_STYLE_PROMPT = '请使用自然、清晰、语速稳定的短视频口播风格；避免夸张表演、过长间隔、深呼吸或拖慢语速。';
-const EMOTIONAL_VOICE_STYLE_PROMPT = '请使用自然、有情绪起伏的短视频口播风格；关键句加强语气，适度停顿，保持清晰表达，不要过度拖慢语速。';
 
 const STAGE_IDS = ['source', 'research', 'assets', 'agent_run', 'brief', 'audio', 'project', 'check', 'render', 'inspect'];
 const STAGE_LABELS = {
@@ -87,6 +90,22 @@ async function resolveVoiceStylePrompt(record, services) {
     if (supportsEmotionalTtsRuntime(config)) return EMOTIONAL_VOICE_STYLE_PROMPT;
   } catch {}
   return NEUTRAL_VOICE_STYLE_PROMPT;
+}
+
+/**
+ * 读取设置中心最新保存的旁白配置，供编辑器手动重生成旁白使用。
+ * @param {object} services 已解析的服务集合。
+ * @param {object} options 调用上下文。
+ * @returns {Promise<{voice: string, stylePrompt: string}>} 最新 TTS 选项。
+ */
+async function resolveLatestTtsOptions(services, options = {}) {
+  const defaults = await services.appSettings.getCreativeDefaults(options);
+  const voice = normalizeTtsVoice(defaults?.ttsVoice || DEFAULT_TTS_VOICE);
+  // 手动重生成要求使用最新保存配置，因此这里不读取旧工程快照。
+  const stylePrompt = await resolveVoiceStylePrompt({
+    target: { emotionalVoice: defaults?.emotionalVoice === true },
+  }, services);
+  return { voice, stylePrompt };
 }
 
 function plainObject(value) {
@@ -625,6 +644,9 @@ function buildCreativeDefaultsSnapshot(defaults = {}, creativeDefaultsOverride =
   const frameHtmlConcurrency = Number.isFinite(Number(overrideSource.frameHtmlConcurrency))
     ? Number(overrideSource.frameHtmlConcurrency)
     : Number(defaultsSource.frameHtmlConcurrency);
+  const ttsVoice = safeString(overrideSource.ttsVoice)
+    ? normalizeTtsVoice(overrideSource.ttsVoice)
+    : normalizeTtsVoice(defaultsSource.ttsVoice || DEFAULT_TTS_VOICE);
 
   return {
     aspectRatio,
@@ -647,6 +669,7 @@ function buildCreativeDefaultsSnapshot(defaults = {}, creativeDefaultsOverride =
     emotionalVoice: typeof overrideSource.emotionalVoice === 'boolean'
       ? overrideSource.emotionalVoice
       : defaultsSource.emotionalVoice === true,
+    ttsVoice,
     sourceImageAnalysisEnabled: typeof overrideSource.sourceImageAnalysisEnabled === 'boolean'
       ? overrideSource.sourceImageAnalysisEnabled
       : defaultsSource.sourceImageAnalysisEnabled === true,
@@ -693,6 +716,7 @@ function buildWorkflowTarget(snapshot = {}) {
     autoSfxEnabled: snapshot.autoSfxEnabled !== false,
     generateCaptions: snapshot.generateCaptions !== false,
     emotionalVoice: snapshot.emotionalVoice === true,
+    ttsVoice: normalizeTtsVoice(snapshot.ttsVoice),
     extractDouyinFrames: snapshot.extractDouyinFrames === true,
     frameHtmlConcurrency: Number.isFinite(Number(snapshot.frameHtmlConcurrency))
       ? Math.min(5, Math.max(1, Math.round(Number(snapshot.frameHtmlConcurrency))))
@@ -726,12 +750,14 @@ function mergeProjectOptions(recordTarget = {}, incoming = {}) {
 function buildFreeformTargetOptions(target = {}) {
   const durationSec = Number(target.duration_sec ?? target.durationSec ?? target.targetDurationSec ?? target.target_duration_sec);
   const aspectRatio = safeString(target.aspect_ratio || target.aspectRatio);
+  const ttsVoice = safeString(target.ttsVoice || target.tts_voice);
   return {
     ...(Number.isFinite(durationSec) && durationSec > 0 ? {
       targetDurationSec: durationSec,
       target_duration_sec: durationSec,
     } : {}),
     ...(aspectRatio ? { aspectRatio, aspect_ratio: aspectRatio } : {}),
+    ...(ttsVoice ? { voice: normalizeTtsVoice(ttsVoice), ttsVoice: normalizeTtsVoice(ttsVoice) } : {}),
   };
 }
 
@@ -2576,6 +2602,7 @@ async function inspectHtmlVideoProjectLayout(workflowId, payload = {}, options =
 
 async function regenerateHtmlVideoProjectNarration(workflowId, payload = {}, options = {}) {
   const rootDir = options.rootDir || DEFAULT_ROOT;
+  const services = resolveServices(options);
   const { project, projectDir, error } = await loadWorkflowWithHtmlVideoProject(workflowId, rootDir);
   if (error) return error;
 
@@ -2652,10 +2679,12 @@ async function regenerateHtmlVideoProjectNarration(workflowId, payload = {}, opt
   const ttsService = options.htmlVideoServices?.ttsService
     || options.services?.ttsService
     || defaultCreativeVideoTtsService;
+  const latestTtsOptions = await resolveLatestTtsOptions(services, options);
   const tts = await ttsService.synthesizeSceneNarration({
     projectDir,
     sceneSpec,
     ...(sceneId ? { sceneId } : {}),
+    ...latestTtsOptions,
   });
   if (!tts.success) {
     return {

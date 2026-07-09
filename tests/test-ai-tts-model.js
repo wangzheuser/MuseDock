@@ -266,6 +266,41 @@ async function run() {
   assert.strictEqual(minimaxBody.output_format, 'hex');
   assert.strictEqual(minimaxBody.voice_setting.voice_id, 'male-qn-qingse');
   assert.strictEqual(minimaxBody.audio_setting.format, 'wav');
+
+  let minimaxMimoVoiceBody = null;
+  const minimaxMimoVoice = await aiTtsModel.callTtsModel({
+    text: 'MiniMax 忽略 MiMo 内置音色测试。',
+    voice: '茉莉',
+    ttsConfig: {
+      enabled: true,
+      provider: 'provider_1',
+      providerName: 'minimax',
+      apiKey: 'minimax-secret',
+      baseUrl: 'https://api.minimaxi.com/v1',
+      modelId: 'speech-2.8-hd',
+      ttsQueueIntervalMs: 0,
+    },
+    fetchImpl: async (url, options) => {
+      minimaxMimoVoiceBody = JSON.parse(options.body);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: {
+            audio: Buffer.from('minimax fallback voice').toString('hex'),
+            status: 2,
+          },
+          base_resp: {
+            status_code: 0,
+            status_msg: 'success',
+          },
+        }),
+      };
+    },
+  });
+  assert.strictEqual(minimaxMimoVoice.success, true);
+  assert.strictEqual(minimaxMimoVoice.voice, 'male-qn-qingse');
+  assert.strictEqual(minimaxMimoVoiceBody.voice_setting.voice_id, 'male-qn-qingse');
 }
 
 run().then(() => {

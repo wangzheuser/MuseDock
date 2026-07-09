@@ -137,6 +137,16 @@ export const api = {
   getConfigTemplates() {
     return requestJson('/api/config/templates');
   },
+  getTtsVoices() {
+    return requestJson('/api/config/tts-voices');
+  },
+  previewTts(payload) {
+    return requestJson('/api/config/tts-preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {}),
+    });
+  },
   getSystemHealth(refresh = false) {
     return requestJson(`/api/config/system-health${refresh ? '?refresh=1' : ''}`);
   },

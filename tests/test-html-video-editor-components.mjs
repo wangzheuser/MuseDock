@@ -240,11 +240,16 @@ for (const invalidDuration of [0, -1, '0', '-1', 'abc']) {
 }
 
 const captionsPanel = fs.readFileSync('frontend-react/src/components/creative-video-editor/CaptionsPanel.jsx', 'utf-8');
+const narrationPanel = fs.readFileSync('frontend-react/src/components/creative-video-editor/NarrationPanel.jsx', 'utf-8');
 assert.match(captionsPanel, /selectedFrameId/, 'CaptionsPanel should require a selected frame before saving captions');
 assert.match(captionsPanel, /type:\s*'frame_patch'/, 'CaptionsPanel should save captions through frame_patch');
 assert.match(captionsPanel, /frame_id:\s*selectedFrameId/, 'CaptionsPanel should target the selected frame id');
 assert.doesNotMatch(captionsPanel, /onSave\(\{\s*captions:\s*drafts\s*\}\)/, 'CaptionsPanel should not save project-level captions');
 assert.ok(captionsPanel.includes('请选择一帧后编辑字幕。'), 'CaptionsPanel should show a Chinese empty selection state');
+assert.ok(
+  narrationPanel.includes('重新生成旁白会使用设置中心已保存的最新 TTS 音色和情绪化配音配置。'),
+  'NarrationPanel should explain latest saved TTS config for regeneration',
+);
 
 assert.match(frameInputsPanel, /typeof onRenderPreview === 'function'/, 'FrameInputsPanel should hide preview action when no preview handler exists');
 assert.match(editor, /frames\s*=\s*Array\.isArray\(editor\.frames\)\s*\?\s*editor\.frames\s*:\s*\[\]/, 'HtmlVideoProjectEditor should fallback to an empty frames array');

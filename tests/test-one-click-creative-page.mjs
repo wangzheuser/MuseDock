@@ -349,7 +349,11 @@ const startNewTaskStart = page.indexOf('function startNewTask() {');
 const selectTaskStart = page.indexOf('function selectTask', startNewTaskStart);
 assert.ok(startNewTaskStart > 0 && selectTaskStart > startNewTaskStart, 'OneClickCreativePage should define startNewTask before selectTask');
 const startNewTaskBlock = page.slice(startNewTaskStart, selectTaskStart);
-assert.match(startNewTaskBlock, /setUseResearch\(true\)/, 'Starting a new creative task should restore the default research-enabled state');
+assert.match(
+  startNewTaskBlock,
+  /setUseResearch\(savedCreativeDefaultsRef\.current\.useResearch !== false\)/,
+  'Starting a new creative task should restore the saved default research state',
+);
 assert.doesNotMatch(startNewTaskBlock, /setUseResearch\(false\)/, 'Starting a new creative task should not turn off research by default');
 assert.match(page, /CREATIVE_TASKS_STORAGE_KEY/, 'OneClickCreativePage should persist submitted creative tasks locally');
 assert.match(page, /function\s+getWorkflowGeneratedTitle\(workflow\)/, 'OneClickCreativePage should derive sidebar titles from generated scene spec titles');

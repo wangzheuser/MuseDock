@@ -5,11 +5,14 @@ import path from 'node:path';
 const root = process.cwd();
 const componentPath = path.join(root, 'frontend-react/src/components/settings/CreativeDefaultsSettings.jsx');
 const settingsPagePath = path.join(root, 'frontend-react/src/pages/SettingsPage.jsx');
+const creativeDefaultsOptionsPath = path.join(root, 'frontend-react/src/lib/creativeDefaultsOptions.js');
 
-const [componentSource, settingsPageSource] = await Promise.all([
+const [componentSource, settingsPageSource, creativeDefaultsOptionsSource] = await Promise.all([
   readFile(componentPath, 'utf8'),
   readFile(settingsPagePath, 'utf8'),
+  readFile(creativeDefaultsOptionsPath, 'utf8'),
 ]);
+const combinedCreativeDefaultsSource = `${componentSource}\n${creativeDefaultsOptionsSource}`;
 
 for (const text of [
   '默认画面比例',
@@ -23,7 +26,7 @@ for (const text of [
   '正在保存创作默认值',
   '保存创作默认值',
 ]) {
-  assert.match(componentSource, new RegExp(text), `CreativeDefaultsSettings should include "${text}"`);
+  assert.match(combinedCreativeDefaultsSource, new RegExp(text), `Creative defaults UI should include "${text}"`);
 }
 
 assert.doesNotMatch(componentSource, /captionMode|showCaptionBar|renderQuality/);

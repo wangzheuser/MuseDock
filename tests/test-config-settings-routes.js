@@ -13,10 +13,14 @@ assert.match(source, /async function getAppSettingsRoute\s*\(\s*req\s*,\s*res\s*
 assert.match(source, /async function saveAppSettingsRoute\s*\(\s*req\s*,\s*res\s*\)/, 'config route should define saveAppSettingsRoute');
 assert.match(source, /async function getConfigTemplatesRoute\s*\(\s*req\s*,\s*res\s*\)/, 'config route should define getConfigTemplatesRoute');
 assert.match(source, /async function getConfigSystemHealthRoute\s*\(\s*req\s*,\s*res\s*\)/, 'config route should define getConfigSystemHealthRoute');
+assert.match(source, /async function getTtsVoicesRoute\s*\(\s*req\s*,\s*res\s*\)/, 'config route should define getTtsVoicesRoute');
+assert.match(source, /async function previewTtsRoute\s*\(\s*req\s*,\s*res\s*\)/, 'config route should define previewTtsRoute');
 assert.match(source, /router\.get\(['"]\/app-settings['"]\s*,\s*getAppSettingsRoute\s*\)/, 'config route should mount GET /app-settings');
 assert.match(source, /router\.post\(['"]\/app-settings['"]\s*,\s*saveAppSettingsRoute\s*\)/, 'config route should mount POST /app-settings');
 assert.match(source, /router\.get\(['"]\/templates['"]\s*,\s*getConfigTemplatesRoute\s*\)/, 'config route should mount GET /templates');
 assert.match(source, /router\.get\(['"]\/system-health['"]\s*,\s*getConfigSystemHealthRoute\s*\)/, 'config route should mount GET /system-health');
+assert.match(source, /router\.get\(['"]\/tts-voices['"]\s*,\s*getTtsVoicesRoute\s*\)/, 'config route should mount GET /tts-voices');
+assert.match(source, /router\.post\(['"]\/tts-preview['"]\s*,\s*previewTtsRoute\s*\)/, 'config route should mount POST /tts-preview');
 
 async function listen(app) {
   const server = http.createServer(app);
@@ -39,12 +43,16 @@ async function requestJson(server, method, pathname, body) {
 
 async function runIntegrationTests() {
   const appSettings = require('../server/services/appSettings');
+  const aiModelConfig = require('../server/services/ai/aiModelConfig');
+  const aiTtsModel = require('../server/services/ai/aiTtsModel');
   const systemMaintenance = require('../server/services/systemMaintenance');
   const templateRegistry = require('../server/services/creative-video/html-video/templateRegistry');
   const originals = {
     getPublicConfig: appSettings.getPublicConfig,
     saveConfig: appSettings.saveConfig,
     getCreativeDefaults: appSettings.getCreativeDefaults,
+    getRuntimeConfig: aiModelConfig.getRuntimeConfig,
+    callTtsModel: aiTtsModel.callTtsModel,
     getSystemHealth: systemMaintenance.getSystemHealth,
     scanTemplateManifests: templateRegistry.scanTemplateManifests,
     validateTemplateCompatibility: templateRegistry.validateTemplateCompatibility,
@@ -52,7 +60,16 @@ async function runIntegrationTests() {
   const savedPayloads = [];
   const compatibilityCalls = [];
   const healthCalls = [];
+  const ttsCalls = [];
   let scannedRootDir = '';
+  let ttsRuntime = {
+    enabled: true,
+    provider: 'mimo',
+    providerName: '小米 MiMo',
+    apiKey: 'tts-key',
+    baseUrl: 'https://mimo.example/v1',
+    modelId: 'mimo-v2.5-tts',
+  };
 
   appSettings.getPublicConfig = async () => ({
     version: 1,
@@ -68,6 +85,17 @@ async function runIntegrationTests() {
     };
   };
   appSettings.getCreativeDefaults = async () => ({ aspectRatio: '16:9' });
+  aiModelConfig.getRuntimeConfig = async type => (type === 'tts' ? ttsRuntime : null);
+  aiTtsModel.callTtsModel = async options => {
+    ttsCalls.push(options);
+    return {
+      success: true,
+      audioBuffer: Buffer.from(`preview:${options.voice}`),
+      format: 'mp3',
+      voice: options.voice,
+      model: { provider: 'mimo', id: 'mimo-v2.5-tts' },
+    };
+  };
   systemMaintenance.getSystemHealth = async options => {
     healthCalls.push(options);
     return { environment: { ok: true }, templates: { items: [] }, models: {}, storage: {} };
@@ -194,11 +222,39 @@ async function runIntegrationTests() {
       success: true,
       data: { environment: { ok: true }, templates: { items: [] }, models: {}, storage: {} },
     });
+
+    const voices = await requestJson(server, 'GET', '/api/config/tts-voices');
+    assert.strictEqual(voices.status, 200);
+    assert.strictEqual(voices.body.success, true);
+    assert.strictEqual(voices.body.data.defaultVoice, 'mimo_default');
+    assert.ok(voices.body.data.voices.some(voice => voice.id === '茉莉'));
+
+    const preview = await requestJson(server, 'POST', '/api/config/tts-preview', {
+      voice: '茉莉',
+      emotionalVoice: true,
+    });
+    assert.strictEqual(preview.status, 200);
+    assert.strictEqual(preview.body.success, true);
+    assert.strictEqual(preview.body.audio.mime, 'audio/mpeg');
+    assert.strictEqual(preview.body.audio.base64, Buffer.from('preview:茉莉').toString('base64'));
+    assert.strictEqual(ttsCalls.length, 1);
+    assert.strictEqual(ttsCalls[0].voice, '茉莉');
+    assert.match(ttsCalls[0].stylePrompt, /情绪|停顿|语气/);
+
+    ttsRuntime = { enabled: false };
+    const previewWithoutTts = await requestJson(server, 'POST', '/api/config/tts-preview', {
+      voice: '茉莉',
+    });
+    assert.strictEqual(previewWithoutTts.status, 400);
+    assert.strictEqual(previewWithoutTts.body.success, false);
+    assert.match(previewWithoutTts.body.message, /TTS 语音合成模型未配置/);
   } finally {
     await new Promise(resolve => server.close(resolve));
     appSettings.getPublicConfig = originals.getPublicConfig;
     appSettings.saveConfig = originals.saveConfig;
     appSettings.getCreativeDefaults = originals.getCreativeDefaults;
+    aiModelConfig.getRuntimeConfig = originals.getRuntimeConfig;
+    aiTtsModel.callTtsModel = originals.callTtsModel;
     systemMaintenance.getSystemHealth = originals.getSystemHealth;
     templateRegistry.scanTemplateManifests = originals.scanTemplateManifests;
     templateRegistry.validateTemplateCompatibility = originals.validateTemplateCompatibility;

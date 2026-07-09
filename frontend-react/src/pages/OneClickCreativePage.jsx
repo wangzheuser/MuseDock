@@ -5,6 +5,10 @@ import { CreativeComposer } from '../components/creative/CreativeComposer.jsx';
 import { CreativeSidebar } from '../components/creative/CreativeSidebar.jsx';
 import { CreativeTaskDetail } from '../components/creative/CreativeTaskDetail.jsx';
 import {
+  DEFAULT_CREATIVE_DEFAULTS,
+  normalizeCreativeDefaults,
+} from '../lib/creativeDefaultsOptions.js';
+import {
   appendWorkflowProgressEvent,
   applyWorkflowStageEvent,
   getSidebarTaskTimeSource,
@@ -80,6 +84,67 @@ function firstText(...values) {
     if (text) return text;
   }
   return '';
+}
+
+/**
+ * 从模型配置接口返回值中计算当前激活模型，供创作入口判断多模态等能力。
+ * @param {object} json 模型配置响应。
+ * @returns {Record<string, object|null>} 按模型类型索引的激活模型。
+ */
+function normalizeActiveModels(json = {}) {
+  const providers = json.providers || {};
+  const active = json.active || {};
+  const result = {};
+  for (const [type, ref] of Object.entries(active)) {
+    const [providerId, modelType] = String(ref || '').split('/');
+    const provider = providers[providerId];
+    const model = provider?.models?.[modelType];
+    result[type] = provider && model
+      ? { providerId, providerName: provider.name || providerId, ...model }
+      : null;
+  }
+  return result;
+}
+
+/**
+ * 将数字表单值转换为可提交数值，空值或非法值回退到默认值。
+ * @param {unknown} value 表单值。
+ * @param {number} fallback 默认值。
+ * @returns {number} 可提交数值。
+ */
+function numberOrFallback(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+/**
+ * 生成提交给后端的本次创作覆盖项，避免把 UI 临时字段混入请求。
+ * @param {object} defaults 当前页面选择的创作默认值。
+ * @returns {object} creativeDefaultsOverride 请求体。
+ */
+function buildCreativeDefaultsOverride(defaults = {}) {
+  const normalized = normalizeCreativeDefaults(defaults);
+  return {
+    aspectRatio: normalized.aspectRatio,
+    targetDurationSec: numberOrFallback(
+      normalized.targetDurationSec,
+      DEFAULT_CREATIVE_DEFAULTS.targetDurationSec,
+    ),
+    templateByAspectRatio: normalized.templateByAspectRatio,
+    lockTemplate: normalized.lockTemplate === true,
+    useResearch: normalized.useResearch !== false,
+    generateAudio: normalized.generateAudio !== false,
+    autoSfxEnabled: normalized.autoSfxEnabled !== false,
+    generateCaptions: normalized.generateCaptions !== false,
+    emotionalVoice: normalized.emotionalVoice === true,
+    ttsVoice: normalized.ttsVoice,
+    sourceImageAnalysisEnabled: normalized.sourceImageAnalysisEnabled === true,
+    extractDouyinFrames: normalized.extractDouyinFrames === true,
+    frameHtmlConcurrency: numberOrFallback(
+      normalized.frameHtmlConcurrency,
+      DEFAULT_CREATIVE_DEFAULTS.frameHtmlConcurrency,
+    ),
+  };
 }
 
 function getWorkflowGeneratedTitle(workflow) {
@@ -214,6 +279,8 @@ export function OneClickCreativePage() {
   const streamClosedNormallyRef = useRef(false);
   const streamGenerationRef = useRef(0);
   const useResearchTouchedRef = useRef(false);
+  const creativeDefaultsTouchedRef = useRef(false);
+  const savedCreativeDefaultsRef = useRef(DEFAULT_CREATIVE_DEFAULTS);
   const retryPlanRequestRef = useRef({ workflowId: '', inFlight: false });
   const retryPlanLoadedRef = useRef('');
   const retryPlanSeqRef = useRef(0);
@@ -221,6 +288,10 @@ export function OneClickCreativePage() {
   const [mode, setMode] = useState('quick');
   const [useResearch, setUseResearch] = useState(true);
   const [useResearchTouched, setUseResearchTouched] = useState(false);
+  const [creativeDefaults, setCreativeDefaults] = useState(DEFAULT_CREATIVE_DEFAULTS);
+  const [templates, setTemplates] = useState([]);
+  const [ttsVoices, setTtsVoices] = useState([]);
+  const [activeModels, setActiveModels] = useState({});
   const [workflow, setWorkflow] = useState(null);
   const [workflowId, setWorkflowId] = useState('');
   const [selectedWorkflowId, setSelectedWorkflowId] = useState('');
@@ -246,20 +317,61 @@ export function OneClickCreativePage() {
   useEffect(() => {
     let cancelled = false;
     async function loadCreativeDefaults() {
-      try {
-        const json = await api.getAppSettings();
-        const config = json?.data || json;
-        if (!cancelled && !useResearchTouchedRef.current) {
-          setUseResearch(config?.creativeDefaults?.useResearch !== false);
+      const [settingsResult, templatesResult, ttsVoicesResult, modelsResult] = await Promise.allSettled([
+        api.getAppSettings(),
+        api.getConfigTemplates(),
+        api.getTtsVoices(),
+        api.getAiModels(),
+      ]);
+      if (cancelled) return;
+
+      if (settingsResult.status === 'fulfilled') {
+        const config = settingsResult.value?.data || settingsResult.value;
+        const nextDefaults = normalizeCreativeDefaults(config?.creativeDefaults);
+        savedCreativeDefaultsRef.current = nextDefaults;
+        if (!creativeDefaultsTouchedRef.current) {
+          setCreativeDefaults(nextDefaults);
+          setUseResearch(nextDefaults.useResearch !== false);
         }
-      } catch {
-        if (!cancelled && !useResearchTouchedRef.current) {
-          setUseResearch(true);
-        }
+      } else if (!creativeDefaultsTouchedRef.current) {
+        setCreativeDefaults(DEFAULT_CREATIVE_DEFAULTS);
+        setUseResearch(true);
+      }
+
+      if (templatesResult.status === 'fulfilled') {
+        const templateData = templatesResult.value?.data || templatesResult.value;
+        setTemplates(Array.isArray(templateData) ? templateData : []);
+      }
+      if (ttsVoicesResult.status === 'fulfilled') {
+        const voiceData = ttsVoicesResult.value?.data || ttsVoicesResult.value;
+        setTtsVoices(Array.isArray(voiceData?.voices) ? voiceData.voices : []);
+      }
+      if (modelsResult.status === 'fulfilled') {
+        setActiveModels(normalizeActiveModels(modelsResult.value));
       }
     }
     loadCreativeDefaults();
     return () => { cancelled = true; };
+  }, []);
+
+  const updateCreativeDefaults = useCallback((patch) => {
+    creativeDefaultsTouchedRef.current = true;
+    const patchValue = patch && typeof patch === 'object' ? patch : {};
+    setCreativeDefaults(prev => {
+      const next = {
+        ...prev,
+        ...patchValue,
+        templateByAspectRatio: patchValue.templateByAspectRatio
+          ? { ...prev.templateByAspectRatio, ...patchValue.templateByAspectRatio }
+          : prev.templateByAspectRatio,
+      };
+      if (Object.prototype.hasOwnProperty.call(patchValue, 'useResearch')) {
+        useResearchTouchedRef.current = true;
+        setUseResearchTouched(true);
+        setUseResearch(next.useResearch !== false);
+      }
+      return next;
+    });
   }, []);
 
   const persistTasks = useCallback((updater) => {
@@ -663,7 +775,9 @@ export function OneClickCreativePage() {
     stopTaskStream({ clearStorage: true });
     setInput('');
     setMode('quick');
-    setUseResearch(true);
+    setCreativeDefaults(savedCreativeDefaultsRef.current);
+    setUseResearch(savedCreativeDefaultsRef.current.useResearch !== false);
+    creativeDefaultsTouchedRef.current = false;
     useResearchTouchedRef.current = false;
     setUseResearchTouched(false);
     setWorkflow(null);
@@ -859,7 +973,10 @@ export function OneClickCreativePage() {
         assetIds: [],
         renderOptions: {},
         workflowOptions: {},
-        ...(useResearchTouched ? { creativeDefaultsOverride: { useResearch } } : {}),
+        creativeDefaultsOverride: buildCreativeDefaultsOverride({
+          ...creativeDefaults,
+          useResearch,
+        }),
       };
       const json = await api.createCreativeWorkflow(requestPayload);
       const nextWorkflow = getWorkflowPayload(json);
@@ -1081,10 +1198,13 @@ export function OneClickCreativePage() {
                 setMode={setMode}
                 useResearch={useResearch}
                 setUseResearch={(value) => {
-                  useResearchTouchedRef.current = true;
-                  setUseResearchTouched(true);
-                  setUseResearch(value);
+                  updateCreativeDefaults({ useResearch: value });
                 }}
+                creativeDefaults={creativeDefaults}
+                onCreativeDefaultsChange={updateCreativeDefaults}
+                templates={templates}
+                ttsVoices={ttsVoices}
+                activeModels={activeModels}
                 isBusy={isBusy}
                 submitDisabled={submitDisabled}
                 onSubmit={submitCreativeWorkflow}

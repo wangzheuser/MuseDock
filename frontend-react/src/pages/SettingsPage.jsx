@@ -30,6 +30,7 @@ export function SettingsPage() {
   });
   const [appSettings, setAppSettings] = useState(null);
   const [templates, setTemplates] = useState([]);
+  const [ttsVoices, setTtsVoices] = useState([]);
   const [systemHealth, setSystemHealth] = useState(null);
   const [loadingApp, setLoadingApp] = useState(true);
   const [savingApp, setSavingApp] = useState(false);
@@ -62,20 +63,26 @@ export function SettingsPage() {
     async function loadSettingsCenter() {
       setLoadingApp(true);
       setStatus({ type: 'loading', message: '正在加载设置中心...' });
-      const [appResult, templatesResult, healthResult] = await Promise.allSettled([
+      const [appResult, templatesResult, ttsVoicesResult, healthResult] = await Promise.allSettled([
         api.getAppSettings(),
         api.getConfigTemplates(),
+        api.getTtsVoices(),
         api.getSystemHealth(),
       ]);
       if (!mounted) return;
 
       if (appResult.status === 'fulfilled') setAppSettings(unwrapData(appResult.value));
       if (templatesResult.status === 'fulfilled') setTemplates(unwrapData(templatesResult.value) || []);
+      if (ttsVoicesResult.status === 'fulfilled') {
+        const voiceData = unwrapData(ttsVoicesResult.value);
+        setTtsVoices(Array.isArray(voiceData?.voices) ? voiceData.voices : []);
+      }
       if (healthResult.status === 'fulfilled') setSystemHealth(unwrapData(healthResult.value));
 
       const failures = [];
       if (appResult.status === 'rejected') failures.push(getFailureMessage('应用配置', appResult));
       if (templatesResult.status === 'rejected') failures.push(getFailureMessage('模板列表', templatesResult));
+      if (ttsVoicesResult.status === 'rejected') failures.push(getFailureMessage('旁白音色', ttsVoicesResult));
       if (healthResult.status === 'rejected') failures.push(getFailureMessage('系统状态', healthResult));
 
       setStatus(failures.length
@@ -139,6 +146,7 @@ export function SettingsPage() {
           activeModels={modelSettings.activeModels}
           modelSettingsLoading={modelSettings.loading}
           templates={templates}
+          ttsVoices={ttsVoices}
           disabled={loadingApp || savingApp || modelSettings.loading}
           saving={savingApp}
           onChange={setAppSettings}
