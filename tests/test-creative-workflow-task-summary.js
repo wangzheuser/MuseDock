@@ -100,10 +100,12 @@ function readJson(filePath) {
   const videoWorkflowId = '202606180000000002';
   const projectDir = path.join(rootDir, 'html-video-project');
   const outputPath = path.join(projectDir, 'exports', 'output-audio.mp4');
+  const exportedPath = path.join(projectDir, 'exports', 'output.mp4');
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, 'fake mp4');
+  fs.writeFileSync(exportedPath, 'fake mp4');
   fs.writeFileSync(path.join(projectDir, 'project.json'), JSON.stringify({
-    exports: [{ id: 'export_0001', path: 'exports/output-audio.mp4', absolute_path: outputPath }],
+    exports: [{ id: 'export_0001', kind: 'export', path: 'exports/output.mp4', absolute_path: exportedPath }],
   }));
   fs.writeFileSync(workflows.getWorkflowPath(videoWorkflowId, rootDir), JSON.stringify({
     workflow_id: videoWorkflowId,
@@ -122,6 +124,26 @@ function readJson(filePath) {
   assert.equal(
     videoWorkflow.data.result.hyperframes_freeform.render.output_url,
     `/api/creative-workflows/${videoWorkflowId}/html-video-project/exports/export_0001/file`,
+  );
+
+  const directWorkflowId = '202606180000000003';
+  fs.writeFileSync(workflows.getWorkflowPath(directWorkflowId, rootDir), JSON.stringify({
+    workflow_id: directWorkflowId,
+    aweme_id: directWorkflowId,
+    success: true,
+    status: 'done',
+    result: {
+      hyperframes_freeform: {
+        project: { render_mode: 'html-video', html_video_project_path: projectDir },
+        render: { status: 'rendered', output_path: exportedPath },
+      },
+    },
+    stages: [],
+  }));
+  const directWorkflow = await workflows.getCreativeWorkflow(directWorkflowId, { rootDir });
+  assert.equal(
+    directWorkflow.data.result.hyperframes_freeform.render.output_url,
+    `/api/creative-workflows/${directWorkflowId}/html-video-project/exports/export_0001/file`,
   );
 
   console.log('creative workflow task summary tests passed');

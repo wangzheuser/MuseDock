@@ -2,6 +2,7 @@ const express = require('express');
 
 const defaultCreativeWorkflows = require('../services/creative/creativeWorkflows');
 const defaultCreativeWorkflowTasks = require('../services/creative/creativeWorkflowTasks');
+const defaultCreativeGuidance = require('../services/creative/creativeGuidance');
 const { formatSseEvent, normalizeSinceSeq } = require('../services/creative/creativeTaskEvents');
 const {
   normalizeCreativeWorkflowDto,
@@ -17,6 +18,15 @@ function getService(req) {
 
 function getTaskService(req) {
   return req.app?.locals?.creativeWorkflowTasks || defaultCreativeWorkflowTasks;
+}
+
+/**
+ * 读取创作引导服务，测试和桌面运行时均支持依赖替换。
+ * @param {import('express').Request} req Express 请求。
+ * @returns {object} 创作引导服务。
+ */
+function getGuidanceService(req) {
+  return req.app?.locals?.creativeGuidance || defaultCreativeGuidance;
 }
 
 function hasLocal(req, key) {
@@ -80,6 +90,55 @@ function validateWorkflowId(workflowId) {
 function safeString(value) {
   return String(value || '').trim();
 }
+
+/**
+ * 将创作引导错误映射为稳定的 HTTP 状态。
+ * @param {object} result 服务结果。
+ * @returns {number} HTTP 状态码。
+ */
+function getGuidanceStatusCode(result) {
+  if (result?.code === 'TEXT_MODEL_UNAVAILABLE') return 503;
+  if (result?.code === 'GUIDANCE_PROMPT_TOO_SHORT') return 422;
+  return 400;
+}
+
+router.post('/guidance/analyze', async (req, res) => {
+  try {
+    const result = await getGuidanceService(req).analyzeCreativeGuidance(req.body || {});
+    if (!result || result.success === false) {
+      return res.status(getGuidanceStatusCode(result)).json({
+        success: false,
+        ...(result || {}),
+        message: getMessage(result, '分析创作方向失败。'),
+      });
+    }
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: `分析创作方向失败：${error.message}`,
+    });
+  }
+});
+
+router.post('/guidance/compose', async (req, res) => {
+  try {
+    const result = await getGuidanceService(req).composeCreativeGuidance(req.body || {});
+    if (!result || result.success === false) {
+      return res.status(getGuidanceStatusCode(result)).json({
+        success: false,
+        ...(result || {}),
+        message: getMessage(result, '生成创作提示词失败。'),
+      });
+    }
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: `生成创作提示词失败：${error.message}`,
+    });
+  }
+});
 
 router.post('/', async (req, res) => {
   const service = getService(req);

@@ -50,6 +50,7 @@ const DEFAULT_MEDIA_ROOT = path.join(require('../../dataRoot'), 'data/media/douy
 const WORKFLOW_ID_PATTERN = /^\d{5,32}$/;
 const DEFAULT_STALE_STAGE_TIMEOUT_MS = 10 * 60 * 1000;
 const WORKFLOW_STOPPED = Symbol('workflow-stopped');
+const PROMPT_ORIGINS = new Set(['manual', 'guided', 'guided_edited']);
 
 const STAGE_IDS = ['source', 'research', 'assets', 'agent_run', 'brief', 'audio', 'project', 'check', 'render', 'inspect'];
 const STAGE_LABELS = {
@@ -834,6 +835,50 @@ function buildWorkflowTarget(snapshot = {}) {
   };
 }
 
+/**
+ * 保存用户点击“一键生成视频”时输入框中的实际文本。
+ * @param {object} payload 创建工作流请求。
+ * @param {object} normalizedInput 规范化后的创作输入。
+ * @param {string} now 创建时间。
+ * @returns {{submitted_prompt:string,origin:string,created_at:string}} 提示词快照。
+ */
+function buildPromptSnapshot(payload = {}, normalizedInput = {}, now = '') {
+  const submittedPrompt = typeof payload.submittedPrompt === 'string'
+    ? payload.submittedPrompt
+    : (typeof payload.input === 'string'
+      ? payload.input
+      : safeString(normalizedInput.raw_text || normalizedInput.douyin_url || normalizedInput.source_url || normalizedInput.aweme_id));
+  const requestedOrigin = safeString(payload.promptOrigin || payload.prompt_origin);
+  return {
+    submitted_prompt: submittedPrompt,
+    origin: PROMPT_ORIGINS.has(requestedOrigin) ? requestedOrigin : 'manual',
+    created_at: now,
+  };
+}
+
+/**
+ * 生成联网研究使用的短查询，避免把完整视频创作提示词直接提交给搜索服务。
+ * @param {object} payload 创建工作流请求。
+ * @param {object} normalizedInput 规范化后的创作输入。
+ * @returns {string} 单行研究查询。
+ */
+function buildWorkflowResearchQuery(payload = {}, normalizedInput = {}) {
+  const explicitQuery = safeString(payload.researchQuery || payload.research_query).replace(/\s+/g, ' ');
+  if (explicitQuery) return explicitQuery.slice(0, 240);
+
+  const sourceText = safeString(
+    normalizedInput.raw_text
+      || normalizedInput.source_url
+      || normalizedInput.douyin_url
+      || normalizedInput.aweme_id,
+  ).replace(/\s+/g, ' ');
+  if (sourceText.length <= 240) return sourceText;
+
+  // 长提示词优先提取明确标注的主题，否则使用首段作为可控降级查询。
+  const topicMatch = sourceText.match(/(?:主题(?:是|为|围绕)?|围绕)\s*[：:]?\s*[“"]?([^。；;！!？?\n”"]{3,120})/);
+  return safeString(topicMatch?.[1] || sourceText).slice(0, 240);
+}
+
 function resolveMediaGenerationOptions(defaults = {}, target = {}, options = {}) {
   const source = {
     ...defaults,
@@ -893,6 +938,7 @@ function createWorkflowSummary(record) {
     last_event_seq: Number.isFinite(record.last_event_seq) ? record.last_event_seq : 0,
     stages: normalizeStages(record.stages),
     creative_context: record.creative_context,
+    prompt_snapshot: record.prompt_snapshot || null,
     source_context: record.source_context,
     research_context: record.research_context,
     asset_context: record.asset_context,
@@ -939,7 +985,7 @@ async function createCreativeWorkflow(payload = {}, options = {}) {
   } else {
     sourceContext = creativeContext.createTextSourceContext(normalized.data.raw_text);
   }
-  const researchQuery = normalized.data.raw_text || normalized.data.aweme_id;
+  const researchQuery = buildWorkflowResearchQuery(payload, normalized.data);
   const researchContext = normalized.data.use_research
     ? creativeContext.createPendingResearchContext({ query: researchQuery, now })
     : creativeContext.createDisabledResearchContext({ now });
@@ -975,6 +1021,7 @@ async function createCreativeWorkflow(payload = {}, options = {}) {
     research_context: researchContext,
     asset_context: assetContext,
     creative_context: creative,
+    prompt_snapshot: buildPromptSnapshot(payload, normalized.data, now),
     stages,
     result: null,
     error: null,
@@ -1947,10 +1994,10 @@ function normalizeComparablePath(value) {
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
-function findMatchingHtmlVideoExport(project, projectDir, outputPath) {
+function findHtmlVideoPlaybackExport(project, projectDir, outputPath) {
   const output = normalizeComparablePath(outputPath);
   if (!output || !Array.isArray(project?.exports)) return null;
-  return project.exports.find(item => {
+  const exactMatch = project.exports.find(item => {
     const exportPath = safeString(item?.path);
     const candidates = [
       item?.absolute_path,
@@ -1959,6 +2006,12 @@ function findMatchingHtmlVideoExport(project, projectDir, outputPath) {
     ].map(normalizeComparablePath).filter(Boolean);
     return safeString(item?.id) && candidates.includes(output);
   }) || null;
+  if (exactMatch) return exactMatch;
+
+  // 音频混流成片会复制为导出文件，两个路径不同但内容相同；此时使用最新正式导出。
+  return project.exports.findLast(item => safeString(item?.id) && item?.kind !== 'preview')
+    || project.exports.findLast(item => safeString(item?.id))
+    || null;
 }
 
 function pickWorkflowRenderOutputUrl(record) {
@@ -1986,7 +2039,7 @@ async function enrichWorkflowVideoUrls(record) {
     if (projectDir) {
       try {
         const project = await htmlVideoProjectStore.loadProject(projectDir);
-        const exportItem = findMatchingHtmlVideoExport(project, projectDir, outputPath);
+        const exportItem = findHtmlVideoPlaybackExport(project, projectDir, outputPath);
         if (exportItem) render.output_url = buildHtmlVideoExportFileUrl(workflowId, exportItem.id);
       } catch {}
     }

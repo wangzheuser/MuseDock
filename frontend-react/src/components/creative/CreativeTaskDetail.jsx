@@ -609,7 +609,15 @@ export function CreativeTaskDetail({
   const videoUrl = getWorkflowVideoUrl?.(workflow) || '';
   const canStopAndDelete = workflowId && workflow?.status !== 'done';
   const promptInput = workflow?.creative_context?.input || {};
-  const promptText = (promptInput.raw_text || promptInput.douyin_url || promptInput.source_url || promptInput.aweme_id || '').trim();
+  const promptSnapshot = workflow?.prompt_snapshot || {};
+  const promptText = typeof promptSnapshot.submitted_prompt === 'string'
+    ? promptSnapshot.submitted_prompt
+    : (promptInput.raw_text || promptInput.douyin_url || promptInput.source_url || promptInput.aweme_id || '').trim();
+  const promptOriginLabel = promptSnapshot.origin === 'guided_edited'
+    ? '由创作方案生成后手动修改'
+    : promptSnapshot.origin === 'guided'
+      ? '由创作方案生成'
+      : '手动输入';
   const editableWorkflowId = workflowId || workflow?.workflow_id || workflow?.id || '';
   const isDone = workflow?.status === 'done';
   const durationLabel = formatWorkflowDurationLabel(workflow);
@@ -688,9 +696,13 @@ export function CreativeTaskDetail({
                   <span>查看提示词</span>
                 </Button>
               </DialogTrigger>
-              <DialogContent className="grid max-h-[min(82vh,640px)] w-[min(92vw,680px)] max-w-[680px] grid-rows-[auto_1fr] overflow-hidden rounded-[14px] border border-[#e5e7eb] bg-white shadow-[0_24px_70px_rgba(15,23,42,.24)]" showCloseButton={false}>
+              <DialogContent className="grid max-h-[min(82vh,680px)] w-[min(92vw,720px)] max-w-[720px] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[14px] border border-[#e5e7eb] bg-white shadow-[0_24px_70px_rgba(15,23,42,.24)]" showCloseButton={false}>
                 <DialogHeader>
-                  <DialogTitle>当前任务提示词</DialogTitle>
+                  <DialogTitle className="flex flex-wrap items-center gap-2 pr-10">
+                    本次实际提交提示词
+                    <span className="rounded-full bg-[#eef4ff] px-2 py-1 text-[11px] font-bold text-[#315d96]">{promptOriginLabel}</span>
+                  </DialogTitle>
+                  <DialogDescription>以下内容是点击“一键生成视频”时输入框中的完整文本，不会根据后续配置重新拼接。</DialogDescription>
                 </DialogHeader>
                 <DialogClose asChild>
                   <Button

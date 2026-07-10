@@ -313,6 +313,7 @@ export function OneClickCreativePage() {
   const [templates, setTemplates] = useState([]);
   const [ttsVoices, setTtsVoices] = useState([]);
   const [activeModels, setActiveModels] = useState({});
+  const [guidedPromptMeta, setGuidedPromptMeta] = useState(null);
   const [workflow, setWorkflow] = useState(null);
   const [workflowId, setWorkflowId] = useState('');
   const [selectedWorkflowId, setSelectedWorkflowId] = useState('');
@@ -394,6 +395,21 @@ export function OneClickCreativePage() {
       return next;
     });
   }, []);
+
+  /**
+   * 将引导生成的完整提示词回填主输入框，并应用少量可见推荐设置。
+   * @param {string} finalPrompt 完整提示词。
+   * @param {object} recommendedOverrides 推荐设置覆盖项。
+   * @param {object} meta 引导元数据。
+   */
+  const applyGuidedPrompt = useCallback((finalPrompt, recommendedOverrides, meta) => {
+    setInput(finalPrompt);
+    updateCreativeDefaults(recommendedOverrides || {});
+    setGuidedPromptMeta({
+      ...(meta || {}),
+      generatedPrompt: finalPrompt,
+    });
+  }, [updateCreativeDefaults]);
 
   const persistTasks = useCallback((updater) => {
     setTasks(prev => {
@@ -801,6 +817,7 @@ export function OneClickCreativePage() {
     creativeDefaultsTouchedRef.current = false;
     useResearchTouchedRef.current = false;
     setUseResearchTouched(false);
+    setGuidedPromptMeta(null);
     setWorkflow(null);
     setWorkflowId('');
     setSelectedWorkflowId('');
@@ -975,7 +992,8 @@ export function OneClickCreativePage() {
     event.preventDefault();
     if (submitDisabled) return;
 
-    const trimmed = input.trim();
+    const submittedPrompt = input;
+    const trimmed = submittedPrompt.trim();
     if (!trimmed) {
       setStatus('failed');
       setMessage('请输入视频方向、抖音链接、文章链接或 GitHub 仓库链接');
@@ -990,7 +1008,12 @@ export function OneClickCreativePage() {
 
     try {
       const requestPayload = {
-        input: trimmed,
+        input: submittedPrompt,
+        submittedPrompt,
+        researchQuery: guidedPromptMeta?.researchQuery || '',
+        promptOrigin: guidedPromptMeta?.generatedPrompt
+          ? (submittedPrompt === guidedPromptMeta.generatedPrompt ? 'guided' : 'guided_edited')
+          : 'manual',
         assetIds: [],
         renderOptions: {},
         workflowOptions: {},
@@ -1226,6 +1249,8 @@ export function OneClickCreativePage() {
                 templates={templates}
                 ttsVoices={ttsVoices}
                 activeModels={activeModels}
+                guidedPromptMeta={guidedPromptMeta}
+                onApplyGuidedPrompt={applyGuidedPrompt}
                 isBusy={isBusy}
                 submitDisabled={submitDisabled}
                 onSubmit={submitCreativeWorkflow}

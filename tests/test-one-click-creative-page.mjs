@@ -59,7 +59,7 @@ const zh = {
   stoppingAndDeleting: textFromCodePoints([0x6b63, 0x5728, 0x505c, 0x6b62, 0x5e76, 0x5220, 0x9664, 0x4efb, 0x52a1, 0x2e, 0x2e, 0x2e]),
   continueEdit: textFromCodePoints([0x4e8c, 0x6b21, 0x7f16, 0x8f91]),
   viewPrompt: textFromCodePoints([0x67e5, 0x770b, 0x63d0, 0x793a, 0x8bcd]),
-  promptModalTitle: textFromCodePoints([0x5f53, 0x524d, 0x4efb, 0x52a1, 0x63d0, 0x793a, 0x8bcd]),
+  promptModalTitle: textFromCodePoints([0x672c, 0x6b21, 0x5b9e, 0x9645, 0x63d0, 0x4ea4, 0x63d0, 0x793a, 0x8bcd]),
   promptEmpty: textFromCodePoints([0x6682, 0x65e0, 0x53ef, 0x663e, 0x793a, 0x7684, 0x63d0, 0x793a, 0x8bcd]),
 };
 
@@ -220,7 +220,7 @@ assert.match(page, /onStopAndDelete=\{stopAndDeleteTask\}/, 'Creative task detai
 assert.match(page, /getWorkflowVideoUrl=\{getWorkflowVideoUrl\}/, 'Creative task detail should receive the workflow video URL resolver');
 assert.match(creativeTaskDetail, /onStopAndDelete\(workflowId\)/, 'Creative task detail stop button should delete the currently opened task');
 assert.match(creativeTaskDetail, /disabled=\{deletingWorkflowId === workflowId\}/, 'Current task stop-and-delete button should be disabled while deleting');
-assert.match(creativeTaskDetail, /const\s+promptText\s*=\s*\(promptInput\.raw_text\s*\|\|\s*promptInput\.douyin_url/, 'Creative task detail should show the original prompt and fall back to stored source URLs');
+assert.match(creativeTaskDetail, /const\s+promptText\s*=\s*typeof promptSnapshot\.submitted_prompt === 'string'[\s\S]*promptInput\.raw_text\s*\|\|\s*promptInput\.douyin_url/, 'Creative task detail should prefer the actual submitted prompt and fall back to stored source URLs');
 assert.match(creativeTaskDetail, /function\s+getWorkflowTitleInfo\(workflow\)/, 'Creative task detail should derive generated title data from the workflow scene spec');
 assert.match(creativeTaskDetail, /title_candidates/, 'Creative task detail should read generated title candidates');
 assert.match(creativeTaskDetail, /<CreativeTitlePanel workflow=\{workflow\} \/>[\s\S]*isDone \? <SourceImageAssetsPanel workflow=\{workflow\} compact \/> : null/, 'Creative task summary should merge generated title and completed source assets into the top card');
@@ -230,7 +230,7 @@ assert.match(creativeTaskDetail, /<DialogTrigger asChild>\s*<Button variant="sec
 assert.match(creativeTaskDetail, /<Dialog\s+open=\{promptModalOpen\}\s+onOpenChange=\{setPromptModalOpen\}>/, 'Prompt modal should use shadcn Dialog state');
 assert.match(creativeTaskDetail, /<DialogTrigger asChild>/, 'Prompt view button should be the shadcn Dialog trigger');
 assert.match(creativeTaskDetail, /DialogClose/, 'Prompt modal should import and render DialogClose for a localized close button');
-assert.match(creativeTaskDetail, /<DialogContent className="[^"]*" showCloseButton=\{false\}>[\s\S]*<DialogTitle>当前任务提示词<\/DialogTitle>/, 'Prompt modal should disable the default English shadcn close button and render a Chinese title');
+assert.match(creativeTaskDetail, /<DialogContent className="[^"]*" showCloseButton=\{false\}>[\s\S]*<DialogTitle className="[^"]*">[\s\S]*本次实际提交提示词/, 'Prompt modal should disable the default English shadcn close button and render the actual submitted prompt title');
 assert.match(creativeTaskDetail, /<DialogClose asChild>[\s\S]*aria-label="关闭提示词弹框"[\s\S]*<span className="sr-only">关闭提示词弹框<\/span>/, 'Prompt modal close button should use a Chinese accessible label and sr-only text');
 assert.match(creativeTaskDetail, /<pre className="[^"]*">\{promptText \|\| '暂无可显示的提示词。'\}<\/pre>/, 'Prompt modal should show the original prompt with a Chinese empty state');
 assert.match(creativeTaskDetail, /function\s+buildWorkflowErrorLog\(\{[\s\S]*lastFailure[\s\S]*projectSubstages[\s\S]*failedModelCalls/, 'Creative task detail should build a readable error log from existing workflow failure fields');

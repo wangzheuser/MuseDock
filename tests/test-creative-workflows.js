@@ -171,6 +171,60 @@ async function testCreatesAndRunsTextWorkflow() {
   assert.equal(fetched.data.stages.find(stage => stage.id === 'render').status, 'done');
 }
 
+async function testPersistsActualSubmittedPromptSnapshot() {
+  const { rootDir, mediaRoot } = createTempDirs();
+  const { services } = createFakeServices();
+  const submittedPrompt = '  完整创作提示词第一段。\n\n第二段由用户手动修改。  ';
+
+  const created = await createCreativeWorkflow({
+    input: submittedPrompt,
+    submittedPrompt,
+    promptOrigin: 'guided_edited',
+    useResearch: false,
+  }, { rootDir, mediaRoot, services });
+
+  assert.equal(created.success, true);
+  assert.equal(created.creative_context.input.raw_text, submittedPrompt.trim());
+  assert.deepEqual(created.prompt_snapshot, {
+    submitted_prompt: submittedPrompt,
+    origin: 'guided_edited',
+    created_at: NOW,
+  });
+  const persisted = readJson(getWorkflowPath(WORKFLOW_ID, rootDir));
+  assert.equal(persisted.prompt_snapshot.submitted_prompt, submittedPrompt);
+  assert.equal(persisted.prompt_snapshot.origin, 'guided_edited');
+}
+
+async function testUsesConciseGuidedResearchQuery() {
+  const { rootDir, mediaRoot } = createTempDirs();
+  const { services } = createFakeServices();
+  const longPrompt = `请创作一条短视频，主题围绕 GPT-5.6 是否已经正式发布以及官方信息核验。${'补充创作要求。'.repeat(80)}`;
+
+  const created = await createCreativeWorkflow({
+    input: longPrompt,
+    researchQuery: 'GPT-5.6 OpenAI 官方发布 site:openai.com',
+    useResearch: true,
+  }, { rootDir, mediaRoot, services });
+
+  assert.equal(created.success, true);
+  assert.equal(created.research_context.status, 'pending');
+  assert.equal(created.research_context.query, 'GPT-5.6 OpenAI 官方发布 site:openai.com');
+
+  const fallback = await createCreativeWorkflow({
+    input: longPrompt,
+    useResearch: true,
+  }, {
+    rootDir: fs.mkdtempSync(path.join(os.tmpdir(), 'creative-workflows-query-fallback-')),
+    mediaRoot,
+    services: {
+      ...services,
+      idFactory: () => '202606121200000002',
+    },
+  });
+  assert.match(fallback.research_context.query, /^GPT-5\.6 是否已经正式发布/);
+  assert.ok(fallback.research_context.query.length <= 240);
+}
+
 async function testCreatesAndRunsSourceUrlWorkflow() {
   const { rootDir, mediaRoot } = createTempDirs();
   const repoUrl = 'https://github.com/owner/repo';
@@ -2401,6 +2455,8 @@ async function run() {
   await testRunResearchProviderAddsAuditMetadata();
   await testRunWorkflowPersistsResearchModelCalls();
   await testCreatesAndRunsTextWorkflow();
+  await testPersistsActualSubmittedPromptSnapshot();
+  await testUsesConciseGuidedResearchQuery();
   await testCreatesAndRunsSourceUrlWorkflow();
   await testSourceUrlWorkflowRunsSourceImageAnalysisWhenEnabled();
   await testRejectsSourceImageAnalysisWithoutMultimodalTextModel();

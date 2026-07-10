@@ -164,6 +164,20 @@ export const api = {
       body: JSON.stringify(payload),
     });
   },
+  analyzeCreativeGuidance(payload) {
+    return requestJson('/api/creative-workflows/guidance/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {}),
+    });
+  },
+  composeCreativeGuidance(payload) {
+    return requestJson('/api/creative-workflows/guidance/compose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {}),
+    });
+  },
   listCreativeWorkflows() {
     return requestJson('/api/creative-workflows');
   },

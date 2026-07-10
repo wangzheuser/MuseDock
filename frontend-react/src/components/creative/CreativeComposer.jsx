@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowUp, ChevronDown, Globe2, Loader2, SlidersHorizontal } from 'lucide-react';
+import { ArrowUp, ChevronDown, Globe2, Loader2, SlidersHorizontal, Sparkles, WandSparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import {
@@ -15,6 +15,10 @@ import {
 } from '@/lib/creativeDefaultsOptions.js';
 import { cn } from '@/lib/utils.js';
 import { Switch } from '../settings/Switch.jsx';
+import {
+  CreativeGuidanceDialog,
+  creativeGuidanceSettingsSignature,
+} from './CreativeGuidanceDialog.jsx';
 
 const FIELD_CLASS = 'h-[34px] w-full rounded-xl border border-[#d9dde5] bg-white px-2.5 text-[13px] text-[#30343b] outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/15 disabled:cursor-not-allowed disabled:opacity-60';
 
@@ -359,9 +363,17 @@ function CreativePromptComposer({
   templates,
   ttsVoices,
   activeModels,
+  guidedPromptMeta,
+  onApplyGuidedPrompt,
 }) {
+  const [guidanceOpen, setGuidanceOpen] = useState(false);
   const defaults = useMemo(() => normalizeCreativeDefaults(creativeDefaults), [creativeDefaults]);
   const researchEnabled = defaults.useResearch !== false;
+  const currentGuidanceSettingsSignature = creativeGuidanceSettingsSignature(defaults);
+  const guidedPromptEdited = Boolean(guidedPromptMeta?.generatedPrompt)
+    && input !== guidedPromptMeta.generatedPrompt;
+  const guidedPromptSettingsStale = Boolean(guidedPromptMeta?.settingsSignature)
+    && guidedPromptMeta.settingsSignature !== currentGuidanceSettingsSignature;
 
   /**
    * 更新本次创作设置；旧调用方没有传入本次设置回调时回退到联网开关。
@@ -377,6 +389,28 @@ function CreativePromptComposer({
     }
   }
 
+  /**
+   * 将引导生成的完整提示词和推荐设置应用到当前创作。
+   * @param {string} finalPrompt 完整提示词。
+   * @param {object} recommendedOverrides 推荐设置。
+   * @param {object} meta 引导元数据。
+   */
+  function applyGuidedPrompt(finalPrompt, recommendedOverrides, meta) {
+    const nextDefaults = normalizeCreativeDefaults({
+      ...defaults,
+      ...(recommendedOverrides || {}),
+    });
+    if (typeof onApplyGuidedPrompt === 'function') {
+      onApplyGuidedPrompt(finalPrompt, recommendedOverrides, {
+        ...(meta || {}),
+        settingsSignature: creativeGuidanceSettingsSignature(nextDefaults),
+      });
+      return;
+    }
+    setInput(finalPrompt);
+    updateDefaults(recommendedOverrides || {});
+  }
+
   return (
     <form
       className="grid min-h-0 w-[min(100%,776px)] gap-2.5 rounded-[20px] border border-[#dfe3ea] bg-white px-3 pb-2.5 pt-[17px] shadow-[0_16px_38px_rgba(15,23,42,.07)] max-[760px]:w-full"
@@ -390,10 +424,45 @@ function CreativePromptComposer({
         value={input}
         onChange={event => setInput(event.target.value)}
         disabled={isBusy}
-        className="min-h-[74px] max-h-[220px] resize-y border-0 bg-transparent px-1 py-0 text-base leading-[1.55] text-[#111827] shadow-none placeholder:text-[#a4acb8] focus-visible:ring-0 disabled:text-[#8a93a2]"
+        className="min-h-[92px] max-h-[45vh] resize-y border-0 bg-transparent px-1 py-0 text-base leading-[1.6] text-[#111827] shadow-none placeholder:text-[#a4acb8] focus-visible:ring-0 disabled:text-[#8a93a2]"
         placeholder="粘贴文章/GitHub 链接，或输入你想生成的视频方向"
         rows={4}
       />
+
+      {guidedPromptMeta?.generatedPrompt ? (
+        <div
+          className={cn(
+            'flex flex-wrap items-center justify-between gap-2 rounded-[12px] border px-3 py-2 text-xs leading-relaxed',
+            guidedPromptSettingsStale
+              ? 'border-amber-200 bg-amber-50 text-amber-800'
+              : 'border-[#d5e4fb] bg-[#f4f8ff] text-[#345171]',
+          )}
+          role="status"
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <Sparkles size={14} />
+            {guidedPromptSettingsStale
+              ? '本次创作设置已变化，当前提示词可能与最新时长或画幅不一致。'
+              : `完整创作提示词已回填${guidedPromptEdited ? '并经过手动修改' : ''}，可继续编辑后直接生成。`}
+          </span>
+          {guidedPromptSettingsStale ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              className="h-6 px-2 text-amber-800 hover:bg-amber-100 hover:text-amber-900"
+              disabled={isBusy}
+              onClick={() => setGuidanceOpen(true)}
+            >
+              根据最新设置重新优化
+            </Button>
+          ) : null}
+        </div>
+      ) : input.trim() && input.trim().length < 40 ? (
+        <p className="m-0 px-1 text-xs leading-relaxed text-[#7b8492]">
+          当前内容较少，可以先生成创作方案；也可以直接点击右侧按钮一键生成视频。
+        </p>
+      ) : null}
 
       <CreativeRunSettingsPanel
         creativeDefaults={defaults}
@@ -406,6 +475,16 @@ function CreativePromptComposer({
 
       <div className="flex items-center justify-between gap-3 max-[720px]:items-end">
         <div className="flex min-w-0 flex-wrap gap-2">
+          <Button
+            type="button"
+            className="inline-flex min-h-[34px] items-center gap-1.5 rounded-full border-[#bed0ea] bg-[#f7faff] px-3 text-[13px] font-bold text-[#24528b] shadow-sm transition hover:-translate-y-px hover:border-[#91aed4] hover:bg-[#edf4ff] hover:text-[#163f73] disabled:cursor-not-allowed disabled:opacity-[.62]"
+            variant="outline"
+            disabled={isBusy || !input.trim()}
+            onClick={() => setGuidanceOpen(true)}
+          >
+            <WandSparkles size={15} />
+            <span>{guidedPromptMeta?.generatedPrompt ? '重新优化创作方案' : '生成创作方案'}</span>
+          </Button>
           <Button
             type="button"
             className={cn(
@@ -429,11 +508,19 @@ function CreativePromptComposer({
           type="submit"
           disabled={submitDisabled}
           aria-label="一键生成视频"
-          title="一键生成视频"
+          title="直接使用当前输入框内容一键生成视频"
         >
           {isBusy ? <Loader2 size={18} className="animate-spin" /> : <ArrowUp size={19} />}
         </Button>
       </div>
+
+      <CreativeGuidanceDialog
+        open={guidanceOpen}
+        onOpenChange={setGuidanceOpen}
+        input={input}
+        creativeDefaults={defaults}
+        onApply={applyGuidedPrompt}
+      />
     </form>
   );
 }
