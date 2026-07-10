@@ -5,6 +5,13 @@ const path = require('path');
 
 const projectOrchestrator = require('../server/services/creative-video/html-video/projectOrchestrator');
 
+async function fakeFrameOutput(projectDir, fileName) {
+  const outputPath = path.join(projectDir, 'frames', fileName);
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.writeFile(outputPath, 'mp4');
+  return outputPath;
+}
+
 (async () => {
   {
     const project = {
@@ -50,12 +57,17 @@ const projectOrchestrator = require('../server/services/creative-video/html-vide
           materializeProject: async ({ project }) => ({ project, diagnostics: [] }),
         },
         frameRenderer: {
-          renderFrame: async frame => ({
-            success: true,
-            output_path: path.join(projectDir, 'frames', `${frame.id}.mp4`),
-            diagnostics: [],
-            meta: { encoding: 'h264' },
-          }),
+          renderFrame: async frame => {
+            const outputPath = path.join(projectDir, 'frames', `${frame.id}.mp4`);
+            await fs.mkdir(path.dirname(outputPath), { recursive: true });
+            await fs.writeFile(outputPath, 'mp4');
+            return {
+              success: true,
+              output_path: outputPath,
+              diagnostics: [],
+              meta: { encoding: 'h264' },
+            };
+          },
         },
         ffmpegComposer: {
           concatFramesWithFfmpeg: async () => ({ success: true, output_path: path.join(projectDir, 'exports', 'output.mp4') }),
@@ -223,6 +235,38 @@ const projectOrchestrator = require('../server/services/creative-video/html-vide
   }
 
   {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'html-video-tts-duration-missing-'));
+    await fs.mkdir(path.join(projectDir, 'tts'), { recursive: true });
+    await fs.writeFile(path.join(projectDir, 'tts', 'audio_manifest.json'), JSON.stringify({
+      scenes: [{ scene_id: 'scene_01', relative_path: 'tts/scene_01.mp3', duration_unavailable: true }],
+    }));
+    const project = {
+      audio: { tts_manifest_path: 'tts/audio_manifest.json' },
+      frames: [{ id: 'scene_01', scene_id: 'scene_01', duration_sec: 2 }],
+    };
+    const result = await projectOrchestrator.fitFrameDurationsToTtsManifest(project, projectDir);
+    assert.equal(result.ok, false);
+    assert.equal(result.diagnostics.some(item => item.code === 'narration_audio_duration_unavailable'), true);
+  }
+
+  {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'html-video-tts-duration-sync-'));
+    await fs.mkdir(path.join(projectDir, 'tts'), { recursive: true });
+    await fs.writeFile(path.join(projectDir, 'tts', 'audio_manifest.json'), JSON.stringify({
+      scenes: [{ scene_id: 'scene_01', relative_path: 'tts/scene_01.mp3', duration: 2 }],
+    }));
+    const project = {
+      output: { duration: 1 },
+      audio: { tts_manifest_path: 'tts/audio_manifest.json' },
+      frames: [{ id: 'scene_01', scene_id: 'scene_01', duration_sec: 2 }],
+      timeline: { tracks: [] },
+    };
+    const result = await projectOrchestrator.fitFrameDurationsToTtsManifest(project, projectDir, { tailProtection: 'none' });
+    assert.equal(result.changed, true);
+    assert.equal(project.output.duration, 2);
+  }
+
+  {
     const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'html-video-orchestrator-render-'));
     let renderCalls = 0;
     let composeCalls = 0;
@@ -259,9 +303,10 @@ const projectOrchestrator = require('../server/services/creative-video/html-vide
           renderFrame: async frame => {
             renderCalls += 1;
             assert.equal(frame.id, 'scene_02');
+            const outputPath = await fakeFrameOutput(projectDir, 'scene_02.mp4');
             return {
               success: true,
-              output_path: path.join(projectDir, 'frames', 'scene_02.mp4'),
+              output_path: outputPath,
               output_hash: 'scene_02-hash',
               meta: { encoding: 'h264' },
               diagnostics: [],
@@ -288,6 +333,37 @@ const projectOrchestrator = require('../server/services/creative-video/html-vide
   }
 
   {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'html-video-missing-artifact-'));
+    const project = {
+      project_id: 'missing-artifact',
+      output: { resolution: { width: 1920, height: 1080 }, fps: 30, duration: 2 },
+      audio: { status: 'skipped', reason: 'disabled_by_settings' },
+      frames: [{ id: 'scene_01', scene_id: 'scene_01', duration_sec: 2 }],
+      generation_checkpoint: {
+        stages: {
+          render: {
+            frames: {
+              scene_01: { status: 'done', mp4_path: 'frames/missing.mp4' },
+            },
+          },
+        },
+      },
+    };
+    const result = await projectOrchestrator.composeHtmlVideoProject({
+      project,
+      projectDir,
+      services: {
+        verifyRenderedArtifacts: true,
+        ffmpegComposer: {
+          concatFramesWithFfmpeg: async () => { throw new Error('缺失帧文件不应进入合成'); },
+        },
+      },
+    });
+    assert.equal(result.success, false);
+    assert.equal(result.diagnostics.some(item => item.code === 'render_artifact_missing'), true);
+  }
+
+  {
     const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'html-video-orchestrator-render-scene-key-'));
     let renderCalls = 0;
     const project = {
@@ -309,9 +385,12 @@ const projectOrchestrator = require('../server/services/creative-video/html-vide
         frameRenderer: {
           renderFrame: async frame => {
             renderCalls += 1;
+            const outputPath = path.join(projectDir, 'frames', `${frame.id}.mp4`);
+            await fs.mkdir(path.dirname(outputPath), { recursive: true });
+            await fs.writeFile(outputPath, 'mp4');
             return {
               success: true,
-              output_path: path.join(projectDir, 'frames', `${frame.id}.mp4`),
+              output_path: outputPath,
               output_hash: 'frame_01-hash',
               diagnostics: [],
             };
@@ -352,9 +431,12 @@ const projectOrchestrator = require('../server/services/creative-video/html-vide
           renderFrame: async frame => {
             renderCalls += 1;
             assert.equal(frame.id, 'frame_01');
+            const outputPath = path.join(projectDir, 'frames', `${frame.id}-alias.mp4`);
+            await fs.mkdir(path.dirname(outputPath), { recursive: true });
+            await fs.writeFile(outputPath, 'mp4');
             return {
               success: true,
-              output_path: path.join(projectDir, 'frames', `${frame.id}-alias.mp4`),
+              output_path: outputPath,
               output_hash: 'frame_01-alias-hash',
               diagnostics: [],
             };
@@ -478,7 +560,7 @@ const projectOrchestrator = require('../server/services/creative-video/html-vide
         frameRenderer: {
           renderFrame: async frame => ({
             success: true,
-            output_path: path.join(projectDir, 'frames', `${frame.id}.mp4`),
+            output_path: await fakeFrameOutput(projectDir, `${frame.id}.mp4`),
             output_hash: `${frame.id}-hash`,
             meta: { encoding: 'h264' },
             diagnostics: [],
@@ -493,9 +575,11 @@ const projectOrchestrator = require('../server/services/creative-video/html-vide
       targetDurationSec: 4,
       services: {
         ffmpegComposer: {
-          concatFramesWithFfmpeg: async (frames, outputPath) => {
+          concatFramesWithFfmpeg: async (frames, outputPath, workDir, options) => {
             concatCalls += 1;
             assert.equal(frames.length, 2);
+            assert.equal(options.width, 1920);
+            assert.equal(options.height, 1080);
             await fs.mkdir(path.dirname(outputPath), { recursive: true });
             await fs.writeFile(outputPath, 'mp4');
             return { success: true, output_path: outputPath };
@@ -507,6 +591,21 @@ const projectOrchestrator = require('../server/services/creative-video/html-vide
           verifyDurationWithFfprobe: async () => {
             verifyCalls += 1;
             return { success: true, duration_sec: 4, expected_duration_sec: 4 };
+          },
+          probeMediaQualityWithFfprobe: async options => {
+            assert.equal(options.expectedWidth, 1920);
+            assert.equal(options.expectedHeight, 1080);
+            assert.equal(options.expectedFps, 30);
+            assert.equal(options.requireAudio, false);
+            assert.equal(options.encodingMode, 'h264-yuv420p-crf17-bt709');
+            return {
+              success: true,
+              pass: true,
+              publish_ready: true,
+              message: '最终视频技术质检通过。',
+              metrics: { width: 1920, height: 1080, fps: 30, video_bitrate: 8000000 },
+              issues: [],
+            };
           },
         },
       },
@@ -522,6 +621,34 @@ const projectOrchestrator = require('../server/services/creative-video/html-vide
     assert.equal(composed.project.generation_checkpoint.stages.duration_verify.status, 'done');
     assert.equal(composed.project.generation_checkpoint.stages.duration_verify.expected_duration_sec, 4);
     assert.equal(composed.project.generation_checkpoint.stages.duration_verify.actual_duration_sec, 4);
+    assert.equal(composed.quality_report.publish_ready, true);
+    assert.equal(composed.project.exports[0].quality_report.metrics.video_bitrate, 8000000);
+
+    const rejected = await projectOrchestrator.composeHtmlVideoProject({
+      projectDir,
+      project: composed.project,
+      services: {
+        ffmpegComposer: {
+          concatFramesWithFfmpeg: async (frames, outputPath) => {
+            await fs.writeFile(outputPath, 'mp4');
+            return { success: true, output_path: outputPath };
+          },
+          verifyDurationWithFfprobe: async () => ({ success: true, duration_sec: 4, expected_duration_sec: 4 }),
+          probeMediaQualityWithFfprobe: async () => ({
+            success: false,
+            publish_ready: false,
+            code: 'resolution_mismatch',
+            message: '实际分辨率与请求不一致。',
+            metrics: { width: 1280, height: 720, fps: 30 },
+            issues: [{ code: 'resolution_mismatch', severity: 'error', message: '实际分辨率与请求不一致。' }],
+          }),
+        },
+      },
+    });
+    assert.equal(rejected.success, false);
+    assert.equal(rejected.quality_report.code, 'resolution_mismatch');
+    assert.equal(rejected.project.generation_checkpoint.stages.compose.status, 'failed');
+    assert.equal(rejected.project.exports.length, 1, '质检未通过时不应新增导出记录');
   }
 
   {
@@ -542,7 +669,7 @@ const projectOrchestrator = require('../server/services/creative-video/html-vide
         frameRenderer: {
           renderFrame: async frame => ({
             success: true,
-            output_path: path.join(projectDir, 'frames', `${frame.id}.mp4`),
+            output_path: await fakeFrameOutput(projectDir, `${frame.id}.mp4`),
             diagnostics: [],
           }),
         },
@@ -598,7 +725,7 @@ const projectOrchestrator = require('../server/services/creative-video/html-vide
         frameRenderer: {
           renderFrame: async frame => ({
             success: true,
-            output_path: path.join(projectDir, 'frames', `${frame.id}.mp4`),
+            output_path: await fakeFrameOutput(projectDir, `${frame.id}.mp4`),
             output_hash: `${frame.id}-hash`,
             meta: { encoding: 'h264' },
             diagnostics: [],
@@ -675,7 +802,7 @@ const projectOrchestrator = require('../server/services/creative-video/html-vide
         frameRenderer: {
           renderFrame: async frame => ({
             success: true,
-            output_path: path.join(projectDir, 'frames', `${frame.id}.mp4`),
+            output_path: await fakeFrameOutput(projectDir, `${frame.id}.mp4`),
             output_hash: `${frame.id}-hash`,
             meta: { encoding: 'h264' },
             diagnostics: [],

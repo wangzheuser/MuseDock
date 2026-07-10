@@ -1,19 +1,19 @@
 const fs = require('fs');
 const fsp = require('fs/promises');
-const os = require('os');
 const path = require('path');
+const { once } = require('events');
 const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
 
 const { prepareSourceHtml } = require('./prepareSourceHtml');
 const { resolveFfmpegPath } = require('./environmentDoctor');
+const { H264_PUBLISH_ENCODING, buildH264VideoEncodeArgs } = require('./ffmpegComposer');
 
-const ADAPTER_VERSION = '0.1.0-playwright';
+const ADAPTER_VERSION = '0.2.0-deterministic';
 const DEFAULT_RENDER_RESOLUTION = { width: 1920, height: 1080 };
 
 async function render(input = {}, ctx = {}, deps = {}) {
   const startedAt = Date.now();
-  const now = typeof deps.now === 'function' ? deps.now : Date.now;
   const config = normalizeConfig(input.config || input);
   const sourcePath = input.template?.sourcePath || input.sourcePath || input.htmlPath || input.html_path;
   if (!sourcePath || !fs.existsSync(sourcePath)) {
@@ -21,11 +21,9 @@ async function render(input = {}, ctx = {}, deps = {}) {
   }
 
   await fsp.mkdir(path.dirname(config.outputPath), { recursive: true });
-  const recordDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'hv-render-'));
   let browser;
+  let context;
   let cleanupPrepared;
-  let webmPath = '';
-  let leadInMs = 0;
   let totalDuration = config.duration;
 
   try {
@@ -40,52 +38,14 @@ async function render(input = {}, ctx = {}, deps = {}) {
       args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'],
     });
 
-    // 对应 html-video 源码段：recordVideo，context 创建即开始录制。
-    const tWebmStart = now();
-    const context = await browser.newContext({
+    context = await browser.newContext({
       viewport: { width: config.width, height: config.height },
       deviceScaleFactor: 1,
-      recordVideo: {
-        dir: recordDir,
-        size: { width: config.width, height: config.height },
-      },
     });
     const page = await context.newPage();
 
-    // 对应 html-video 源码段：page.addInitScript 冻结 CSS/SMIL 动画。
-    await page.addInitScript(() => {
-      const style = document.createElement('style');
-      style.id = '__hv_freeze';
-      style.textContent = [
-        '*, *::before, *::after {',
-        'animation-play-state: paused !important;',
-        '-webkit-animation-play-state: paused !important;',
-        '}',
-        'svg * {',
-        'animation-play-state: paused !important;',
-        '}',
-      ].join('');
-      const pauseSmil = () => {
-        document.querySelectorAll('svg').forEach(svg => {
-          if (typeof svg.pauseAnimations === 'function') svg.pauseAnimations();
-        });
-      };
-      const attach = () => {
-        (document.head || document.documentElement).appendChild(style);
-        pauseSmil();
-      };
-      const observer = new MutationObserver(pauseSmil);
-      observer.observe(document.documentElement, { childList: true, subtree: true });
-      if (document.head || document.documentElement) attach();
-      else document.addEventListener('DOMContentLoaded', attach, { once: true });
-      window.__hvUnfreeze = () => {
-        observer.disconnect();
-        document.getElementById('__hv_freeze')?.remove();
-        document.querySelectorAll('svg').forEach(svg => {
-          if (typeof svg.unpauseAnimations === 'function') svg.unpauseAnimations();
-        });
-      };
-    });
+    // 渲染与布局 QA 共用同一套动画暂停逻辑，保证采样时间一致。
+    await installPausedAnimationStyle(page);
 
     report(ctx, 30, '正在加载 html-video 模板...');
     const prepared = await prepareSourceHtml(sourcePath);
@@ -124,23 +84,76 @@ async function render(input = {}, ctx = {}, deps = {}) {
       return false;
     }).catch(() => false);
 
-    // 对应 html-video 源码段：调用 window.__hvUnfreeze()。
-    await page.evaluate(() => {
-      if (typeof window.__hvUnfreeze === 'function') window.__hvUnfreeze();
-    }).catch(() => {});
+    // 让模板完成一次初始化后冻结运行时，由后续逐帧寻址统一驱动动画。
+    await page.evaluate(() => new Promise(resolve => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    })).catch(() => {});
+    await freezeRuntimeClock(page);
 
-    // 对应 html-video 源码段：记录 leadInMs，后续由 ffmpeg -ss 裁剪。
-    leadInMs = now() - tWebmStart;
-
-    report(ctx, 40, `正在录制 ${totalDuration}s html-video 帧...`);
-    await waitWithProgress(page, ctx, totalDuration);
-
-    report(ctx, 85, '正在结束浏览器录制...');
-    await context.close();
-    webmPath = await findLatestWebm(recordDir);
-    if (!webmPath) {
-      throw createRenderError('render-failed', 'Playwright 未生成 webm 录制文件。');
+    const ffmpegPath = deps.ffmpegPath || await resolveFfmpegPath(deps);
+    const probeDeps = { ...deps, ffmpegPath };
+    const frameCount = Math.max(1, Math.round(totalDuration * config.fps));
+    const ffmpegArgs = buildFrameEncoderArgs({
+      outputPath: config.outputPath,
+      fps: config.fps,
+      width: config.width,
+      height: config.height,
+    });
+    report(ctx, 40, `正在逐帧渲染 ${frameCount} 帧...`);
+    let lastReportedPercent = 40;
+    const ffmpegResult = await runFrameEncoderCommand(ffmpegPath, ffmpegArgs, {
+      frameCount,
+      captureFrame: async frameIndex => {
+        await seekPageToTime(page, frameIndex / config.fps);
+        return page.screenshot({
+          type: 'png',
+          animations: 'allow',
+          caret: 'hide',
+          clip: { x: 0, y: 0, width: config.width, height: config.height },
+        });
+      },
+      onFrame: completed => {
+        const percent = 40 + Math.floor((completed / frameCount) * 50);
+        if (percent <= lastReportedPercent && completed < frameCount) return;
+        lastReportedPercent = percent;
+        report(ctx, percent, `正在逐帧渲染 ${completed}/${frameCount}...`);
+      },
+    }, deps.runFrameEncoder);
+    if (!ffmpegResult.ok) {
+      throw createRenderError(
+        'render-failed',
+        `ffmpeg 编码 html-video 失败：${ffmpegResult.stderr || ffmpegResult.error || `exit ${ffmpegResult.code}`}`,
+      );
     }
+
+    const stat = await fsp.stat(config.outputPath).catch(() => ({ size: 0 }));
+    const hasValidVideoStream = stat.size > 2048
+      && await outputHasVideoStream(config.outputPath, probeDeps);
+    if (!hasValidVideoStream) {
+      throw createRenderError('render-failed', 'html-video 编码完成但输出视频无有效画面流。');
+    }
+    report(ctx, 100, 'html-video 帧渲染完成。');
+    return {
+      outputPath: config.outputPath,
+      output_path: config.outputPath,
+      meta: {
+        durationSec: totalDuration,
+        fileSizeBytes: stat.size,
+        actualResolution: { width: config.width, height: config.height },
+        fps: config.fps,
+        renderedFrames: frameCount,
+        renderWallClockSec: (Date.now() - startedAt) / 1000,
+        engineVersion: `hyperframes-playwright@${ADAPTER_VERSION}`,
+        encoding: H264_PUBLISH_ENCODING,
+        captureMode: 'deterministic-frames',
+      },
+      diagnostics: [{
+        code: 'frame_rendered',
+        stage: 'render',
+        message: '已通过 Playwright/Chromium 确定性逐帧渲染并使用发布级 H.264 参数编码。',
+        fallback_allowed: false,
+      }],
+    };
   } catch (error) {
     if (error && error.code === 'environment_not_configured') throw error;
     if (/playwright/i.test(error && error.message ? error.message : '')) {
@@ -148,59 +161,25 @@ async function render(input = {}, ctx = {}, deps = {}) {
     }
     throw error;
   } finally {
-    if (browser) await browser.close().catch(() => {});
+    if (context) await closeWithTimeout(() => context.close());
+    if (browser) await closeWithTimeout(() => browser.close());
     if (cleanupPrepared) await cleanupPrepared().catch(() => {});
   }
+}
 
-  report(ctx, 90, '正在编码 MP4...');
-  const ffmpegPath = deps.ffmpegPath || await resolveFfmpegPath(deps);
-  const probeDeps = { ...deps, ffmpegPath };
-  const inputDurationSec = await probeMediaDurationSec(webmPath, probeDeps);
-  const ffmpegArgs = buildFfmpegArgs({
-    webmPath,
-    outputPath: config.outputPath,
-    fps: config.fps,
-    duration: totalDuration,
-    explicit: config.durationMode === 'explicit',
-    leadInMs,
-    inputDurationSec,
-  });
-  const ffmpegResult = await runFfmpegCommand(ffmpegPath, ffmpegArgs, deps.runFfmpeg);
-  if (!ffmpegResult.ok) {
-    throw createRenderError(
-      'render-failed',
-      `ffmpeg 编码 html-video 失败：${ffmpegResult.stderr || ffmpegResult.error || `exit ${ffmpegResult.code}`}`,
-    );
-  }
-
-  await fsp.rm(recordDir, { recursive: true, force: true }).catch(() => {});
-  const stat = await fsp.stat(config.outputPath).catch(() => ({ size: 0 }));
-  const hasValidVideoStream = stat.size > 2048
-    && await outputHasVideoStream(config.outputPath, probeDeps);
-  if (!hasValidVideoStream) {
-    throw createRenderError('render-failed', 'html-video 编码完成但输出视频无有效画面流。');
-  }
-  report(ctx, 100, 'html-video 帧渲染完成。');
-  return {
-    outputPath: config.outputPath,
-    output_path: config.outputPath,
-    meta: {
-      durationSec: totalDuration,
-      fileSizeBytes: stat.size,
-      actualResolution: { width: config.width, height: config.height },
-      fps: config.fps,
-      renderedFrames: Math.round(totalDuration * config.fps),
-      renderWallClockSec: (Date.now() - startedAt) / 1000,
-      engineVersion: `hyperframes-playwright@${ADAPTER_VERSION}`,
-      leadInMs,
-    },
-    diagnostics: [{
-      code: 'frame_rendered',
-      stage: 'render',
-      message: '已通过 Playwright/Chromium 录制并使用 ffmpeg libx264 编码。',
-      fallback_allowed: false,
-    }],
-  };
+/**
+ * 限制浏览器资源关闭时间，避免 Chromium 已产出文件后清理阶段无限悬挂。
+ * @param {Function} close 资源关闭函数。
+ * @param {number} timeoutMs 最长等待时间。
+ * @returns {Promise<void>}
+ */
+async function closeWithTimeout(close, timeoutMs = 3000) {
+  let timeout;
+  await Promise.race([
+    Promise.resolve().then(close).catch(() => {}),
+    new Promise(resolve => { timeout = setTimeout(resolve, timeoutMs); }),
+  ]);
+  clearTimeout(timeout);
 }
 
 function normalizeConfig(config) {
@@ -280,6 +259,41 @@ async function waitForStylesAndFonts(page) {
   })).catch(() => {});
 }
 
+/**
+ * 在页面脚本执行前暂停 CSS 与 SMIL 动画，后续由时间寻址统一推进。
+ * @param {import('playwright-core').Page} page Playwright 页面。
+ * @returns {Promise<void>}
+ */
+async function installPausedAnimationStyle(page) {
+  await page.addInitScript(() => {
+    const style = document.createElement('style');
+    style.id = '__hv_freeze';
+    style.textContent = [
+      '*, *::before, *::after {',
+      'animation-play-state: paused !important;',
+      '-webkit-animation-play-state: paused !important;',
+      '}',
+      'svg * {',
+      'animation-play-state: paused !important;',
+      '}',
+    ].join('');
+    const pauseSmil = () => {
+      document.querySelectorAll('svg').forEach(svg => {
+        if (typeof svg.pauseAnimations === 'function') svg.pauseAnimations();
+      });
+    };
+    const attach = () => {
+      const root = document.head || document.documentElement;
+      if (root && !document.getElementById(style.id)) root.appendChild(style);
+      pauseSmil();
+    };
+    const observer = new MutationObserver(() => attach());
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    if (document.head || document.documentElement) attach();
+    else document.addEventListener('DOMContentLoaded', attach, { once: true });
+  });
+}
+
 async function probeAnimationDurationMs(page) {
   return page.evaluate(() => {
     let cssMaxMs = 0;
@@ -317,61 +331,128 @@ async function probeAnimationDurationMs(page) {
   }).catch(() => 0);
 }
 
-async function waitWithProgress(page, ctx, durationSec) {
-  const totalMs = Math.round(durationSec * 1000);
-  const started = Date.now();
-  while (Date.now() - started < totalMs) {
-    const remaining = totalMs - (Date.now() - started);
-    await page.waitForTimeout(Math.min(250, Math.max(0, remaining)));
-    const elapsed = Math.min(totalMs, Date.now() - started);
-    report(ctx, 40 + Math.floor((elapsed / totalMs) * 45), '正在录制 html-video 帧...');
-  }
+/**
+ * 冻结模板内依赖真实时间的 RAF 循环，避免逐帧截图期间状态自行推进。
+ * @param {import('playwright-core').Page} page Playwright 页面。
+ * @returns {Promise<void>}
+ */
+async function freezeRuntimeClock(page) {
+  await page.evaluate(() => {
+    window.requestAnimationFrame = () => 0;
+    window.cancelAnimationFrame = () => {};
+    document.getAnimations({ subtree: true }).forEach(animation => {
+      try {
+        animation.pause();
+      } catch (_) {}
+    });
+  }).catch(() => {});
+  await page.waitForTimeout(25).catch(() => {});
 }
 
-function buildFfmpegArgs({ webmPath, outputPath, fps, duration, explicit, leadInMs, inputDurationSec }) {
-  const proposedSeekSec = leadInMs > 200 ? Math.max(0, (leadInMs - 120) / 1000) : 0;
-  const outputDurationSec = Number(duration);
-  const sourceDurationSec = Number(inputDurationSec);
-  const seekSafe = proposedSeekSec > 0
-    && Number.isFinite(outputDurationSec)
-    && outputDurationSec > 0
-    && Number.isFinite(sourceDurationSec)
-    && sourceDurationSec > 0
-    && proposedSeekSec + outputDurationSec <= sourceDurationSec - 0.1;
-  const seekSec = seekSafe ? proposedSeekSec : 0;
+/**
+ * 将页面推进到指定时间，并同步 CSS、GSAP、SMIL、媒体和字幕状态。
+ * @param {import('playwright-core').Page} page Playwright 页面。
+ * @param {number} timeSec 目标时间，单位秒。
+ * @returns {Promise<void>}
+ */
+async function seekPageToTime(page, timeSec) {
+  await page.evaluate(async targetTimeSec => {
+    const timeMs = Math.max(0, Number(targetTimeSec) || 0) * 1000;
+    const seconds = timeMs / 1000;
+
+    document.getAnimations({ subtree: true }).forEach(animation => {
+      try {
+        animation.pause();
+        animation.currentTime = timeMs;
+      } catch (_) {}
+    });
+
+    Object.values(window.__timelines || {}).forEach(timeline => {
+      try {
+        if (typeof timeline.pause === 'function') timeline.pause();
+        if (typeof timeline.totalTime === 'function') timeline.totalTime(seconds, false);
+        else if (typeof timeline.seek === 'function') timeline.seek(seconds, false);
+        else if (typeof timeline.time === 'function') timeline.time(seconds, false);
+      } catch (_) {}
+    });
+
+    const globalTimeline = window.gsap?.globalTimeline;
+    if (globalTimeline) {
+      try {
+        if (typeof globalTimeline.pause === 'function') globalTimeline.pause();
+        if (typeof globalTimeline.totalTime === 'function') globalTimeline.totalTime(seconds, false);
+        else if (typeof globalTimeline.seek === 'function') globalTimeline.seek(seconds, false);
+        else if (typeof globalTimeline.time === 'function') globalTimeline.time(seconds, false);
+      } catch (_) {}
+    }
+
+    document.querySelectorAll('svg').forEach(svg => {
+      try {
+        if (typeof svg.setCurrentTime === 'function') svg.setCurrentTime(seconds);
+      } catch (_) {}
+    });
+
+    window.dispatchEvent(new CustomEvent('hf-seek', {
+      detail: { time: seconds, timeSec: seconds, seconds },
+    }));
+
+    const mediaSeeks = Array.from(document.querySelectorAll('video,audio')).map(media => new Promise(resolve => {
+      try {
+        media.pause();
+        const duration = Number(media.duration);
+        if (!Number.isFinite(duration) || duration <= 0) {
+          resolve();
+          return;
+        }
+        const start = Number(media.dataset.start || 0) || 0;
+        const localTime = Math.max(0, seconds - start);
+        const target = media.loop ? localTime % duration : Math.min(localTime, Math.max(0, duration - 0.001));
+        if (Math.abs(Number(media.currentTime || 0) - target) < 0.002) {
+          resolve();
+          return;
+        }
+        const finish = () => {
+          clearTimeout(timeout);
+          media.removeEventListener('seeked', finish);
+          resolve();
+        };
+        const timeout = setTimeout(finish, 1000);
+        media.addEventListener('seeked', finish, { once: true });
+        media.currentTime = target;
+      } catch (_) {
+        resolve();
+      }
+    }));
+    await Promise.all(mediaSeeks);
+
+    document.querySelectorAll('.hv-caption-item').forEach(item => {
+      const start = Number(item.dataset.start || 0);
+      const end = Number(item.dataset.end || 0);
+      if (Number.isFinite(start) && Number.isFinite(end) && seconds >= start && seconds < end) {
+        item.dataset.hvActive = 'true';
+      } else {
+        delete item.dataset.hvActive;
+      }
+    });
+  }, timeSec);
+}
+
+/**
+ * 生成 PNG 图像流转发布级 MP4 的 ffmpeg 参数。
+ * @param {object} options 编码参数。
+ * @returns {Array<string>} ffmpeg 参数。
+ */
+function buildFrameEncoderArgs({ outputPath, fps, width, height }) {
   return [
     '-y',
-    ...(seekSec > 0 ? ['-ss', seekSec.toFixed(3)] : []),
-    '-i', webmPath,
-    ...(explicit ? ['-vf', `tpad=stop_mode=clone:stop_duration=${duration}`] : []),
-    '-t', String(duration),
-    '-r', String(fps),
-    '-c:v', 'libx264',
-    '-pix_fmt', 'yuv420p',
-    '-preset', 'medium',
-    '-crf', '20',
-    '-movflags', '+faststart',
+    '-f', 'image2pipe',
+    '-framerate', String(fps),
+    '-vcodec', 'png',
+    '-i', 'pipe:0',
+    '-an',
+    ...buildH264VideoEncodeArgs({ fps, width, height }),
     outputPath,
   ];
-}
-
-async function probeMediaDurationSec(videoPath, deps = {}) {
-  if (typeof deps.probeWebmDurationSec === 'function') {
-    const injected = await deps.probeWebmDurationSec(videoPath);
-    const duration = Number(injected);
-    return Number.isFinite(duration) && duration > 0 ? duration : null;
-  }
-  const ffprobe = getFfprobeCommand(deps);
-  const args = [
-    '-v', 'error',
-    '-show_entries', 'format=duration',
-    '-of', 'default=noprint_wrappers=1:nokey=1',
-    videoPath,
-  ];
-  const result = await runFfprobeCommand(ffprobe, args, deps.runFfprobe);
-  if (!result.ok) return null;
-  const duration = Number.parseFloat(String(result.stdout || '').trim());
-  return Number.isFinite(duration) && duration > 0 ? duration : null;
 }
 
 async function outputHasVideoStream(videoPath, deps = {}) {
@@ -447,17 +528,53 @@ function runFfmpegCommand(command, args, injectedRunner) {
   });
 }
 
-async function findLatestWebm(recordDir) {
-  const files = await fsp.readdir(recordDir).catch(() => []);
-  const webms = [];
-  for (const file of files) {
-    if (!file.toLowerCase().endsWith('.webm')) continue;
-    const filePath = path.join(recordDir, file);
-    const stat = await fsp.stat(filePath).catch(() => null);
-    if (stat) webms.push({ filePath, mtimeMs: stat.mtimeMs });
-  }
-  webms.sort((left, right) => right.mtimeMs - left.mtimeMs);
-  return webms[0]?.filePath || '';
+/**
+ * 逐帧抓取 PNG 并写入 ffmpeg stdin。
+ * @param {string} command ffmpeg 命令。
+ * @param {Array<string>} args ffmpeg 参数。
+ * @param {object} options 抓帧选项。
+ * @param {Function} injectedRunner 测试注入编码器。
+ * @returns {Promise<object>} 编码结果。
+ */
+function runFrameEncoderCommand(command, args, options = {}, injectedRunner) {
+  if (injectedRunner) return injectedRunner(command, args, options);
+  return new Promise(resolve => {
+    let child;
+    let settled = false;
+    let stdout = '';
+    let stderr = '';
+    const finish = result => {
+      if (settled) return;
+      settled = true;
+      resolve({ stdout, stderr, ...result });
+    };
+    try {
+      child = spawn(command, args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    } catch (error) {
+      finish({ ok: false, code: null, error: error.message });
+      return;
+    }
+    child.stdout?.on('data', chunk => { stdout += chunk.toString('utf8'); });
+    child.stderr?.on('data', chunk => { stderr += chunk.toString('utf8'); });
+    child.on('error', error => finish({ ok: false, code: null, error: error.message }));
+    child.on('close', code => finish({ ok: code === 0, code }));
+
+    (async () => {
+      const frameCount = Math.max(1, Number(options.frameCount) || 1);
+      for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+        if (settled) return;
+        const frame = await options.captureFrame(frameIndex);
+        const buffer = Buffer.isBuffer(frame) ? frame : Buffer.from(frame);
+        if (!child.stdin.write(buffer)) await once(child.stdin, 'drain');
+        options.onFrame?.(frameIndex + 1);
+      }
+      child.stdin.end();
+    })().catch(error => {
+      child.stdin?.destroy();
+      child.kill();
+      finish({ ok: false, code: null, error: error.message });
+    });
+  });
 }
 
 function createRenderError(code, message, cause) {
@@ -473,5 +590,7 @@ function report(ctx, percent, message) {
 
 module.exports = {
   render,
-  buildFfmpegArgs,
+  buildFrameEncoderArgs,
+  installPausedAnimationStyle,
+  seekPageToTime,
 };

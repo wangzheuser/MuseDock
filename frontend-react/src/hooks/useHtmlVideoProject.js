@@ -56,6 +56,16 @@ function latestItem(items = []) {
     .sort((a, b) => timeMs(b?.created_at || b?.createdAt) - timeMs(a?.created_at || a?.createdAt))[0] || null;
 }
 
+/**
+ * 读取工程帧稳定 ID，兼容旧数据只提供 scene_id 的情况。
+ * @param {object} frame 工程帧。
+ * @param {string} fallback 兜底 ID。
+ * @returns {string} 帧 ID。
+ */
+function frameIdOf(frame, fallback = '') {
+  return frame?.id || frame?.scene_id || fallback;
+}
+
 function activeDrafts(project) {
   return (Array.isArray(project?.frames) ? project.frames : []).flatMap((frame, index) => {
     const drafts = Array.isArray(frame?.drafts) ? frame.drafts : [];
@@ -216,7 +226,7 @@ export function useHtmlVideoProject({ workflowId, api }) {
   ), [project]);
 
   const selectedFrame = useMemo(() => (
-    frames.find(frame => String(frame.id) === String(selectedFrameId)) || frames[0] || null
+    frames.find(frame => String(frameIdOf(frame)) === String(selectedFrameId)) || frames[0] || null
   ), [frames, selectedFrameId]);
 
   const applyProjectResult = useCallback((result = {}) => {
@@ -286,7 +296,7 @@ export function useHtmlVideoProject({ workflowId, api }) {
 
   useEffect(() => {
     if (frames.length > 0 && !selectedFrameId) {
-      setSelectedFrameId(frames[0].id);
+      setSelectedFrameId(frameIdOf(frames[0]));
     }
   }, [frames, selectedFrameId]);
 

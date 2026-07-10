@@ -4,7 +4,7 @@ const os = require('os');
 const path = require('path');
 
 const {
-  buildFfmpegArgs,
+  buildFrameEncoderArgs,
   render,
 } = require('../server/services/creative-video/html-video/hyperframesPlaywrightAdapter');
 const { diagnoseEnvironment } = require('../server/services/creative-video/html-video/environmentDoctor');
@@ -16,15 +16,16 @@ const { diagnoseEnvironment } = require('../server/services/creative-video/html-
     const outputPath = path.join(workDir, 'frame.mp4');
     await fsp.writeFile(sourcePath, '<html><body><h1>帧</h1></body></html>', 'utf8');
 
-    const unsafeSeekArgs = buildFfmpegArgs({
-      webmPath: path.join(workDir, 'capture.webm'),
+    const encoderArgs = buildFrameEncoderArgs({
       outputPath,
       fps: 24,
-      leadInMs: 19936,
-      duration: 2.56,
-      inputDurationSec: 10.6,
+      width: 640,
+      height: 360,
     });
-    assert.equal(unsafeSeekArgs.includes('-ss'), false, 'seek + duration 超过 webm 时长安全余量时不应生成 -ss');
+    assertIncludesPair(encoderArgs, '-f', 'image2pipe');
+    assertIncludesPair(encoderArgs, '-framerate', '24');
+    assertIncludesPair(encoderArgs, '-vcodec', 'png');
+    assertIncludesPair(encoderArgs, '-i', 'pipe:0');
 
     const calls = {
       launches: [],
@@ -33,6 +34,8 @@ const { diagnoseEnvironment } = require('../server/services/creative-video/html-
       initScripts: 0,
       progress: [],
       ffmpeg: [],
+      screenshots: [],
+      seeks: [],
     };
 
     const mockPlaywright = {
@@ -42,22 +45,24 @@ const { diagnoseEnvironment } = require('../server/services/creative-video/html-
           return {
             newContext: async options => {
               calls.contexts.push(options);
-              const recordDir = options.recordVideo.dir;
               return {
                 newPage: async () => ({
                   addInitScript: async () => { calls.initScripts += 1; },
                   goto: async (url, options) => { calls.gotos.push({ url, options }); },
-                  evaluate: async fn => {
+                  evaluate: async (fn, value) => {
                     const source = String(fn);
                     if (source.includes('getComputedStyle')) return 1800;
                     if (source.includes('__hvPlayAll')) return true;
+                    if (source.includes('targetTimeSec')) calls.seeks.push(value);
                     return undefined;
                   },
                   waitForTimeout: async () => {},
+                  screenshot: async options => {
+                    calls.screenshots.push(options);
+                    return Buffer.from('png-frame');
+                  },
                 }),
-                close: async () => {
-                  await fsp.writeFile(path.join(recordDir, 'capture.webm'), 'webm');
-                },
+                close: async () => {},
               };
             },
             close: async () => {},
@@ -81,17 +86,17 @@ const { diagnoseEnvironment } = require('../server/services/creative-video/html-
         onProgress: (percent, message) => calls.progress.push({ percent, message }),
       },
       {
-        now: (() => {
-          const values = [1000, 1500];
-          return () => values.shift() || 1500;
-        })(),
         importPlaywright: async () => mockPlaywright,
-        runFfmpeg: async (command, args) => {
+        runFrameEncoder: async (command, args, encoder) => {
           calls.ffmpeg.push({ command, args });
+          calls.frameCount = encoder.frameCount;
+          await encoder.captureFrame(0);
+          await encoder.captureFrame(encoder.frameCount - 1);
+          encoder.onFrame?.(1);
+          encoder.onFrame?.(encoder.frameCount);
           await fsp.writeFile(outputPath, Buffer.alloc(4096, 1));
           return { ok: true, stdout: '', stderr: '' };
         },
-        probeWebmDurationSec: async () => 10,
         probeVideoStreams: async () => [{ codec_type: 'video' }],
         ffmpegPath: 'ffmpeg-mock',
       },
@@ -101,9 +106,14 @@ const { diagnoseEnvironment } = require('../server/services/creative-video/html-
 
     assert.equal(calls.launches.length, 1);
     assert.equal(calls.launches[0].headless, true);
-    assert.deepEqual(calls.contexts[0].recordVideo.size, { width: 640, height: 360 });
+    assert.deepEqual(calls.contexts[0].viewport, { width: 640, height: 360 });
+    assert.equal(calls.contexts[0].recordVideo, undefined);
     assert.equal(calls.initScripts, 1);
     assert.equal(calls.gotos[0].options.waitUntil, 'domcontentloaded');
+    assert.equal(calls.frameCount, 96);
+    assert.deepEqual(calls.seeks, [0, 95 / 24]);
+    assert.equal(calls.screenshots.length, 2);
+    assert.deepEqual(calls.screenshots[0].clip, { x: 0, y: 0, width: 640, height: 360 });
 
     assert.equal(calls.ffmpeg.length, 1);
     assert.equal(calls.ffmpeg[0].command, 'ffmpeg-mock');
@@ -111,12 +121,24 @@ const { diagnoseEnvironment } = require('../server/services/creative-video/html-
     assertIncludesPair(args, '-c:v', 'libx264');
     assertIncludesPair(args, '-pix_fmt', 'yuv420p');
     assertIncludesPair(args, '-preset', 'medium');
-    assertIncludesPair(args, '-crf', '20');
+    assertIncludesPair(args, '-crf', '17');
+    assertIncludesPair(args, '-profile:v', 'high');
+    assertIncludesPair(args, '-g', '48');
+    assertIncludesPair(args, '-colorspace', 'bt709');
+    assertIncludesPair(args, '-color_primaries', 'bt709');
+    assertIncludesPair(args, '-color_trc', 'bt709');
+    assertIncludesPair(args, '-x264-params', 'colorprim=bt709:transfer=bt709:colormatrix=bt709:fullrange=off');
     assertIncludesPair(args, '-movflags', '+faststart');
-    assertIncludesPair(args, '-t', '4');
-    assert.ok(args.includes('-vf'), '显式 duration 应添加 tpad filter');
-    assert.ok(args.includes('tpad=stop_mode=clone:stop_duration=4'), '显式 duration 应 clone 尾帧补齐');
-    assert.ok(args.includes('-ss'), '应按 leadInMs 裁剪 dead lead-in');
+    assertIncludesPair(args, '-f', 'image2pipe');
+    assertIncludesPair(args, '-framerate', '24');
+    assertIncludesPair(args, '-vcodec', 'png');
+    assertIncludesPair(args, '-i', 'pipe:0');
+    assert.ok(args.includes('-an'), '帧视频不应包含音轨');
+    assert.equal(args.includes('-ss'), false, '确定性逐帧渲染不应依赖录屏裁剪');
+    assert.equal(args.includes('-vf'), false, 'PNG 帧已按目标尺寸和时间采样，不需要补帧滤镜');
+    assert.equal(renderResult.meta.encoding, 'h264-yuv420p-crf17-bt709');
+    assert.equal(renderResult.meta.captureMode, 'deterministic-frames');
+    assert.equal(renderResult.meta.renderedFrames, 96);
 
     const badOutputPath = path.join(workDir, 'bad-frame.mp4');
     await assert.rejects(
@@ -133,16 +155,11 @@ const { diagnoseEnvironment } = require('../server/services/creative-video/html-
         },
         {},
         {
-          now: (() => {
-            const values = [2000, 2300];
-            return () => values.shift() || 2300;
-          })(),
           importPlaywright: async () => mockPlaywright,
-          runFfmpeg: async () => {
+          runFrameEncoder: async () => {
             await fsp.writeFile(badOutputPath, Buffer.alloc(4096, 1));
             return { ok: true, stdout: '', stderr: '' };
           },
-          probeWebmDurationSec: async () => 10,
           probeVideoStreams: async () => [],
           ffmpegPath: 'ffmpeg-mock',
         },
@@ -171,10 +188,6 @@ const { diagnoseEnvironment } = require('../server/services/creative-video/html-
       },
       {},
       {
-        now: (() => {
-          const values = [3000, 3300];
-          return () => values.shift() || 3300;
-        })(),
         importPlaywright: async () => mockPlaywright,
         runCommand: async (command, args) => {
           if (command === (process.platform === 'win32' ? 'where.exe' : 'which')) {
@@ -182,21 +195,19 @@ const { diagnoseEnvironment } = require('../server/services/creative-video/html-
           }
           return { ok: true, stdout: 'ffmpeg version mock', stderr: '' };
         },
-        runFfmpeg: async (command) => {
+        runFrameEncoder: async (command) => {
           assert.equal(command, ffmpegExecutable);
           await fsp.writeFile(absoluteFfprobeOutput, Buffer.alloc(4096, 1));
           return { ok: true, stdout: '', stderr: '' };
         },
         runFfprobe: async (command, args) => {
           ffprobeCalls.push({ command, args });
-          if (args.includes('format=duration')) return { ok: true, stdout: '10.0', stderr: '' };
           return { ok: true, stdout: JSON.stringify({ streams: [{ codec_type: 'video' }] }), stderr: '' };
         },
       },
     );
-    assert.ok(ffprobeCalls.length >= 2);
+    assert.ok(ffprobeCalls.length >= 1);
     assert.equal(ffprobeCalls[0].command, expectedFfprobe);
-    assert.equal(ffprobeCalls[1].command, expectedFfprobe);
 
     const originalFfmpegPath = process.env.FFMPEG_PATH;
     delete process.env.FFMPEG_PATH;

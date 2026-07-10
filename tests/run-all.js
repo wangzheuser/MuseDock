@@ -6,6 +6,7 @@
  *
  * 可选参数:
  *   filter  只运行文件名包含指定关键词的测试
+ *   --allow-empty  允许过滤后没有匹配文件
  *           例如: node tests/run-all.js creative video
  */
 
@@ -27,7 +28,10 @@ const colors = {
 const testsDir = __dirname;
 
 // 获取命令行过滤参数
-const filters = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+const allowEmpty = rawArgs.includes('--allow-empty');
+const filters = rawArgs.filter((arg) => arg !== '--allow-empty');
+const TEST_TIMEOUT_MS = Number(process.env.MUSEDOCK_TEST_TIMEOUT_MS) || 120000;
 
 // 发现测试文件
 const testFiles = fs
@@ -41,7 +45,7 @@ const testFiles = fs
 
 if (testFiles.length === 0) {
   console.log(`${colors.yellow}没有找到匹配的测试文件${colors.reset}`);
-  process.exit(0);
+  process.exit(allowEmpty ? 0 : 1);
 }
 
 console.log(`${colors.bold}${colors.cyan}运行 ${testFiles.length} 个测试文件...${colors.reset}\n`);
@@ -64,6 +68,7 @@ for (const file of testFiles) {
       stdio: 'inherit',
       cwd: path.dirname(testsDir),
       env: { ...process.env },
+      timeout: TEST_TIMEOUT_MS,
     });
     results.passed.push(file);
     console.log('');

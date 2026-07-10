@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 
 const agent = require('../server/services/creative-video/html-video/frameHtmlAgent');
+const fallbackBuilder = require('../server/services/creative-video/html-video/frameFallbackBuilder');
 
 const graph = {
   synopsis: '两帧讲清价格差异',
@@ -85,6 +86,8 @@ assert.match(prompt, /\[object Object\]/);
 assert.match(prompt, /不要发明源素材中没有的精确事实/);
 assert.match(prompt, /visual_text\.keywords\/cards/);
 assert.match(prompt, /禁止把 narration_text 或 captions 的原句、近似原句搬进画面/);
+assert.match(prompt, /第 0 帧和开头 0\.35 秒内/);
+assert.match(prompt, /禁止把全部主体同时设为 opacity:0/);
 assert.doesNotMatch(prompt, /第三帧完整旁白不应进入当前帧 prompt/);
 assert.doesNotMatch(prompt, /布局修复要求/);
 
@@ -240,6 +243,16 @@ assert.match(retryPrompt, /HTML skeleton|<!doctype html>/i);
 assert.doesNotMatch(retryPrompt, /Template HTML|Visual continuity lock|Source context summary/);
 assert.match(retryPrompt, /提炼成关键词\/短语再上画面/);
 assert.match(retryPrompt, /禁止照抄旁白或字幕原句/);
+assert.match(retryPrompt, /第 0 帧必须已有主标题/);
+assert.match(retryPrompt, /opacity:\.72/);
+
+const fallbackHtml = fallbackBuilder.buildFallbackFrameHtml({
+  scene: { id: 'scene_fallback', visual_text: { headline: '兜底标题' } },
+  node: { id: 'scene_fallback', text: '兜底正文' },
+  target: { resolution: { width: 1920, height: 1080 } },
+});
+assert.doesNotMatch(fallbackHtml, /fallbackEnter\{from\{opacity:0/);
+assert.match(fallbackHtml, /fallbackEnter\{from\{opacity:\.72/);
 
 const retryPromptWithKeywords = agent.buildRetryPrompt({
   node: { id: 'scene_01' },

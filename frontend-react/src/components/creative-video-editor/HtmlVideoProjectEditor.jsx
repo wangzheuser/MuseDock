@@ -34,6 +34,39 @@ function PanelDialog({ label, title, contentClassName = '', children }) {
   );
 }
 
+/**
+ * 汇总导出前需要用户处理或确认的问题。
+ * @param {object} editState 编辑器派生状态。
+ * @param {boolean} canvasDirty 画布是否存在未保存修改。
+ * @param {object} payload 本次导出参数。
+ * @returns {Array<object>} 导出问题列表。
+ */
+function buildExportIssues(editState = {}, canvasDirty = false, payload = {}) {
+  const issues = [];
+  if (canvasDirty) {
+    issues.push({ key: 'canvas', level: 'blocking', text: '画布有未保存修改，请先保存修改或切换镜头放弃修改。' });
+  }
+  if (editState.has_pending_html_draft) {
+    issues.push({ key: 'draft', level: 'blocking', text: `还有 ${editState.active_draft_count || 1} 个画面草稿待接受或放弃。` });
+  }
+  if (editState.has_layout_issues) {
+    issues.push({ key: 'qa', level: 'warning', text: `布局检查还有 ${editState.layout_issue_count || 1} 个问题，建议修复后导出。` });
+  }
+  if (editState.has_narration_text_outdated_audio && payload.force_use_stale_tts !== true) {
+    issues.push({ key: 'tts', level: 'warning', text: `还有 ${editState.stale_narration_count || 1} 个镜头旁白音频待重生成。` });
+  }
+  return issues;
+}
+
+/**
+ * 判断是否存在必须先处理的导出阻断项。
+ * @param {Array<object>} issues 导出问题列表。
+ * @returns {boolean} 是否阻断导出。
+ */
+function hasBlockingExportIssues(issues = []) {
+  return issues.some(issue => issue.level === 'blocking');
+}
+
 export function HtmlVideoProjectEditor({ editor, onExported }) {
   const disabled = editor.disabled;
   const frames = Array.isArray(editor.frames) ? editor.frames : [];
@@ -49,6 +82,8 @@ export function HtmlVideoProjectEditor({ editor, onExported }) {
   // onSelect 必须 preventDefault，否则菜单关闭的焦点归还会和 Dialog 焦点陷阱竞态
   const [activePanel, setActivePanel] = useState(null);
   const [pendingExportPayload, setPendingExportPayload] = useState(null);
+  const [pendingExportIssues, setPendingExportIssues] = useState([]);
+  const [canvasDirty, setCanvasDirty] = useState(false);
 
   function openPanel(event, panel) {
     event.preventDefault();
@@ -57,28 +92,39 @@ export function HtmlVideoProjectEditor({ editor, onExported }) {
     if (panel === 'source' && selectedFrameId) editor.loadFrameHtml(selectedFrameId);
   }
 
-  async function handleExport(payload = {}) {
-    if (editor.editState?.has_narration_text_outdated_audio && payload.force_use_stale_tts !== true) {
-      setPendingExportPayload(payload);
-      return null;
-    }
+  async function runExport(payload = {}) {
     const result = await editor.exportProject(payload);
     if (result) onExported?.(result);
     return result;
   }
 
-  async function continueExportWithStaleNarration() {
+  async function handleExport(payload = {}) {
+    const issues = buildExportIssues(editor.editState, canvasDirty, payload);
+    if (issues.length) {
+      setActivePanel(null);
+      setPendingExportPayload(payload);
+      setPendingExportIssues(issues);
+      return null;
+    }
+    return runExport(payload);
+  }
+
+  async function continueExportWithWarnings() {
     const payload = pendingExportPayload || {};
+    if (hasBlockingExportIssues(pendingExportIssues)) return;
     setPendingExportPayload(null);
-    await handleExport({ ...payload, force_use_stale_tts: true });
+    setPendingExportIssues([]);
+    await runExport({ ...payload, force_use_stale_tts: true });
   }
 
   async function regenerateNarrationAndExport() {
     const payload = pendingExportPayload || {};
+    if (hasBlockingExportIssues(pendingExportIssues)) return;
     const regenerated = await editor.regenerateAllNarration?.();
     if (!regenerated || regenerated.requires_tts === true) return;
     setPendingExportPayload(null);
-    await handleExport(payload);
+    setPendingExportIssues([]);
+    await runExport(payload);
   }
 
   function patchFrame(payload) {
@@ -155,22 +201,39 @@ export function HtmlVideoProjectEditor({ editor, onExported }) {
             </DropdownMenuPrimitive.Content>
           </DropdownMenuPrimitive.Portal>
         </DropdownMenuPrimitive.Root>
-        <button className={`${PRIMARY_TOOL_BUTTON_CLASS} ml-auto`} type="button" disabled={disabled} onClick={() => handleExport({})}>
+        <button className={`${PRIMARY_TOOL_BUTTON_CLASS} ml-auto`} type="button" disabled={disabled} onClick={() => setActivePanel('exports')}>
           {editor.status === 'exporting' ? '正在导出成片...' : '导出成片'}
         </button>
       </div>
-      <Dialog open={Boolean(pendingExportPayload)} onOpenChange={(open) => { if (!open) setPendingExportPayload(null); }}>
+      <Dialog open={Boolean(pendingExportPayload)} onOpenChange={(open) => {
+        if (!open) {
+          setPendingExportPayload(null);
+          setPendingExportIssues([]);
+        }
+      }}>
         <DialogContent className="bg-[#f8fafc] text-[#111827]">
           <DialogHeader>
-            <DialogTitle>旁白音频待重生成</DialogTitle>
+            <DialogTitle>导出前请确认</DialogTitle>
             <DialogDescription>
-              当前有 {editor.editState?.stale_narration_count || 0} 个镜头的旁白文本已更新，但音频仍是旧版本。建议先重新生成旁白再导出。
+              {hasBlockingExportIssues(pendingExportIssues) ? '当前还有必须处理的问题，处理后再导出。' : '发现可能影响成片的问题，请确认后继续。'}
             </DialogDescription>
           </DialogHeader>
+          <ul className="m-0 grid gap-2 pl-5 text-sm">
+            {pendingExportIssues.map(issue => (
+              <li key={issue.key} className={issue.level === 'blocking' ? 'font-semibold text-red-700' : 'text-amber-700'}>
+                {issue.text}
+              </li>
+            ))}
+          </ul>
           <DialogFooter className="flex flex-wrap justify-end gap-2">
-            <button className={TOOL_BUTTON_CLASS} type="button" disabled={disabled} onClick={() => setPendingExportPayload(null)}>取消</button>
-            <button className={TOOL_BUTTON_CLASS} type="button" disabled={disabled} onClick={continueExportWithStaleNarration}>继续使用旧旁白导出</button>
-            <button className={PRIMARY_TOOL_BUTTON_CLASS} type="button" disabled={disabled} onClick={regenerateNarrationAndExport}>重新生成旁白并导出</button>
+            <button className={TOOL_BUTTON_CLASS} type="button" disabled={disabled} onClick={() => {
+              setPendingExportPayload(null);
+              setPendingExportIssues([]);
+            }}>取消</button>
+            <button className={TOOL_BUTTON_CLASS} type="button" disabled={disabled || hasBlockingExportIssues(pendingExportIssues)} onClick={continueExportWithWarnings}>继续导出</button>
+            {pendingExportIssues.some(issue => issue.key === 'tts') ? (
+              <button className={PRIMARY_TOOL_BUTTON_CLASS} type="button" disabled={disabled || hasBlockingExportIssues(pendingExportIssues)} onClick={regenerateNarrationAndExport}>重新生成旁白并导出</button>
+            ) : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -226,6 +289,7 @@ export function HtmlVideoProjectEditor({ editor, onExported }) {
           <DialogHeader><DialogTitle>导出记录</DialogTitle></DialogHeader>
           <ExportsPanel
             exportsList={editor.exportsList}
+            projectResolution={editor.project?.output?.resolution}
             disabled={disabled}
             exporting={editor.status === 'exporting'}
             onExport={handleExport}
@@ -251,7 +315,7 @@ export function HtmlVideoProjectEditor({ editor, onExported }) {
         </DialogContent>
       </Dialog>
       <div className="grid min-h-0 min-w-0 grid-cols-1">
-        <HtmlVideoCanvasEditor editor={editor} />
+        <HtmlVideoCanvasEditor editor={editor} onDirtyChange={setCanvasDirty} />
       </div>
     </section>
   );

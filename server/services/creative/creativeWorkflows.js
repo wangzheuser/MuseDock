@@ -167,6 +167,24 @@ function exportOptionsFromPayload(payload = {}) {
   };
 }
 
+/**
+ * 校验导出尺寸是否保持当前固定画布尺寸。
+ * @param {object} project html-video 工程。
+ * @param {object} output 本次导出输出覆盖项。
+ * @returns {string} 校验错误，合法时为空。
+ */
+function validateExportResolution(project = {}, output = {}) {
+  const requested = plainObject(output.resolution);
+  const current = plainObject(project.output?.resolution);
+  const requestedWidth = Number(requested.width);
+  const requestedHeight = Number(requested.height);
+  const currentWidth = Number(current.width);
+  const currentHeight = Number(current.height);
+  if (![requestedWidth, requestedHeight, currentWidth, currentHeight].every(value => Number.isFinite(value) && value > 0)) return '';
+  if (requestedWidth === currentWidth && requestedHeight === currentHeight) return '';
+  return `当前工程画布为 ${currentWidth}×${currentHeight}，不能直接导出为 ${requestedWidth}×${requestedHeight}。请使用目标画幅重新创建工程，避免画面裁切或黑边。`;
+}
+
 function inferMediaRootFromProjectDir(projectDir, workflowId) {
   const resolvedProjectDir = path.resolve(String(projectDir || ''));
   const marker = `${path.sep}${safeString(workflowId)}${path.sep}agent_runs${path.sep}`;
@@ -209,6 +227,43 @@ async function readHtmlVideoSceneSpec(projectDir) {
 function sceneIdsFromSceneSpec(sceneSpec = {}) {
   const scenes = Array.isArray(sceneSpec?.scenes) ? sceneSpec.scenes : [];
   return scenes.map((scene, index) => safeString(scene?.id) || `scene_${String(index + 1).padStart(2, '0')}`);
+}
+
+/**
+ * 检查工程是否已有覆盖全部有声场景的可用 TTS 清单。
+ * @param {object} project html-video 工程。
+ * @param {string} projectDir 工程目录。
+ * @param {object} sceneSpec 场景脚本。
+ * @returns {Promise<boolean>} 清单及场景音频是否完整。
+ */
+async function hasCompleteSceneTtsManifest(project, projectDir, sceneSpec) {
+  const manifestPath = safeString(project?.audio?.tts_manifest_path);
+  if (!manifestPath) return false;
+  const absoluteManifestPath = path.isAbsolute(manifestPath)
+    ? manifestPath
+    : htmlVideoProjectStore.resolveProjectPath(projectDir, manifestPath);
+  let manifest;
+  try {
+    manifest = JSON.parse(await fsp.readFile(absoluteManifestPath, 'utf8'));
+  } catch {
+    return false;
+  }
+  const bySceneId = new Map((Array.isArray(manifest?.scenes) ? manifest.scenes : [])
+    .map(scene => [safeString(scene?.scene_id || scene?.id), scene])
+    .filter(([sceneId]) => sceneId));
+  const expectedScenes = (Array.isArray(sceneSpec?.scenes) ? sceneSpec.scenes : [])
+    .filter(scene => String(scene?.narration_text || '').trim());
+  for (const scene of expectedScenes) {
+    const manifestScene = bySceneId.get(safeString(scene?.id));
+    if (!manifestScene) return false;
+    const audioPath = safeString(manifestScene.path || manifestScene.relative_path);
+    if (!audioPath) return false;
+    const absoluteAudioPath = path.isAbsolute(audioPath)
+      ? audioPath
+      : htmlVideoProjectStore.resolveProjectPath(projectDir, audioPath);
+    if (!await fileExists(absoluteAudioPath)) return false;
+  }
+  return expectedScenes.length > 0;
 }
 
 function sceneSpecFromProjectFrames(project = {}, baseSceneSpec = null) {
@@ -2761,7 +2816,11 @@ async function regenerateHtmlVideoProjectNarration(workflowId, payload = {}, opt
     ? (Array.isArray(nextProject.frames) ? nextProject.frames : [])
       .find(frame => safeString(frame.id) === frameId || safeString(frame.scene_id) === frameId)
     : null;
-  const sceneId = targetFrame ? safeString(targetFrame.scene_id || targetFrame.id) : '';
+  const requestedSceneId = targetFrame ? safeString(targetFrame.scene_id || targetFrame.id) : '';
+  const canRegenerateSingleScene = requestedSceneId
+    ? await hasCompleteSceneTtsManifest(nextProject, projectDir, sceneSpec)
+    : false;
+  const sceneId = canRegenerateSingleScene ? requestedSceneId : '';
 
   const ttsService = options.htmlVideoServices?.ttsService
     || options.services?.ttsService
@@ -2795,7 +2854,9 @@ async function regenerateHtmlVideoProjectNarration(workflowId, payload = {}, opt
     audio_manifest: saved.audio?.tts_manifest_path || null,
     requires_tts: false,
     requires_render: true,
-    message: tts.message || '旁白音频已重新生成，需要重新导出成片。',
+    message: requestedSceneId && !canRegenerateSingleScene
+      ? '原工程只有整轨旁白，已按当前最新配置重建全部场景音频，需要重新导出成片。'
+      : (tts.message || '旁白音频已重新生成，需要重新导出成片。'),
   };
 }
 
@@ -2872,6 +2933,15 @@ async function renderCreativeWorkflowHtmlVideoProject(workflowId, payload = {}, 
       code: 'HTML_VIDEO_EXPORT_SPEED_INVALID',
       workflow_id: workflowId,
       message: exportOptions.error,
+    };
+  }
+  const resolutionError = validateExportResolution(project, exportOptions.output);
+  if (resolutionError) {
+    return {
+      success: false,
+      code: 'HTML_VIDEO_EXPORT_RESOLUTION_MISMATCH',
+      workflow_id: workflowId,
+      message: resolutionError,
     };
   }
   if (Object.keys(exportOptions.output).length > 0) {

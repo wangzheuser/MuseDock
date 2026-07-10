@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Clipboard, Download, Play } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, CircleHelp, Clipboard, Download, Play, XCircle } from 'lucide-react';
 import { EditorInlineActions, EditorPanel, EditorPanelHeader } from './editorUi.jsx';
 
 const PLATFORM_PRESETS = {
@@ -57,9 +57,14 @@ function openPlaybackUrl(url) {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
-function copyText(value) {
-  if (!value || typeof navigator === 'undefined') return;
-  navigator.clipboard?.writeText(value).catch(() => {});
+async function copyText(value) {
+  if (!value || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return false;
+  try {
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function downloadUrl(url) {
@@ -71,6 +76,29 @@ function downloadUrl(url) {
   document.body.appendChild(link);
   link.click();
   link.remove();
+}
+
+/**
+ * 格式化视频码率。
+ * @param {number|string} value 码率，单位 bps。
+ * @returns {string} Mbps 文本。
+ */
+function formatVideoBitrate(value) {
+  const bitrate = Number(value);
+  return Number.isFinite(bitrate) && bitrate > 0 ? `${(bitrate / 1000000).toFixed(2)} Mbps` : '码率未知';
+}
+
+/**
+ * 返回技术质检的展示信息。
+ * @param {object|null} report 质检报告。
+ * @returns {object} 状态文案、样式和图标。
+ */
+function getQualityDisplay(report) {
+  if (!report) return { label: '暂无技术质检数据', className: 'text-[#6b7280]', icon: CircleHelp };
+  if (report.skipped) return { label: '技术质检已跳过', className: 'text-amber-700', icon: AlertTriangle };
+  if (report.publish_ready === false || report.success === false) return { label: '技术质检未通过', className: 'text-red-700', icon: XCircle };
+  if (report.pass === false || (report.issues || []).length > 0) return { label: '技术质检通过，存在优化建议', className: 'text-amber-700', icon: AlertTriangle };
+  return { label: '技术质检通过', className: 'text-emerald-700', icon: CheckCircle2 };
 }
 
 function defaultExportDraft() {
@@ -149,6 +177,7 @@ function saveExportDraft(draft) {
 
 export function ExportsPanel({
   exportsList = [],
+  projectResolution = {},
   disabled,
   exporting,
   onExport,
@@ -161,6 +190,8 @@ export function ExportsPanel({
   const [draft, setDraft] = useState(createInitialDraft);
   const [notes, setNotes] = useState({});
   const [speedError, setSpeedError] = useState('');
+  const [resolutionError, setResolutionError] = useState('');
+  const [copyStatus, setCopyStatus] = useState({});
 
   useEffect(() => {
     saveExportDraft(draft);
@@ -168,6 +199,7 @@ export function ExportsPanel({
 
   function applyPlatform(platform) {
     const preset = PLATFORM_PRESETS[platform] || PLATFORM_PRESETS.custom;
+    setResolutionError('');
     setDraft(prev => ({
       ...prev,
       platform,
@@ -180,12 +212,25 @@ export function ExportsPanel({
   function submitExport() {
     const width = Number(draft.width);
     const height = Number(draft.height);
+    const projectWidth = Number(projectResolution.width);
+    const projectHeight = Number(projectResolution.height);
     const parsedSpeed = parsePlaybackSpeedInput(draft.playbackSpeed);
     if (!parsedSpeed.ok) {
       setSpeedError(parsedSpeed.message);
       return;
     }
+    if (
+      Number.isFinite(width) && width > 0
+      && Number.isFinite(height) && height > 0
+      && Number.isFinite(projectWidth) && projectWidth > 0
+      && Number.isFinite(projectHeight) && projectHeight > 0
+      && (width !== projectWidth || height !== projectHeight)
+    ) {
+      setResolutionError(`当前工程画布为 ${projectWidth}×${projectHeight}，不能直接导出为 ${width}×${height}。请使用目标画幅重新创建工程。`);
+      return;
+    }
     setSpeedError('');
+    setResolutionError('');
     setDraft(prev => ({ ...prev, playbackSpeed: parsedSpeed.formatted }));
     onExport?.({
       export_options: {
@@ -198,6 +243,20 @@ export function ExportsPanel({
         tail_protection: draft.tailProtection,
       },
     });
+  }
+
+  /**
+   * 复制导出文件地址并给出短反馈。
+   * @param {string|number} key 导出记录键。
+   * @param {string} url 播放地址。
+   */
+  async function copyPlaybackUrl(key, url) {
+    const ok = await copyText(url);
+    setCopyStatus(prev => ({ ...prev, [key]: ok ? '已复制' : '复制失败' }));
+    if (typeof window === 'undefined') return;
+    window.setTimeout(() => {
+      setCopyStatus(prev => ({ ...prev, [key]: '' }));
+    }, 1800);
   }
 
   return (
@@ -236,6 +295,7 @@ export function ExportsPanel({
             <input type="number" min="1" value={draft.fps} disabled={disabled} onChange={event => setDraft(prev => ({ ...prev, fps: event.target.value }))} />
           </label>
         </div>
+        {resolutionError ? <p className="m-0 text-xs font-semibold text-red-600">{resolutionError}</p> : null}
         <div className="grid grid-cols-2 gap-2">
           <label>
             <span>导出倍速</span>
@@ -269,12 +329,35 @@ export function ExportsPanel({
       </div>
       {exportsList.length ? exportsList.map((item, index) => {
         const playbackUrl = getExportPlaybackUrl(item, resolveExportPlaybackUrl);
+        const itemKey = item.id || item.path || index;
+        const qualityReport = item.quality_report || null;
+        const qualityDisplay = getQualityDisplay(qualityReport);
+        const QualityIcon = qualityDisplay.icon;
+        const metrics = qualityReport?.metrics || {};
+        const warningCount = (qualityReport?.issues || []).filter(issue => issue?.severity === 'warning').length;
         return (
-          <div className="flex items-center justify-between gap-2 border-t border-[#e5e7eb] pt-2 text-xs text-[#4b5563] [&_strong]:break-all [&_strong]:text-[#111827]" key={item.id || item.path || index}>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-[#e5e7eb] pt-2 text-xs text-[#4b5563] [&_strong]:break-all [&_strong]:text-[#111827]" key={itemKey}>
             <div className="grid min-w-0 gap-[3px]">
               <strong>{getExportLabel(item, index)}</strong>
               <span>{formatExportTime(item.created_at) || item.status || '已生成'}{item.kind === 'preview' ? ' · 预览' : ''}{item.playback_speed && Number(item.playback_speed) !== 1 ? ` · ${item.playback_speed}x` : ''}{item.tail_padding_sec ? ` · 已保护尾音 +${Number(item.tail_padding_sec).toFixed(1)}s` : ''}</span>
+              <span className={`inline-flex items-center gap-1 font-medium ${qualityDisplay.className}`} role="status" title={qualityReport?.message || qualityDisplay.label}>
+                <QualityIcon size={14} aria-hidden="true" />{qualityDisplay.label}{warningCount ? `（${warningCount} 项）` : ''}
+              </span>
+              {qualityReport && !qualityReport.skipped ? (
+                <span>
+                  {metrics.width || 0}×{metrics.height || 0} · {Number(metrics.fps || 0).toFixed(2)} FPS · {formatVideoBitrate(metrics.video_bitrate)}
+                  {metrics.audio_sample_rate ? ` · 音频 ${Math.round(Number(metrics.audio_sample_rate) / 1000)}kHz` : ''}
+                  {metrics.encoding_mode?.includes('crf17') ? ' · CRF17 质量模式' : ''}
+                  {metrics.motion_effective_fps_estimate ? ` · 有效动态约 ${Number(metrics.motion_effective_fps_estimate).toFixed(2)} FPS` : ''}
+                </span>
+              ) : null}
+              {(qualityReport?.issues || []).map(issue => (
+                <span className={issue?.severity === 'error' ? 'text-red-700' : 'text-amber-700'} key={issue?.code || issue?.message}>
+                  {issue?.message || '存在发布质量建议。'}
+                </span>
+              ))}
               {item.note ? <span>备注：{item.note}</span> : null}
+              {copyStatus[itemKey] ? <span className={copyStatus[itemKey] === '已复制' ? 'text-emerald-600' : 'text-red-600'}>{copyStatus[itemKey]}</span> : null}
             </div>
             <EditorInlineActions>
               <button type="button" className="inline-flex flex-none items-center gap-1" disabled={disabled || !playbackUrl} title={playbackUrl ? '播放导出成片' : '暂无可播放文件'} aria-label={`播放导出成片：${getExportLabel(item, index)}`} onClick={() => onPlay(playbackUrl, item)}>
@@ -283,7 +366,7 @@ export function ExportsPanel({
               <button type="button" className="inline-flex flex-none items-center gap-1" disabled={disabled || !playbackUrl} onClick={() => downloadUrl(playbackUrl)}>
                 <Download size={14} aria-hidden="true" />下载
               </button>
-              <button type="button" className="inline-flex flex-none items-center gap-1" disabled={disabled || !playbackUrl} onClick={() => copyText(playbackUrl)}>
+              <button type="button" className="inline-flex flex-none items-center gap-1" disabled={disabled || !playbackUrl} onClick={() => copyPlaybackUrl(itemKey, playbackUrl)}>
                 <Clipboard size={14} aria-hidden="true" />复制路径
               </button>
               <button type="button" disabled={disabled || !item.id} onClick={() => {
@@ -291,7 +374,7 @@ export function ExportsPanel({
                 onDeleteExport?.(item.id);
               }}>删除</button>
             </EditorInlineActions>
-            <div className="col-span-full mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+            <div className="col-span-2 mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
               <input value={notes[item.id] ?? item.note ?? ''} disabled={disabled || !item.id} placeholder="添加备注" onChange={event => setNotes(prev => ({ ...prev, [item.id]: event.target.value }))} />
               <button type="button" disabled={disabled || !item.id} onClick={() => onPatchExport?.(item.id, { note: notes[item.id] ?? item.note ?? '' })}>保存备注</button>
             </div>

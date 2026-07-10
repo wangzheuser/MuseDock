@@ -119,6 +119,9 @@ const assetStore = require('../server/services/creative-video/html-video/assetSt
   assert.notEqual(firstExport.path, secondExport.path);
   assert.equal(firstExport.path, 'exports/final.mp4');
   assert.equal(secondExport.path, 'exports/final-2.mp4');
+  project.exports.shift();
+  const thirdExport = store.addExport(project, { format: 'mp4', path: 'exports/final.mp4' });
+  assert.notEqual(thirdExport.id, secondExport.id, '删除旧记录后新增导出仍应使用唯一 ID');
 
   assert.equal(
     store.resolveProjectPath(projectDir, 'exports/final.mp4'),

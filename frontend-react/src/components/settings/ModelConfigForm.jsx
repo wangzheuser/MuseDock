@@ -1,11 +1,11 @@
 import { Switch } from './Switch.jsx';
 
-export function ModelConfigForm({ type, info, model, onChange }) {
+export function ModelConfigForm({ type, info, model, onChange, disabled = false }) {
   const m = model || { enabled: false, modelId: '', note: '' };
   return (
     <div className={`rounded-lg border bg-white p-3 transition ${m.enabled ? 'border-[#111827]' : 'border-[#edf0f4]'}`}>
       <div className="mb-2 flex items-center gap-2">
-        <Switch small checked={!!m.enabled} onChange={e => onChange('enabled', e.target.checked)} />
+        <Switch small checked={!!m.enabled} disabled={disabled} onChange={e => onChange('enabled', e.target.checked)} />
         <span className="text-[13px] font-semibold text-[#30343b]">{info.title}</span>
       </div>
       <input
@@ -13,7 +13,7 @@ export function ModelConfigForm({ type, info, model, onChange }) {
         value={m.modelId}
         onChange={e => onChange('modelId', e.target.value)}
         placeholder={info.placeholder}
-        disabled={!m.enabled}
+        disabled={disabled || !m.enabled}
       />
       {type === 'tts' && m.enabled ? (
         <div className="mt-2 grid grid-cols-2 gap-2">
@@ -25,6 +25,7 @@ export function ModelConfigForm({ type, info, model, onChange }) {
               max="5"
               value={m.ttsConcurrency ?? 1}
               className="h-[30px] w-full rounded-md border border-[#d9dde5] px-1.5 text-xs"
+              disabled={disabled}
               onChange={e => onChange('ttsConcurrency', e.target.value)}
             />
           </label>
@@ -37,6 +38,7 @@ export function ModelConfigForm({ type, info, model, onChange }) {
               step="100"
               value={m.ttsQueueIntervalMs ?? 1800}
               className="h-[30px] w-full rounded-md border border-[#d9dde5] px-1.5 text-xs"
+              disabled={disabled}
               onChange={e => onChange('ttsQueueIntervalMs', e.target.value)}
             />
           </label>
@@ -48,6 +50,7 @@ export function ModelConfigForm({ type, info, model, onChange }) {
             className="size-3.5"
             type="checkbox"
             checked={m.supportsMultimodal === true}
+            disabled={disabled}
             onChange={e => onChange('supportsMultimodal', e.target.checked)}
           />
           <span>支持多模态输入</span>

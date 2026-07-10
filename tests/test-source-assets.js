@@ -98,12 +98,18 @@ async function testPrepareDownloadsPexelsWhenNoArticleImages() {
     maxSearchImages: 1,
     deps: {
       pexelsApiKey: 'pexels-key',
+      aspectRatio: '16:9',
       fetchImpl: async (url) => {
         requested.push(url);
         if (String(url).startsWith('https://api.pexels.com/')) {
           return new Response(JSON.stringify({
             photos: [{
-              src: { large2x: 'https://images.pexels.com/photo.jpg' },
+              width: 3840,
+              height: 2160,
+              src: {
+                original: 'https://images.pexels.com/photo-original.jpg',
+                large2x: 'https://images.pexels.com/photo-preview.jpg',
+              },
               alt: '代码屏幕',
               photographer: 'Tester',
               url: 'https://pexels.com/photo',
@@ -120,8 +126,19 @@ async function testPrepareDownloadsPexelsWhenNoArticleImages() {
   assert.equal(result.assets.length, 1);
   assert.equal(result.assets[0].source, 'search');
   assert.equal(result.assets[0].attribution.provider, 'Pexels');
+  assert.equal(result.assets[0].url, 'https://images.pexels.com/photo-original.jpg');
+  assert.equal(result.assets[0].width, 3840);
+  assert.equal(result.assets[0].height, 2160);
   assert.ok(fs.existsSync(result.assets[0].local_path));
-  assert.ok(requested.some(url => String(url).startsWith('https://api.pexels.com/')));
+  const searchUrl = new URL(requested.find(url => String(url).startsWith('https://api.pexels.com/')));
+  assert.equal(searchUrl.searchParams.get('orientation'), 'landscape');
+}
+
+async function testPexelsOrientationMatchesAspectRatio() {
+  assert.equal(sourceAssets.resolvePexelsOrientation('9:16'), 'portrait');
+  assert.equal(sourceAssets.resolvePexelsOrientation('16:9'), 'landscape');
+  assert.equal(sourceAssets.resolvePexelsOrientation('1:1'), 'square');
+  assert.equal(sourceAssets.resolvePexelsOrientation('invalid'), 'portrait');
 }
 
 async function testMissingPexelsKeyDoesNotFail() {
@@ -364,6 +381,7 @@ async function testSearchFallbackWhenArticleImagesAllFail() {
   await testExtractMarkdownImagesIncludesHtmlImgTags();
   await testPrepareDownloadsArticleImageWithoutPexelsBackfill();
   await testPrepareDownloadsPexelsWhenNoArticleImages();
+  await testPexelsOrientationMatchesAspectRatio();
   await testMissingPexelsKeyDoesNotFail();
   await testPexelsHttpFailureAddsDiagnostic();
   await testRejectsPrivateImageUrlBeforeFetch();

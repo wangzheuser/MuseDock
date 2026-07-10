@@ -135,6 +135,15 @@ for (const menuPanel of ['源码', '布局检查', '导出记录', '重新生成
 assert.ok(editor.includes('DropdownMenuPrimitive'), 'low-frequency panels should live in a dropdown menu');
 assert.ok(editor.includes('HtmlVideoDraftPanel'), 'draft panel should be merged into the AI 修改 dialog');
 assert.doesNotMatch(editor, /ProjectFramesList/, 'editor should drop the left frames list (bottom strip covers selection)');
+assert.ok(editor.includes('buildExportIssues'), 'editor should collect export blockers before exporting');
+assert.ok(editor.includes('画布有未保存修改'), 'editor should block export when canvas edits are unsaved');
+assert.ok(editor.includes('画面草稿待接受或放弃'), 'editor should block export when frame drafts are pending');
+assert.ok(editor.includes('继续导出'), 'editor should allow confirmed export for warning-only issues');
+assert.ok(editor.includes('runExport(payload)'), 'regenerated narration export should bypass stale-state recheck');
+assert.ok(editor.includes("setActivePanel('exports')"), 'top export button should open the export options panel');
+assert.ok(editor.includes('onDirtyChange={setCanvasDirty}'), 'canvas dirty state should be reported to export checks');
+assert.ok(hook.includes('frameIdOf'), 'hook should share frame id lookup for id and scene_id');
+assert.ok(hook.includes('frame?.id || frame?.scene_id'), 'hook should select frames by id or scene_id');
 
 const sourcePanel = fs.readFileSync('frontend-react/src/components/creative-video-editor/HtmlVideoSourcePanel.jsx', 'utf-8');
 assert.ok(sourcePanel.includes('源码'), 'Source panel should show Chinese source title');
@@ -171,6 +180,7 @@ assert.ok(aiEditPanel.includes('editPlan.generated_drafts?.length'), 'AI edit pa
 assert.ok(editor.includes('HtmlVideoSourcePanel'), 'HtmlVideoProjectEditor should compose source panel');
 assert.ok(editor.includes('HtmlVideoDraftPanel'), 'HtmlVideoProjectEditor should compose draft panel');
 assert.ok(editor.includes('HtmlVideoQualityPanel'), 'HtmlVideoProjectEditor should compose quality panel');
+assert.ok(editor.includes('projectResolution={editor.project?.output?.resolution}'), 'editor should pass the fixed project resolution to export settings');
 assert.ok(editor.includes('HtmlVideoAiEditPanel'), 'HtmlVideoProjectEditor should compose AI edit panel');
 assert.doesNotMatch(editor, /ReservedCapabilitiesPanel/, 'reserved panel should remain hidden');
 
@@ -182,6 +192,9 @@ const exportsPanel = fs.readFileSync('frontend-react/src/components/creative-vid
 assert.ok(exportsPanel.includes('正在导出成片'), 'exports panel should show export loading text');
 assert.ok(exportsPanel.includes('导出成片'), 'exports panel should provide export action');
 assert.ok(exportsPanel.includes('播放'), 'exports panel should provide a playback action for each export record');
+assert.ok(exportsPanel.includes('已复制'), 'exports panel should show copy success feedback');
+assert.ok(exportsPanel.includes('复制失败'), 'exports panel should show copy failure feedback');
+assert.ok(exportsPanel.includes('grid-cols-[minmax(0,1fr)_auto]'), 'exports panel records should keep actions and notes readable');
 assert.ok(exportsPanel.includes('formatExportTime'), 'exports panel should format export timestamps before rendering');
 assert.match(exportsPanel, /toLocaleString\('zh-CN'/, 'exports panel should render export timestamps in local Chinese format');
 assert.ok(exportsPanel.includes('getExportPlaybackUrl'), 'exports panel should resolve a safe playback URL for exported videos');
@@ -198,8 +211,16 @@ assert.ok(exportsPanel.includes('localStorage'), 'exports panel should persist e
 assert.ok(exportsPanel.includes('musedock.htmlVideo.exportDraft.v1'), 'exports panel should use a stable localStorage key');
 assert.ok(exportsPanel.includes('抖音横屏'), 'exports panel should include Douyin landscape preset');
 assert.ok(exportsPanel.includes('小红书横屏'), 'exports panel should include Xiaohongshu landscape preset');
+assert.ok(exportsPanel.includes('不能直接导出为'), 'exports panel should block changing a fixed-canvas project resolution');
 assert.match(exportsPanel, /douyin_landscape:[^}]*width:\s*1920[^}]*height:\s*1080/s, 'Douyin landscape should use 1920x1080');
 assert.match(exportsPanel, /xiaohongshu_landscape:[^}]*width:\s*1920[^}]*height:\s*1080/s, 'Xiaohongshu landscape should use 1920x1080');
+assert.ok(exportsPanel.includes('技术质检通过'), 'exports panel should show final media quality status');
+assert.ok(exportsPanel.includes('技术质检未通过'), 'exports panel should show blocked media quality status');
+assert.ok(exportsPanel.includes('video_bitrate'), 'exports panel should show actual video bitrate');
+assert.ok(exportsPanel.includes('audio_sample_rate'), 'exports panel should show actual audio sample rate');
+assert.ok(exportsPanel.includes('motion_effective_fps_estimate'), 'exports panel should show estimated effective motion FPS');
+assert.ok(exportsPanel.includes('CRF17 质量模式'), 'exports panel should identify content-adaptive publish encoding');
+assert.ok(exportsPanel.includes('存在发布质量建议'), 'exports panel should show concrete media quality suggestions');
 
 const previewPanel = fs.readFileSync('frontend-react/src/components/creative-video-editor/PreviewPanel.jsx', 'utf-8');
 assert.ok(previewPanel.includes('预览倍速'), 'preview panel should expose preview speed');

@@ -86,15 +86,16 @@ function createSceneSpecManifestBase(projectDir, sceneSpec, { status = 'ready' }
 }
 
 /**
- * 读取新生成 TTS 文件的真实时长，失败时返回 0 让调用方保持兼容。
+ * 读取新生成 TTS 文件的真实时长，失败时返回 null 让导出前明确阻断。
  * @param {string} filePath 音频文件路径。
  * @param {object} options ffprobe 选项。
- * @returns {Promise<number>} 音频时长秒数。
+ * @returns {Promise<number|null>} 音频时长秒数。
  */
 async function defaultReadAudioDuration(filePath, options = {}) {
   const result = await ttsTimeline.readAudioDuration(filePath, options);
   if (Number.isFinite(Number(result))) return Number(result);
-  return result?.success ? Number(result.duration || 0) : 0;
+  const duration = Number(result?.duration);
+  return result?.success && Number.isFinite(duration) && duration > 0 ? duration : null;
 }
 
 function firstNonEmptyString(...values) {
@@ -156,6 +157,9 @@ function applyManifestToProjectAudio(project, sceneSpec, audioManifest = {}) {
     const duration = Number(manifestScene.duration ?? manifestScene.duration_sec ?? manifestScene.durationSec);
     if (Number.isFinite(duration) && duration > 0) {
       frame.narration_audio_duration_sec = Math.round(duration * 1000) / 1000;
+      frame.narration_audio_duration_unavailable = false;
+    } else if (manifestScene.duration_unavailable === true) {
+      frame.narration_audio_duration_unavailable = true;
     }
   }
   return project.audio;
@@ -237,12 +241,16 @@ async function synthesizeSceneNarration({
       const tempPath = path.join(tempDir, fileName);
       await fs.writeFile(tempPath, response.audioBuffer);
       const duration = await readAudioDuration(tempPath, { scene, format });
+      const durationSec = Number(duration);
+      const durationUnavailable = !Number.isFinite(durationSec) || durationSec <= 0;
+      if (durationUnavailable) manifest.status = 'duration_unavailable';
       pendingFiles.push({ tempPath, finalPath });
       manifest.scenes.push({
         scene_id: scene.id,
         path: finalPath,
         relative_path: relativeAudioPath(fileName),
-        duration: Number.isFinite(Number(duration)) ? Number(duration) : 0,
+        duration: durationUnavailable ? null : durationSec,
+        duration_unavailable: durationUnavailable,
         format,
         voice: response.voice || '',
         model: response.model || {},

@@ -144,7 +144,10 @@ function timestamp() {
 }
 
 function nextEntryId(prefix, entries) {
-  return `${prefix}_${String((entries || []).length + 1).padStart(4, '0')}`;
+  const used = new Set((entries || []).map(item => item?.id).filter(Boolean));
+  let index = (entries || []).length + 1;
+  while (used.has(`${prefix}_${String(index).padStart(4, '0')}`)) index += 1;
+  return `${prefix}_${String(index).padStart(4, '0')}`;
 }
 
 function createRevisionSnapshot(project = {}) {

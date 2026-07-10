@@ -71,6 +71,22 @@ const {
     stylePrompt: '请使用更有情绪的语气。',
   }]);
 
+  const durationMissingDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tts-duration-missing-'));
+  const durationMissing = await tts.synthesizeSceneNarration({
+    projectDir: durationMissingDir,
+    sceneSpec: { scenes: [{ id: 'scene_duration', narration_text: '时长探测失败' }] },
+    services: {
+      ttsModel: {
+        callTtsModel: async ({ text }) => ({ success: true, audioBuffer: Buffer.from(text), format: 'mp3' }),
+      },
+      readAudioDuration: async () => null,
+    },
+  });
+  assert.equal(durationMissing.success, true);
+  assert.equal(durationMissing.audio_manifest.status, 'duration_unavailable');
+  assert.equal(durationMissing.audio_manifest.scenes[0].duration, null);
+  assert.equal(durationMissing.audio_manifest.scenes[0].duration_unavailable, true);
+
   const local = await tts.synthesizeSceneNarration({
     projectDir,
     sceneSpec: {
@@ -106,6 +122,10 @@ const {
   assert.equal(projectAudio.frames[0].narration_audio_stale, false);
   assert.ok(projectAudio.frames[0].narration_audio_text_hash);
   assert.equal(projectAudio.frames[0].narration_audio_duration_sec, 1.5);
+  tts.applyManifestToProjectAudio(projectAudio, { scenes: [{ id: 'scene_01', narration_text: '第一段旁白' }] }, {
+    scenes: [{ scene_id: 'scene_01', narration_text_hash: projectAudio.frames[0].narration_audio_text_hash, duration_unavailable: true }],
+  });
+  assert.equal(projectAudio.frames[0].narration_audio_duration_unavailable, true);
 
   await fs.writeFile(path.join(projectDir, 'tts', 'scene_01.mp3'), 'old audio');
   const failed = await tts.synthesizeSceneNarration({

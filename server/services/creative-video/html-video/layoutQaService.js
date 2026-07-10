@@ -1,4 +1,8 @@
 const { pathToFileURL } = require('url');
+const {
+  installPausedAnimationStyle,
+  seekPageToTime,
+} = require('./hyperframesPlaywrightAdapter');
 
 const DEFAULT_RESOLUTION = { width: 1920, height: 1080 };
 const CANDIDATE_SELECTOR = [
@@ -20,11 +24,18 @@ const CANDIDATE_SELECTOR = [
 
 function defaultSampleTimes(durationSec) {
   const duration = Number(durationSec);
-  if (!Number.isFinite(duration) || duration <= 0) return [0.1];
-  if (duration < 1.2) return [Number(Math.max(0.1, duration * 0.5).toFixed(3))];
+  if (!Number.isFinite(duration) || duration <= 0) return [0];
+  if (duration < 1.2) {
+    return normalizeSampleTimes([
+      0,
+      Math.min(0.35, duration * 0.5),
+      Math.max(0, duration - 0.1),
+    ], duration);
+  }
   return normalizeSampleTimes([
+    0,
+    0.35,
     duration < 2 ? 0.8 : 1.2,
-    1.8,
     duration * 0.65,
     Math.max(0, duration - 0.3),
   ], duration).slice(0, 5);
@@ -88,6 +99,7 @@ function dedupeIssues(issues) {
     const details = issue.details || {};
     const key = [
       issue.code,
+      issue.code === 'scene_opening_low_information' ? issue.sample_time_sec : '',
       details.selector, details.text,
       details.first?.selector, details.first?.text,
       details.second?.selector, details.second?.text,
@@ -122,18 +134,209 @@ function isDecorativeText(candidate) {
   return /section|scene|counter|number|decorative|ornament|background|watermark|brand|footer|kicker|eyebrow|label|badge|chip|meta|signal|engine|date|time|stamp|dim|tick/.test(name);
 }
 
+/**
+ * 判断文本候选是否属于系统注入的字幕层。
+ * @param {object} candidate 文本候选。
+ * @returns {boolean}
+ */
+function isSystemCaption(candidate) {
+  const name = [candidate.key, candidate.role, candidate.selector, candidate.container?.selector]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return /hv-caption|subtitle-caption/.test(name);
+}
+
+/**
+ * 判断文本是否可作为场景开头的主体信息，显式文本锚点优先于父容器命名。
+ * @param {object} candidate 文本候选。
+ * @returns {boolean}
+ */
+function isOpeningPrimaryText(candidate) {
+  if (isSystemCaption(candidate)) return false;
+  if (/^\d{1,3}\s*[/|·-]\s*\d{1,3}$/.test(String(candidate.text || '').replace(/\s+/g, ' ').trim())) {
+    return false;
+  }
+  const structuralName = [candidate.role, candidate.selector]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  if (/section(?:-|_)?(?:no|number)|counter|decorative|ornament|watermark|footer|kicker|eyebrow|badge|chip|meta|date|time|stamp|tick/.test(structuralName)) {
+    return false;
+  }
+  const ownName = [candidate.key, candidate.role, candidate.selector]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  if (/headline|body|subtitle|title|copy|summary|description/.test(ownName)) return true;
+  if (/^h[1-3]$/.test(candidate.tag || '')) return true;
+  return (candidate.tag === 'p' || candidate.tag === 'li')
+    && String(candidate.text || '').trim().length >= 4
+    && !isDecorativeText(candidate);
+}
+
+/**
+ * 计算元素矩形与画布相交区域。
+ * @param {object} box 元素矩形。
+ * @param {object} resolution 画布尺寸。
+ * @returns {number}
+ */
+function visibleArea(box, resolution) {
+  if (!box) return 0;
+  const width = Math.max(0, Math.min(box.right, resolution.width) - Math.max(box.left, 0));
+  const height = Math.max(0, Math.min(box.bottom, resolution.height) - Math.max(box.top, 0));
+  return width * height;
+}
+
+/**
+ * 判断候选元素是否有足够比例处于画布内，过滤仅露出少量边缘的入场元素。
+ * @param {object} candidate 文本候选。
+ * @param {object} resolution 画布尺寸。
+ * @returns {boolean}
+ */
+function isSubstantiallyVisible(candidate, resolution) {
+  const boxArea = Number(candidate?.box?.width || 0) * Number(candidate?.box?.height || 0);
+  if (boxArea <= 0) return false;
+  return visibleArea(candidate.box, resolution) / boxArea >= 0.25;
+}
+
+/**
+ * 收集当前时间点可见的主视觉容器，避免仅凭字幕或角落编号判定画面有效。
+ * @param {import('playwright-core').Page} page Playwright 页面。
+ * @param {object} resolution 画布尺寸。
+ * @returns {Promise<object>}
+ */
+async function collectVisualAnchors(page, resolution) {
+  return page.evaluate(({ width, height }) => {
+    const selector = [
+      'img',
+      'video',
+      'canvas',
+      'svg',
+      '[data-role="visual-card"]',
+      '[data-role="media"]',
+      '[data-role="chart"]',
+      '.card',
+      '.panel',
+      '.tile',
+      '.module',
+      '.visual',
+      '.media',
+    ].join(',');
+    const viewportArea = width * height;
+
+    function alpha(color) {
+      const match = String(color || '').match(/rgba?\([^)]*?(?:,|\s\/\s)([\d.]+)\s*\)$/i);
+      return match ? Number(match[1]) : (String(color || '') === 'transparent' ? 0 : 1);
+    }
+
+    function intersectionArea(rect) {
+      const visibleWidth = Math.max(0, Math.min(rect.right, width) - Math.max(rect.left, 0));
+      const visibleHeight = Math.max(0, Math.min(rect.bottom, height) - Math.max(rect.top, 0));
+      return visibleWidth * visibleHeight;
+    }
+
+    function hasVisibleAppearance(element, style) {
+      const tag = element.tagName.toLowerCase();
+      if (tag === 'img') return element.complete && element.naturalWidth > 0;
+      if (tag === 'video') return element.readyState >= 1;
+      if (tag === 'canvas' || tag === 'svg') return true;
+      return style.backgroundImage !== 'none'
+        || alpha(style.backgroundColor) >= 0.08
+        || Number.parseFloat(style.borderTopWidth || '0') > 0
+        || style.boxShadow !== 'none';
+    }
+
+    function effectiveOpacity(element) {
+      let current = element;
+      let opacity = 1;
+      while (current) {
+        const style = getComputedStyle(current);
+        if (!style || style.display === 'none' || style.visibility === 'hidden') return 0;
+        opacity *= Number(style.opacity || 1);
+        if (opacity < 0.15) return opacity;
+        current = current.parentElement;
+      }
+      return opacity;
+    }
+
+    const anchors = Array.from(document.querySelectorAll(selector))
+      .filter(element => !element.closest('[data-hv-layer="captions"], .hv-caption-layer, [data-layout-ignore], [aria-hidden="true"]'))
+      .map(element => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        const area = intersectionArea(rect);
+        if (
+          style.display === 'none'
+          || style.visibility === 'hidden'
+          || effectiveOpacity(element) < 0.15
+          || area <= 0
+          || !hasVisibleAppearance(element, style)
+        ) return null;
+        return {
+          selector: element.id
+            ? `#${element.id}`
+            : `${element.tagName.toLowerCase()}${element.classList.length ? `.${Array.from(element.classList).join('.')}` : ''}`,
+          visible_area_ratio: viewportArea > 0 ? area / viewportArea : 0,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.visible_area_ratio - a.visible_area_ratio);
+
+    return {
+      count: anchors.length,
+      max_visible_area_ratio: anchors[0]?.visible_area_ratio || 0,
+      anchors: anchors.slice(0, 5),
+    };
+  }, {
+    width: resolution.width,
+    height: resolution.height,
+  });
+}
+
+/**
+ * 检查场景开头是否已有足够明确的主体内容。
+ * @param {object} options 检查参数。
+ * @returns {Array<object>}
+ */
+function inspectOpeningContent({ candidates, visualAnchors, resolution, frameId, sampleTimeSec }) {
+  if (sampleTimeSec > 0.4) return [];
+  const primaryCandidates = candidates.filter(candidate => (
+    isOpeningPrimaryText(candidate)
+    && isSubstantiallyVisible(candidate, resolution)
+  ));
+  const maxVisualAreaRatio = Number(visualAnchors.max_visible_area_ratio || 0);
+  if (primaryCandidates.length > 0 || maxVisualAreaRatio >= 0.04) return [];
+  return [makeIssue({
+    code: 'scene_opening_low_information',
+    severity: 'error',
+    frameId,
+    sampleTimeSec,
+    message: '场景开头缺少可辨识的主标题、主卡片、图片或核心视觉，容易出现只有背景或字幕的空档。',
+    details: {
+      primary_candidate_count: primaryCandidates.length,
+      primary_candidates: primaryCandidates.slice(0, 5).map(candidate => ({
+        selector: candidate.selector,
+        text: String(candidate.text || '').slice(0, 80),
+      })),
+      visible_visual_anchor_count: visualAnchors.count || 0,
+      max_visible_visual_area_ratio: maxVisualAreaRatio,
+    },
+  })];
+}
+
 function inspectCandidates({ candidates, resolution, frameId, sampleTimeSec }) {
   const issues = [];
-  const tolerance = 12;
+  const viewportTolerance = 12;
 
   for (const candidate of candidates) {
     const box = candidate.box;
     const decorative = isDecorativeText(candidate);
     if (!candidate.allowOverflow && (
-      box.left < -tolerance
-      || box.top < -tolerance
-      || box.right > resolution.width + tolerance
-      || box.bottom > resolution.height + tolerance
+      box.left < -viewportTolerance
+      || box.top < -viewportTolerance
+      || box.right > resolution.width + viewportTolerance
+      || box.bottom > resolution.height + viewportTolerance
     )) {
       issues.push(makeIssue({
         code: 'text_out_of_viewport',
@@ -153,11 +356,14 @@ function inspectCandidates({ candidates, resolution, frameId, sampleTimeSec }) {
     const container = candidate.container;
     if (!candidate.allowOverflow && container && container.box) {
       const cbox = container.box;
+      // overflow: visible 的容器允许入场位移和字体行盒产生少量外扩；裁切容器仍保持严格。
+      const horizontalTolerance = container.overflow_x === 'visible' ? 24 : 12;
+      const verticalTolerance = container.overflow_y === 'visible' ? 24 : 12;
       if (
-        box.left < cbox.left - tolerance
-        || box.top < cbox.top - tolerance
-        || box.right > cbox.right + tolerance
-        || box.bottom > cbox.bottom + tolerance
+        box.left < cbox.left - horizontalTolerance
+        || box.top < cbox.top - verticalTolerance
+        || box.right > cbox.right + horizontalTolerance
+        || box.bottom > cbox.bottom + verticalTolerance
       ) {
         issues.push(makeIssue({
           code: 'text_out_of_container',
@@ -245,13 +451,16 @@ async function collectCandidates(page) {
     }
 
     function isVisible(element, box) {
-      const style = window.getComputedStyle(element);
-      return style
-        && style.visibility !== 'hidden'
-        && style.display !== 'none'
-        && Number(style.opacity) !== 0
-        && box.width >= 8
-        && box.height >= 8;
+      let current = element;
+      let effectiveOpacity = 1;
+      while (current) {
+        const style = window.getComputedStyle(current);
+        if (!style || style.visibility === 'hidden' || style.display === 'none') return false;
+        effectiveOpacity *= Number(style.opacity || 1);
+        if (effectiveOpacity < 0.15) return false;
+        current = current.parentElement;
+      }
+      return box.width >= 8 && box.height >= 8;
     }
 
     function serializeBox(rect) {
@@ -278,10 +487,13 @@ async function collectCandidates(page) {
       const container = element.parentElement ? element.parentElement.closest(semanticSelector) : null;
       if (!container) return null;
       const rect = container.getBoundingClientRect();
+      const style = window.getComputedStyle(container);
       return {
         selector: selectorFor(container),
         role: container.getAttribute('data-role') || null,
         box: serializeBox(rect),
+        overflow_x: style.overflowX,
+        overflow_y: style.overflowY,
       };
     }
 
@@ -298,6 +510,13 @@ async function collectCandidates(page) {
         const isExplicitText = element.matches(explicitTextSelector);
         if (!text || (!direct && !isExplicitText)) return null;
         if (!isVisible(element, rect)) return null;
+        if (!direct) {
+          const hasVisibleTextDescendant = Array.from(element.querySelectorAll('*')).some((descendant) => {
+            if (!directText(descendant)) return false;
+            return isVisible(descendant, descendant.getBoundingClientRect());
+          });
+          if (!hasVisibleTextDescendant) return null;
+        }
         return {
           element,
           candidate: {
@@ -397,6 +616,7 @@ async function inspectFrameHtmlLayout(options = {}) {
       deviceScaleFactor: 1,
     });
 
+    await installPausedAnimationStyle(page);
     await page.addInitScript(() => {
       window.__layoutQaVisibilityState = {
         initial: document.visibilityState,
@@ -428,26 +648,40 @@ async function inspectFrameHtmlLayout(options = {}) {
       durationSec,
     );
 
-    let elapsedSec = 0;
     for (const sampleTimeSec of samples) {
-      const waitSec = Math.max(0, sampleTimeSec - elapsedSec);
-      if (waitSec > 0) {
-        await page.waitForTimeout(Math.round(waitSec * 1000));
-        elapsedSec += waitSec;
-        await waitForLayout(page);
-      }
+      await seekPageToTime(page, sampleTimeSec);
       const candidates = await collectCandidates(page);
+      const normalizedResolution = {
+        width: resolution.width || DEFAULT_RESOLUTION.width,
+        height: resolution.height || DEFAULT_RESOLUTION.height,
+      };
+      const visualAnchors = await collectVisualAnchors(page, normalizedResolution);
+      const primaryCandidates = candidates.filter(candidate => (
+        isOpeningPrimaryText(candidate)
+        && isSubstantiallyVisible(candidate, normalizedResolution)
+      ));
       metrics.samples.push({
         sample_time_sec: sampleTimeSec,
         candidate_count: candidates.length,
+        primary_candidate_count: primaryCandidates.length,
+        primary_candidates: primaryCandidates.slice(0, 5).map(candidate => ({
+          selector: candidate.selector,
+          text: String(candidate.text || '').slice(0, 80),
+        })),
+        visible_visual_anchor_count: visualAnchors.count,
+        max_visible_visual_area_ratio: visualAnchors.max_visible_area_ratio,
       });
       metrics.candidate_count += candidates.length;
       issues.push(...inspectCandidates({
         candidates,
-        resolution: {
-          width: resolution.width || DEFAULT_RESOLUTION.width,
-          height: resolution.height || DEFAULT_RESOLUTION.height,
-        },
+        resolution: normalizedResolution,
+        frameId,
+        sampleTimeSec,
+      }));
+      issues.push(...inspectOpeningContent({
+        candidates,
+        visualAnchors,
+        resolution: normalizedResolution,
         frameId,
         sampleTimeSec,
       }));

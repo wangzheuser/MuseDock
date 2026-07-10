@@ -6,6 +6,8 @@ const root = path.join(__dirname, '..');
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf-8'));
 const startServer = fs.readFileSync(path.join(root, 'start-server.js'), 'utf-8');
 const serverIndex = fs.readFileSync(path.join(root, 'server/index.js'), 'utf-8');
+const serverApp = fs.readFileSync(path.join(root, 'server/app.js'), 'utf-8');
+const testRunner = fs.readFileSync(path.join(root, 'tests/run-all.js'), 'utf-8');
 const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf-8');
 
 assert.equal(packageJson.scripts.dev, 'node start-server.js', 'npm run dev should start the combined development runner');
@@ -28,5 +30,11 @@ assert.ok(staleRecoveryIndex >= 0, 'startup recovery should keep stale workflow 
 assert.ok(orphanRecoveryIndex < staleRecoveryIndex, 'orphaned task recovery should run before stale workflow recovery');
 assert.match(serverIndex, /runStartupRecovery\(\)\.catch/, 'server startup should call the startup recovery wrapper');
 assert.match(serverIndex, /\[startup\] 清理卡死的创作任务失败:/, 'startup recovery failures should use a Chinese log message');
+assert.match(serverIndex, /MUSEDOCK_HOST\s*\|\|\s*['"]127\.0\.0\.1['"]/, 'server should listen on localhost by default');
+assert.match(serverApp, /isLocalCorsOrigin/, 'server should restrict browser CORS origins');
+assert.match(serverApp, /localhost.*127\.0\.0\.1.*::1/s, 'server should allow local frontend origins');
+assert.match(testRunner, /--allow-empty/, 'test runner should require explicit opt-in for empty filters');
+assert.match(testRunner, /process\.exit\(allowEmpty \? 0 : 1\)/, 'test runner should fail on accidental empty filters');
+assert.match(testRunner, /timeout:\s*TEST_TIMEOUT_MS/, 'test runner should guard against hung tests');
 
 console.log('dev startup tests passed');

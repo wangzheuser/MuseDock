@@ -35,7 +35,11 @@ function collectDiagnostics(input = {}) {
   ].filter(item => item && typeof item === 'object');
 }
 
-function chooseDiagnostic(diagnostics) {
+function chooseDiagnostic(diagnostics, preferredCode = '') {
+  if (preferredCode) {
+    const preferred = diagnostics.find(item => safeString(item.code) === preferredCode);
+    if (preferred) return preferred;
+  }
   return diagnostics.find(item => item.severity !== 'warning' && safeString(item.code))
     || diagnostics.find(item => safeString(item.code))
     || diagnostics.find(item => safeString(item.stage) || safeString(item.message) || safeString(item.user_message))
@@ -143,7 +147,8 @@ function classifyCreativeWorkflowFailure(input = {}) {
   if (checkpoint?.sub_stage === 'validate_project' && checkpoint.code === 'project_read_failed') {
     return { ...checkpoint, diagnostics };
   }
-  const diagnostic = chooseDiagnostic(diagnostics);
+  // 顶层失败码代表最终阻断原因，不能被前置成功/保留诊断覆盖。
+  const diagnostic = chooseDiagnostic(diagnostics, safeString(lastFailure.code));
 
   if (diagnostic && safeString(diagnostic.code)) {
     return {

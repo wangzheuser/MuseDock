@@ -59,6 +59,20 @@ function getWorkflowVideoUrl(workflow) {
   return '';
 }
 
+/**
+ * 判断任务列表缓存的 workflow 是否足够展示详情，避免 done 摘要跳过详情刷新。
+ * @param {object|null} workflow 工作流快照。
+ * @returns {boolean} 是否包含详情数据。
+ */
+function hasWorkflowDetail(workflow) {
+  return Boolean(workflow && (
+    getWorkflowVideoUrl(workflow)
+    || workflow.html_video_project
+    || workflow.result
+    || Array.isArray(workflow.stages)
+  ));
+}
+
 function getWorkflowPayload(json) {
   return json?.data || json?.workflow || json || null;
 }
@@ -107,14 +121,17 @@ function normalizeActiveModels(json = {}) {
 }
 
 /**
- * 将数字表单值转换为可提交数值，空值或非法值回退到默认值。
+ * 将数字表单值夹紧到 UI 允许范围，空值或非法值回退到默认值。
  * @param {unknown} value 表单值。
  * @param {number} fallback 默认值。
+ * @param {number} min 最小值。
+ * @param {number} max 最大值。
  * @returns {number} 可提交数值。
  */
-function numberOrFallback(value, fallback) {
+function numberInRangeOrFallback(value, fallback, min, max) {
   const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? number : fallback;
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
 }
 
 /**
@@ -126,9 +143,11 @@ function buildCreativeDefaultsOverride(defaults = {}) {
   const normalized = normalizeCreativeDefaults(defaults);
   return {
     aspectRatio: normalized.aspectRatio,
-    targetDurationSec: numberOrFallback(
+    targetDurationSec: numberInRangeOrFallback(
       normalized.targetDurationSec,
       DEFAULT_CREATIVE_DEFAULTS.targetDurationSec,
+      15,
+      180,
     ),
     templateByAspectRatio: normalized.templateByAspectRatio,
     lockTemplate: normalized.lockTemplate === true,
@@ -140,9 +159,11 @@ function buildCreativeDefaultsOverride(defaults = {}) {
     ttsVoice: normalized.ttsVoice,
     sourceImageAnalysisEnabled: normalized.sourceImageAnalysisEnabled === true,
     extractDouyinFrames: normalized.extractDouyinFrames === true,
-    frameHtmlConcurrency: numberOrFallback(
+    frameHtmlConcurrency: numberInRangeOrFallback(
       normalized.frameHtmlConcurrency,
       DEFAULT_CREATIVE_DEFAULTS.frameHtmlConcurrency,
+      1,
+      5,
     ),
   };
 }
@@ -799,7 +820,7 @@ export function OneClickCreativePage() {
     setWorkflowId(task.workflow_id);
     setSelectedWorkflowId(task.workflow_id);
     setWorkflow(task.workflow || null);
-    setStatus(task.status === 'done' ? 'done' : 'polling');
+    setStatus(task.status === 'done' && hasWorkflowDetail(task.workflow) ? 'done' : 'polling');
     setMessage(task.message || '正在打开任务详情...');
   }
 

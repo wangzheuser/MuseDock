@@ -92,6 +92,25 @@ function project(overrides = {}) {
   assert.equal(layoutQaPlan.retry_from, 'frame_html');
   assert.ok(layoutQaPlan.discard.includes('frames:scene_07'));
 
+  const layoutQaPlanWithPreservedDiagnostics = createCreativeWorkflowRetryPlan({
+    workflow: workflow({
+      last_failure: {
+        stage: 'project',
+        sub_stage: 'layout_qa',
+        code: 'layout_qa_failed',
+        frame_id: 'scene_07',
+        diagnostics: [
+          createDiagnostic({ code: 'raw_html_preserved', stage: 'materialize', frame_id: 'scene_01' }),
+          createDiagnostic({ code: 'layout_qa_failed', stage: 'project', sub_stage: 'layout_qa', frame_id: 'scene_07' }),
+        ],
+      },
+    }),
+    project: project(),
+  });
+  assert.equal(layoutQaPlanWithPreservedDiagnostics.can_retry, true);
+  assert.equal(layoutQaPlanWithPreservedDiagnostics.repair_action, 'retry_frame_html');
+  assert.ok(layoutQaPlanWithPreservedDiagnostics.discard.includes('frames:scene_07'));
+
   const workflowErrorFramePlan = createCreativeWorkflowRetryPlan({
     workflow: workflow({
       error: { code: 'provider_missing_text' },

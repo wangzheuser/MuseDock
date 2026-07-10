@@ -3,6 +3,7 @@ import { GlobalModelSelector } from './GlobalModelSelector.jsx';
 import { ProviderList } from './ProviderList.jsx';
 
 export function ModelSettings({ modelSettings }) {
+  const disabled = modelSettings.loading || modelSettings.saving;
   return (
     <>
       <Status status={modelSettings.status} />
@@ -15,14 +16,14 @@ export function ModelSettings({ modelSettings }) {
       <div className="mb-4 flex justify-end gap-2">
         <button
           className="min-h-9 rounded-lg border border-[#d9dde5] bg-white px-4 text-sm font-semibold text-[#30343b] transition hover:border-[#cbd5e1] hover:bg-[#f8fafc] hover:text-[#111827] disabled:cursor-not-allowed disabled:opacity-55"
-          disabled={modelSettings.loading || modelSettings.saving}
+          disabled={disabled}
           onClick={modelSettings.load}
         >
           重新加载模型配置
         </button>
         <button
           className="min-h-9 rounded-lg bg-[#111827] px-4 text-sm font-bold text-white transition hover:bg-[#020617] disabled:cursor-not-allowed disabled:opacity-55"
-          disabled={modelSettings.loading || modelSettings.saving}
+          disabled={disabled}
           onClick={modelSettings.save}
         >
           保存模型配置
@@ -35,6 +36,7 @@ export function ModelSettings({ modelSettings }) {
         providerList={modelSettings.providerList}
         activeModels={modelSettings.activeModels}
         onChange={modelSettings.setActive}
+        disabled={disabled}
       />
 
       <ProviderList
@@ -43,6 +45,7 @@ export function ModelSettings({ modelSettings }) {
         modelTypeInfo={modelSettings.MODEL_TYPE_INFO}
         onSaveProvider={modelSettings.saveProvider}
         onRemove={modelSettings.removeProvider}
+        disabled={disabled}
       />
     </>
   );

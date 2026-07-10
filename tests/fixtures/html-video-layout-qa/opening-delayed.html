@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>延迟入场空档</title>
+  <style>
+    *{box-sizing:border-box}
+    @keyframes enter{from{opacity:0;transform:translateX(100%)}to{opacity:1;transform:translateX(0)}}
+    body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#181818;color:#fff;font-family:Arial,"Microsoft YaHei",sans-serif}
+    .counter{position:absolute;left:80px;top:70px;font-size:72px;font-weight:800;color:#fff}
+    .card{position:absolute;right:100px;top:180px;width:1180px;height:650px;padding:90px;background:#ff5722;opacity:0;transform:translateX(100%);animation:enter .8s .6s ease-out forwards}
+    h1{margin:0 0 30px;font-size:110px;color:#181818}
+    p{margin:0;font-size:42px;color:#181818}
+  </style>
+</head>
+<body data-hv-canvas data-width="1920" data-height="1080">
+  <div class="counter" data-role="section-counter">01/04</div>
+  <main class="card" data-role="main-visual">
+    <h1 data-text-key="headline">晨间启动</h1>
+    <p data-text-key="body">让主体内容立即进入视线</p>
+  </main>
+</body>
+</html>

@@ -1,4 +1,4 @@
-export function GlobalModelSelector({ modelTypes, modelTypeInfo, providerList, activeModels, onChange }) {
+export function GlobalModelSelector({ modelTypes, modelTypeInfo, providerList, activeModels, onChange, disabled = false }) {
   return (
     <section className="mb-4 rounded-lg border border-[#e7e9ee] bg-white p-4">
       <div className="mb-4 flex items-start justify-between gap-3">
@@ -18,6 +18,7 @@ export function GlobalModelSelector({ modelTypes, modelTypeInfo, providerList, a
               <select
                 className="h-[38px] w-full rounded-lg border border-[#d9dde5] bg-white px-2.5 text-[13px] text-[#30343b] outline-none transition focus:border-[#25f4ee] focus:ring-2 focus:ring-[#25f4ee]/15"
                 value={value}
+                disabled={disabled}
                 onChange={event => {
                   const val = event.target.value;
                   if (!val) { onChange(type, '', ''); return; }

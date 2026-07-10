@@ -11,6 +11,11 @@ assert.match(source, /api\.getConfigTemplates\(\)/, 'missing template load for r
 assert.match(source, /api\.getTtsVoices\(\)/, 'missing TTS voice load for run settings');
 assert.match(source, /api\.getAiModels\(\)/, 'missing active model load for run settings');
 assert.match(source, /buildCreativeDefaultsOverride/, 'missing creative defaults override builder');
+assert.match(source, /hasWorkflowDetail/, 'done task selection should verify workflow detail before stopping polling');
+assert.match(source, /task\.status === 'done' && hasWorkflowDetail\(task\.workflow\) \? 'done' : 'polling'/, 'done task without detail should still poll detail');
+assert.match(source, /numberInRangeOrFallback/, 'creative overrides should clamp numeric UI values');
+assert.match(source, /targetDurationSec,[\s\S]*15,[\s\S]*180/, 'target duration override should be clamped to UI range');
+assert.match(source, /frameHtmlConcurrency,[\s\S]*1,[\s\S]*5/, 'frame HTML concurrency override should be clamped to UI range');
 assert.match(source, /creativeDefaultsOverride/, 'missing creativeDefaultsOverride request payload');
 assert.match(source, /useResearchTouchedRef/, 'missing useResearchTouchedRef guard');
 assert.match(source, /savedCreativeDefaultsRef/, 'missing saved defaults ref');

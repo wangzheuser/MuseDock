@@ -135,7 +135,7 @@ async function inspectProjectLayoutBeforeRender({
       sub_stage: 'layout_qa',
       message: layoutQa.success
         ? `第 ${index + 1}/${frames.length} 帧布局检查通过。`
-        : `第 ${index + 1}/${frames.length} 帧布局检查发现遮挡问题。`,
+        : `第 ${index + 1}/${frames.length} 帧布局检查发现遮挡或开场画面问题。`,
       frame_id: frameId,
       data: { frame_id: frameId, layout_qa: layoutQa },
     });
@@ -250,6 +250,8 @@ function retimeTimelineStarts(project) {
       }
     }
   }
+  project.output = objectOrEmpty(project.output);
+  project.output.duration = roundDuration(cursor);
 }
 
 function normalizePlaybackSpeed(value) {
@@ -309,8 +311,24 @@ async function fitFrameDurationsToTtsManifest(project, projectDir, options = {})
 
   for (const frame of Array.isArray(project?.frames) ? project.frames : []) {
     const scene = bySceneId.get(String(frame.scene_id || '').trim()) || bySceneId.get(String(frame.id || '').trim());
+    if (!scene) continue;
     const audioDuration = Number(scene?.duration ?? scene?.duration_sec ?? scene?.durationSec);
-    if (!Number.isFinite(audioDuration) || audioDuration <= 0) continue;
+    if (scene?.duration_unavailable === true || !Number.isFinite(audioDuration) || audioDuration <= 0) {
+      diagnostics.push(createDiagnostic({
+        code: 'narration_audio_duration_unavailable',
+        stage: 'timeline-consistency',
+        sub_stage: 'timeline_check',
+        user_message: '旁白音频时长无法读取，无法确认尾音是否完整。请重新生成旁白或检查 ffprobe 配置。',
+        frame_id: frame.id || frame.scene_id || '',
+        details: {
+          frame_id: frame.id || frame.scene_id || '',
+          scene_id: manifestSceneId(scene),
+          duration_unavailable: true,
+        },
+        fallback_allowed: false,
+      }));
+      continue;
+    }
 
     frame.narration_audio_duration_sec = roundDuration(audioDuration);
     const duration = frameDurationSec(frame);
@@ -410,7 +428,11 @@ async function fitFrameDurationsToTtsManifest(project, projectDir, options = {})
     }
   }
 
-  if (changed) retimeTimelineStarts(project);
+  const synchronizedDuration = roundDuration(expectedDurationSec(project));
+  if (changed || roundDuration(project?.output?.duration) !== synchronizedDuration) {
+    retimeTimelineStarts(project);
+    changed = true;
+  }
   return {
     ok: !diagnostics.some(item => item.fallback_allowed === false),
     changed,
@@ -607,6 +629,23 @@ function collectRenderedFramesFromProject(project, projectDir) {
     });
   }
   return renderedFrames;
+}
+
+/**
+ * 合成前确认 checkpoint 指向的帧视频仍存在。
+ * @param {Array<object>} renderedFrames 已渲染帧列表。
+ * @returns {Promise<Array<object>>} 缺失的帧产物。
+ */
+async function missingRenderedArtifacts(renderedFrames = []) {
+  const missing = [];
+  for (const frame of renderedFrames) {
+    try {
+      await fs.access(frame.path);
+    } catch {
+      missing.push({ frame_id: frame.frame_id || '', path: frame.path || '' });
+    }
+  }
+  return missing;
 }
 
 function missingRenderedFrameIds(project) {
@@ -850,6 +889,8 @@ async function composeHtmlVideoProject({
 } = {}) {
   void targetDurationSec;
   const ffmpegComposer = services.ffmpegComposer || defaultFfmpegComposer;
+  // ponytail: 测试会注入不落盘的 ffmpeg stub；真实默认链路保留产物预检。
+  const verifyRenderedArtifacts = services.verifyRenderedArtifacts ?? ffmpegComposer === defaultFfmpegComposer;
   const resolvedProjectDir = await ensureProjectDir({ rootDir, workflowId, runId, projectDir });
   let nextProject = normalizeProject(project);
   await saveProject(resolvedProjectDir, nextProject);
@@ -886,6 +927,36 @@ async function composeHtmlVideoProject({
     };
   }
   const renderedFrames = collectRenderedFramesFromProject(nextProject, resolvedProjectDir);
+  const missingArtifacts = verifyRenderedArtifacts ? await missingRenderedArtifacts(renderedFrames) : [];
+  if (missingArtifacts.length) {
+    nextProject = await projectStore.writeProjectJson(resolvedProjectDir, current => {
+      markComposeCheckpoint(current, {
+        status: 'failed',
+        output_path: '',
+        output_audio_path: '',
+        diagnostic_code: 'render_artifact_missing',
+      });
+      return current;
+    });
+    const diagnostic = createDiagnostic({
+      code: 'render_artifact_missing',
+      stage: 'compose',
+      sub_stage: 'compose',
+      user_message: `已渲染帧文件丢失，无法合成：${missingArtifacts.map(item => item.frame_id || item.path).join(', ')}。`,
+      retryable: true,
+      repair_action: 'rerender_frames',
+      details: { frames: missingArtifacts },
+    });
+    return {
+      success: false,
+      message: diagnostic.user_message,
+      project: nextProject,
+      project_dir: resolvedProjectDir,
+      html_video_project_path: resolvedProjectDir,
+      rendered_frames: renderedFrames,
+      diagnostics: [diagnostic],
+    };
+  }
   const videoPath = path.join(resolvedProjectDir, 'exports', 'output.mp4');
   await report(onProgress, {
     type: 'html_video_compose_started',
@@ -899,6 +970,8 @@ async function composeHtmlVideoProject({
   });
   const concat = await ffmpegComposer.concatFramesWithFfmpeg(renderedFrames, videoPath, resolvedProjectDir, {
     fps: outputConfig.fps,
+    width: outputConfig.resolution?.width,
+    height: outputConfig.resolution?.height,
   });
   if (!concat.success) {
     nextProject = await projectStore.writeProjectJson(resolvedProjectDir, current => {
@@ -1021,6 +1094,8 @@ async function composeHtmlVideoProject({
       playbackSpeed: normalizedPlaybackSpeed,
       includeAudio: muxedAudio,
       fps: outputConfig.fps,
+      width: outputConfig.resolution?.width,
+      height: outputConfig.resolution?.height,
     });
     if (!retimed.success) {
       diagnostics.push(createDiagnostic({
@@ -1226,6 +1301,95 @@ async function composeHtmlVideoProject({
     });
   }
 
+  let qualityReport = null;
+  if (typeof ffmpegComposer.probeMediaQualityWithFfprobe === 'function') {
+    await report(onProgress, {
+      type: 'html_video_quality_verify_started',
+      stage: 'project',
+      sub_stage: 'quality_verify',
+      message: '正在执行最终视频技术质检...',
+      data: { output_path: finalOutput },
+    });
+    qualityReport = await ffmpegComposer.probeMediaQualityWithFfprobe({
+      videoPath: finalOutput,
+      expectedWidth: outputConfig.resolution?.width,
+      expectedHeight: outputConfig.resolution?.height,
+      expectedFps: outputConfig.fps,
+      requireAudio: hasAudioIntent,
+      encodingMode: ffmpegComposer.H264_PUBLISH_ENCODING || defaultFfmpegComposer.H264_PUBLISH_ENCODING,
+    });
+  } else {
+    qualityReport = {
+      success: true,
+      skipped: true,
+      code: 'quality_probe_unavailable',
+      message: '当前渲染器未提供最终视频技术质检。',
+      issues: [],
+    };
+  }
+
+  if (qualityReport.skipped) {
+    diagnostics.push(createDiagnostic({
+      code: qualityReport.code || 'quality_probe_skipped',
+      stage: 'compose',
+      sub_stage: 'quality_verify',
+      severity: 'warning',
+      user_message: qualityReport.message || '已跳过最终视频技术质检。',
+      details: qualityReport,
+    }));
+  } else if (!qualityReport.success) {
+    nextProject = await projectStore.writeProjectJson(resolvedProjectDir, current => {
+      markComposeCheckpoint(current, {
+        status: 'failed',
+        output_path: relativeProjectPath(resolvedProjectDir, composeVideoOutput),
+        output_audio_path: finalOutput !== composeVideoOutput ? relativeProjectPath(resolvedProjectDir, finalOutput) : '',
+        diagnostic_code: qualityReport.code || 'quality_verify_failed',
+      });
+      return current;
+    });
+    const diagnostic = createDiagnostic({
+      code: qualityReport.code || 'quality_verify_failed',
+      stage: 'compose',
+      sub_stage: 'quality_verify',
+      user_message: qualityReport.message || '最终视频技术质检未通过。',
+      retryable: true,
+      repair_action: 'retry_compose',
+      details: qualityReport,
+    });
+    diagnostics.push(diagnostic);
+    return {
+      success: false,
+      message: diagnostic.user_message,
+      project: nextProject,
+      project_dir: resolvedProjectDir,
+      html_video_project_path: resolvedProjectDir,
+      output_path: finalOutput,
+      rendered_frames: renderedFrames,
+      diagnostics,
+      duration_check: durationCheck,
+      audio_track_check: audioTrackCheck,
+      quality_report: qualityReport,
+    };
+  } else {
+    for (const issue of qualityReport.issues || []) {
+      diagnostics.push(createDiagnostic({
+        code: issue.code || 'quality_suggestion',
+        stage: 'compose',
+        sub_stage: 'quality_verify',
+        severity: issue.severity || 'warning',
+        user_message: issue.message || '最终视频存在发布质量建议。',
+        details: { issue, metrics: qualityReport.metrics || {} },
+      }));
+    }
+  }
+  await report(onProgress, {
+    type: 'html_video_quality_verify_done',
+    stage: 'project',
+    sub_stage: 'quality_verify',
+    message: qualityReport.skipped ? '已跳过最终视频技术质检。' : '最终视频技术质检完成。',
+    data: qualityReport,
+  });
+
   const requestedExportPath = `exports/${safeExportFileName(exportFileName, exportKind === 'preview' ? 'preview' : 'output')}.mp4`;
   const exportEntry = addExport(nextProject, {
     format: 'mp4',
@@ -1238,6 +1402,7 @@ async function composeHtmlVideoProject({
     playback_speed: effectivePlaybackSpeed,
     tail_protection: normalizeTailProtection(tailProtection),
     tail_padding_sec: Number(nextProject.audio?.tail_padding_sec || 0) || 0,
+    quality_report: qualityReport,
   });
   // addExport 去重会把第二次起的记录改名为 output-audio-N.mp4，但 mux 始终覆盖写
   // output-audio.mp4，需把成片复制到去重后的路径，否则记录指向不存在的文件（播放报“文件不存在”）。
@@ -1274,6 +1439,7 @@ async function composeHtmlVideoProject({
     diagnostics,
     duration_check: durationCheck,
     audio_track_check: audioTrackCheck,
+    quality_report: qualityReport,
   };
 }
 

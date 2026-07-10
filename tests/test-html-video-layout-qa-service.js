@@ -20,12 +20,39 @@ async function inspectFixture(fileName, frame, extraOptions = {}) {
 }
 
 (async () => {
-  assert.deepEqual(defaultSampleTimes(), [0.1]);
-  assert.deepEqual(defaultSampleTimes(0), [0.1]);
-  assert.deepEqual(defaultSampleTimes(1), [0.5]);
-  assert.deepEqual(defaultSampleTimes(1.2), [0.78, 0.9]);
-  assert.deepEqual(defaultSampleTimes(10), [1.2, 1.8, 6.5, 9.7]);
-  assert.deepEqual(defaultSampleTimes(1.25), [0.8, 0.95]);
+  assert.deepEqual(defaultSampleTimes(), [0]);
+  assert.deepEqual(defaultSampleTimes(0), [0]);
+  assert.deepEqual(defaultSampleTimes(1), [0, 0.35, 0.9]);
+  assert.deepEqual(defaultSampleTimes(1.2), [0, 0.35, 0.78, 0.9]);
+  assert.deepEqual(defaultSampleTimes(10), [0, 0.35, 1.2, 6.5, 9.7]);
+  assert.deepEqual(defaultSampleTimes(1.25), [0, 0.35, 0.8, 0.95]);
+
+  const delayedOpening = await inspectFixture(
+    'opening-delayed.html',
+    { id: 'scene_opening_delayed', duration_sec: 2 },
+    { sampleTimesSec: [0, 0.35, 1.2] },
+  );
+  assert.equal(delayedOpening.success, false);
+  assert.ok(
+    delayedOpening.issues.some(issue => issue.code === 'scene_opening_low_information'),
+    '主视觉整体延迟入场时应报告 scene_opening_low_information',
+  );
+  assert.deepEqual(
+    delayedOpening.issues
+      .filter(issue => issue.code === 'scene_opening_low_information')
+      .map(issue => issue.sample_time_sec),
+    [0, 0.35],
+  );
+  assert.equal(delayedOpening.metrics.samples[0].primary_candidate_count, 0);
+  assert.ok(delayedOpening.metrics.samples[0].max_visible_visual_area_ratio < 0.04);
+
+  const visibleOpening = await inspectFixture(
+    'opening-visible.html',
+    { id: 'scene_opening_visible', duration_sec: 2 },
+    { sampleTimesSec: [0, 0.35, 1.2] },
+  );
+  assert.equal(visibleOpening.success, true);
+  assert.ok(visibleOpening.metrics.samples[0].primary_candidate_count > 0);
 
   const overlay = await inspectFixture('overlay-valuation.html', { id: 'scene_06', duration_sec: 1 });
   assert.equal(overlay.metrics.skipped, false);
@@ -66,7 +93,7 @@ async function inspectFixture(fileName, frame, extraOptions = {}) {
   assert.equal(overlayFixedDefaultSamples.success, true);
   assert.deepEqual(
     overlayFixedDefaultSamples.metrics.samples.map(sample => sample.sample_time_sec),
-    [0.5],
+    [0, 0.35, 0.9],
   );
 
   const overflow = await inspectFixture('overflow-card-title.html', { id: 'scene_04', duration_sec: 1 });

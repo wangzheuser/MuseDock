@@ -195,9 +195,10 @@ function renderCaptionLayer(captions = [], options = {}) {
 
   return [
     '<style data-hv-layer-style="captions">',
-    '.hv-caption-layer{position:absolute;left:50%;bottom:42px;transform:translateX(-50%);width:max-content;max-width:84%;z-index:9999;pointer-events:none;text-align:center;font:600 34px/1.28 "Noto Sans SC","Microsoft YaHei",Arial,sans-serif;letter-spacing:0;}',
+    '.hv-caption-layer{position:absolute;left:50%;bottom:72px;transform:translateX(-50%);width:max-content;max-width:84%;z-index:9999;pointer-events:none;text-align:center;font:600 34px/1.28 "Noto Sans SC","Microsoft YaHei",Arial,sans-serif;letter-spacing:0;}',
     '.hv-caption-item{display:none;padding:14px 22px;border-radius:8px;background:rgba(0,0,0,.68);color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.55);white-space:normal;overflow-wrap:anywhere;}',
     '.hv-caption-item[data-hv-active="true"]{display:block;}',
+    '@media (orientation:portrait){.hv-caption-layer{bottom:280px;max-width:78%;}}',
     '</style>',
     `<div class="${htmlEscape(className)}" data-hv-layer="captions" data-hv-managed="true" data-role="subtitle-caption">`,
     items,

@@ -63,10 +63,13 @@ async function run() {
         { id: 'news_signal_vertical', name: '竖屏新闻', output: { resolution: { width: 1080, height: 1920 } } },
         { id: 'bold_signal', name: '横屏信号', output: { resolution: { width: 1920, height: 1080 } } },
       ],
-      validateTemplateCompatibility: (manifest, options) => ({
-        ok: manifest.id === 'news_signal_vertical' && options.aspectRatio === '9:16',
-        reasons: manifest.id === 'news_signal_vertical' ? [] : [{ code: 'unsupported-aspect', message: '模板不支持目标画幅' }],
-      }),
+      validateTemplateCompatibility: (manifest, options) => {
+        assert.strictEqual(options.durationSec, undefined, '系统总览不应使用整片时长校验单镜头模板');
+        return {
+          ok: manifest.id === 'news_signal_vertical' && options.aspectRatio === '9:16',
+          reasons: manifest.id === 'news_signal_vertical' ? [] : [{ code: 'unsupported-aspect', message: '模板不支持目标画幅' }],
+        };
+      },
     },
     aiModelConfig: {
       getPublicConfig: async () => ({

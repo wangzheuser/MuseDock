@@ -300,4 +300,12 @@ const captionLayerCount = html => (html.match(/data-hv-layer="captions"/g) || []
   assert.doesNotMatch(layer, /<script>alert/);
 }
 
+{
+  const layer = renderCaptionLayer(captions);
+  assert.match(layer, /bottom:72px/);
+  assert.match(layer, /@media \(orientation:portrait\)/);
+  assert.match(layer, /bottom:280px/);
+  assert.match(layer, /max-width:78%/);
+}
+
 console.log('html-video caption layer tests passed');

@@ -334,7 +334,7 @@ function uniqueElements(elements) {
 
 const secondaryButtonClass = 'min-h-7 rounded-md border border-slate-700 bg-slate-900 px-2.5 text-xs font-bold text-slate-100 transition hover:border-[#25f4ee]/60 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-55';
 
-export function HtmlVideoCanvasEditor({ editor }) {
+export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
   const iframeRef = useRef(null);
   const previewSlotRef = useRef(null);
   const playbackTimerRef = useRef(null);
@@ -618,6 +618,11 @@ export function HtmlVideoCanvasEditor({ editor }) {
     return () => observer.disconnect();
     // 预览槽在 !frame / !rawHtml 早退分支下不渲染；分支切换会重建槽位节点，必须重挂观察
   }, [Boolean(frame), rawHtml]);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
 
   useEffect(() => {
     if (!dirty) return undefined;

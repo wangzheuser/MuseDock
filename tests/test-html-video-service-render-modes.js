@@ -192,6 +192,13 @@ function createFixture() {
   assert.equal(tooPreciseSpeedExport.success, false);
   assert.match(tooPreciseSpeedExport.message, /最多 1 位小数/);
 
+  const mismatchedResolutionExport = await exportHtmlVideoProject(WORKFLOW_ID, {
+    export_options: { width: 1080, height: 1920 },
+  }, options);
+  assert.equal(mismatchedResolutionExport.success, false);
+  assert.equal(mismatchedResolutionExport.code, 'HTML_VIDEO_EXPORT_RESOLUTION_MISMATCH');
+  assert.match(mismatchedResolutionExport.message, /不能直接导出|重新创建工程/);
+
   let ttsSceneSpec = null;
   let ttsSceneId = null;
   let ttsVoice = null;
@@ -230,7 +237,7 @@ function createFixture() {
     },
   });
   assert.equal(ttsResult.success, true);
-  assert.equal(ttsSceneId, 'scene_01');
+  assert.equal(ttsSceneId, undefined);
   assert.equal(ttsSceneSpec.scenes[0].narration_text, '新旁白');
   assert.equal(ttsSceneSpec.scenes[1].narration_text, '第二幕只在 scene-spec 的旁白');
   assert.equal(ttsVoice, '茉莉');
@@ -238,6 +245,7 @@ function createFixture() {
   assert.equal(ttsResult.html_video_project.frames[0].narration_text, '新旁白');
   assert.equal(ttsResult.html_video_project.audio.tts_manifest_path, 'tts/audio_manifest.json');
   assert.equal(ttsResult.html_video_project.audio.narration_path, null);
+  assert.match(ttsResult.message, /整轨旁白|全部场景/);
 
   const clearNarration = await patchHtmlVideoProjectFrame(WORKFLOW_ID, 'frame_02', {
     type: 'frame_patch',

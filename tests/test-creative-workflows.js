@@ -212,6 +212,7 @@ async function testCreatesAndRunsSourceUrlWorkflow() {
       sourceAssets: {
         prepareSourceAssets: async ({ sourceMaterial, now, deps }) => {
           assert.equal(deps.pexelsApiKey, pexelsApiKey);
+          assert.equal(deps.aspectRatio, '9:16');
           return {
           status: 'ready',
           updated_at: now,

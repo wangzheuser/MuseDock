@@ -27,7 +27,7 @@ function emptyProvider(id, modelTypes) {
   return { id, name: '', apiKey: '', baseUrl: '', models };
 }
 
-function ProviderDetail({ provider, modelTypes, modelTypeInfo, onUpdate, onUpdateModel }) {
+function ProviderDetail({ provider, modelTypes, modelTypeInfo, onUpdate, onUpdateModel, disabled = false }) {
   const p = provider;
   return (
     <div className="grid gap-4">
@@ -37,6 +37,7 @@ function ProviderDetail({ provider, modelTypes, modelTypeInfo, onUpdate, onUpdat
           <input
             className="h-[38px] w-full rounded-lg border border-[#d9dde5] bg-white px-2.5 text-[13px] text-[#30343b] outline-none transition focus:border-[#25f4ee] focus:ring-2 focus:ring-[#25f4ee]/15"
             value={p.name}
+            disabled={disabled}
             onChange={e => onUpdate('name', e.target.value)}
             placeholder="供应商名称"
           />
@@ -46,6 +47,7 @@ function ProviderDetail({ provider, modelTypes, modelTypeInfo, onUpdate, onUpdat
           <input
             className="h-[38px] w-full rounded-lg border border-[#d9dde5] bg-white px-2.5 text-[13px] text-[#30343b] outline-none transition focus:border-[#25f4ee] focus:ring-2 focus:ring-[#25f4ee]/15"
             value={p.baseUrl}
+            disabled={disabled}
             onChange={e => onUpdate('baseUrl', e.target.value)}
             placeholder="https://api.example.com/v1"
           />
@@ -56,6 +58,7 @@ function ProviderDetail({ provider, modelTypes, modelTypeInfo, onUpdate, onUpdat
             type="password"
             className="h-[38px] w-full rounded-lg border border-[#d9dde5] bg-white px-2.5 text-[13px] text-[#30343b] outline-none transition focus:border-[#25f4ee] focus:ring-2 focus:ring-[#25f4ee]/15"
             value={p.apiKey}
+            disabled={disabled}
             onChange={e => onUpdate('apiKey', e.target.value)}
             placeholder={p.hasApiKey ? `已保存 ${p.apiKeyMasked}` : '请输入 API Key'}
             autoComplete="new-password"
@@ -70,6 +73,7 @@ function ProviderDetail({ provider, modelTypes, modelTypeInfo, onUpdate, onUpdat
             type={type}
             info={modelTypeInfo[type]}
             model={p.models[type]}
+            disabled={disabled}
             onChange={(field, value) => onUpdateModel(type, field, value)}
           />
         ))}
@@ -78,7 +82,7 @@ function ProviderDetail({ provider, modelTypes, modelTypeInfo, onUpdate, onUpdat
   );
 }
 
-export function ProviderList({ providerList, modelTypes, modelTypeInfo, onSaveProvider, onRemove }) {
+export function ProviderList({ providerList, modelTypes, modelTypeInfo, onSaveProvider, onRemove, disabled = false }) {
   const [draft, setDraft] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [toast, setToast] = useState('');
@@ -90,11 +94,13 @@ export function ProviderList({ providerList, modelTypes, modelTypeInfo, onSavePr
   }, [toast]);
 
   const openAddDialog = () => {
+    if (disabled) return;
     setDraft(emptyProvider('provider_' + Date.now(), modelTypes));
     setDialogOpen(true);
   };
 
   const openEditDialog = (provider) => {
+    if (disabled) return;
     setDraft(structuredClone(provider));
     setDialogOpen(true);
   };
@@ -105,6 +111,7 @@ export function ProviderList({ providerList, modelTypes, modelTypeInfo, onSavePr
   };
 
   const saveDraft = () => {
+    if (disabled) return;
     if (!draft) return;
     const name = draft.name.trim();
     if (!name) {
@@ -117,6 +124,7 @@ export function ProviderList({ providerList, modelTypes, modelTypeInfo, onSavePr
   };
 
   const removeProvider = (provider) => {
+    if (disabled) return;
     const name = provider.name || provider.id;
     if (!window.confirm(`确认删除「${name}」吗？删除后仍需点击顶部「保存模型配置」才会真正写入配置。`)) return;
     onRemove(provider.id);
@@ -132,7 +140,7 @@ export function ProviderList({ providerList, modelTypes, modelTypeInfo, onSavePr
           <h3 className="m-0 text-lg font-bold">供应商配置</h3>
           <p className="mt-1 text-[13px] text-[#69717e]">列表保留关键状态，点击后编辑 API Key、Base URL 和模型 ID。</p>
         </div>
-        <button className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#d9dde5] bg-white px-3 text-sm font-semibold text-[#30343b] transition hover:border-[#cbd5e1] hover:bg-[#f8fafc] hover:text-[#111827]" onClick={openAddDialog}>
+        <button className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#d9dde5] bg-white px-3 text-sm font-semibold text-[#30343b] transition hover:border-[#cbd5e1] hover:bg-[#f8fafc] hover:text-[#111827] disabled:cursor-not-allowed disabled:opacity-55" disabled={disabled} onClick={openAddDialog}>
           <Plus size={14} />
           <span>添加供应商</span>
         </button>
@@ -154,6 +162,7 @@ export function ProviderList({ providerList, modelTypes, modelTypeInfo, onSavePr
                 <button
                   className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-[#d9dde5] bg-white px-3 text-xs font-bold text-[#30343b] transition hover:border-[#cbd5e1] hover:bg-white hover:text-[#111827]"
                   type="button"
+                  disabled={disabled}
                   onClick={() => openEditDialog(p)}
                 >
                   <Edit3 size={13} />
@@ -162,6 +171,7 @@ export function ProviderList({ providerList, modelTypes, modelTypeInfo, onSavePr
                 <button
                   className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-red-100 bg-red-50 px-3 text-xs font-bold text-red-600 transition hover:bg-red-100"
                   type="button"
+                  disabled={disabled}
                   onClick={() => removeProvider(p)}
                 >
                   <Trash2 size={13} />
@@ -186,6 +196,7 @@ export function ProviderList({ providerList, modelTypes, modelTypeInfo, onSavePr
               provider={draft}
               modelTypes={modelTypes}
               modelTypeInfo={modelTypeInfo}
+              disabled={disabled}
               onUpdate={(field, value) => setDraft(prev => ({ ...prev, [field]: value }))}
               onUpdateModel={(type, field, value) => setDraft(prev => ({
                 ...prev,
@@ -200,6 +211,7 @@ export function ProviderList({ providerList, modelTypes, modelTypeInfo, onSavePr
             <button
               className="min-h-9 rounded-lg border border-[#d9dde5] bg-white px-4 text-sm font-semibold text-[#30343b] transition hover:border-[#cbd5e1] hover:bg-[#f8fafc]"
               type="button"
+              disabled={disabled}
               onClick={closeDialog}
             >
               取消
@@ -207,6 +219,7 @@ export function ProviderList({ providerList, modelTypes, modelTypeInfo, onSavePr
             <button
               className="min-h-9 rounded-lg bg-[#111827] px-4 text-sm font-bold text-white transition hover:bg-[#020617]"
               type="button"
+              disabled={disabled}
               onClick={saveDraft}
             >
               保存

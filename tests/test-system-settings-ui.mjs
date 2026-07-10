@@ -8,13 +8,21 @@ const cleanupDialogPath = path.join(root, 'frontend-react/src/components/setting
 const settingsPagePath = path.join(root, 'frontend-react/src/pages/SettingsPage.jsx');
 const creativeDefaultsPath = path.join(root, 'frontend-react/src/components/settings/CreativeDefaultsSettings.jsx');
 const settingsOverviewPath = path.join(root, 'frontend-react/src/components/settings/SettingsOverview.jsx');
+const statusPath = path.join(root, 'frontend-react/src/components/Status.jsx');
+const modelSettingsPath = path.join(root, 'frontend-react/src/components/settings/ModelSettings.jsx');
+const globalModelSelectorPath = path.join(root, 'frontend-react/src/components/settings/GlobalModelSelector.jsx');
+const providerListPath = path.join(root, 'frontend-react/src/components/settings/ProviderList.jsx');
 
-const [systemSource, dialogSource, pageSource, creativeDefaultsSource, overviewSource] = await Promise.all([
+const [systemSource, dialogSource, pageSource, creativeDefaultsSource, overviewSource, statusSource, modelSettingsSource, globalModelSelectorSource, providerListSource] = await Promise.all([
   readFile(systemSettingsPath, 'utf8'),
   readFile(cleanupDialogPath, 'utf8'),
   readFile(settingsPagePath, 'utf8'),
   readFile(creativeDefaultsPath, 'utf8'),
   readFile(settingsOverviewPath, 'utf8'),
+  readFile(statusPath, 'utf8'),
+  readFile(modelSettingsPath, 'utf8'),
+  readFile(globalModelSelectorPath, 'utf8'),
+  readFile(providerListPath, 'utf8'),
 ]);
 
 for (const text of [
@@ -61,5 +69,10 @@ assert.match(creativeDefaultsSource, /sourceImageAnalysisEnabled/);
 assert.match(creativeDefaultsSource, /sourceImageAnalysisUnavailable/);
 assert.match(creativeDefaultsSource, /disabled=\{disabled \|\| \(!sourceImageAnalysisEnabled && sourceImageAnalysisUnavailable\)\}/);
 assert.match(creativeDefaultsSource, /关闭旁白音频后不会添加自动音效/);
+assert.match(statusSource, /role=\{status\.type === 'error' \? 'alert' : 'status'\}/);
+assert.match(statusSource, /aria-live="polite"/);
+assert.match(modelSettingsSource, /disabled=\{disabled\}/);
+assert.match(globalModelSelectorSource, /disabled=\{disabled\}/);
+assert.match(providerListSource, /disabled=\{disabled\}/);
 
 console.log('system settings ui tests passed');

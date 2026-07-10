@@ -915,6 +915,9 @@ async function prepareSourceAssetContext(record, mediaRoot, now, services = {}, 
   const paths = mediaPipeline.getMediaPaths(record.aweme_id, mediaRoot);
   const service = services.sourceAssets || defaultSourceAssets;
   const pexelsApiKey = await resolvePexelsApiKey(services);
+  const creativeDefaults = record.creative_defaults_snapshot
+    || record.creative_context?.creative_defaults_snapshot
+    || {};
   const preparedAssetContext = await service.prepareSourceAssets({
     sourceMaterial,
     projectDir: paths.dir,
@@ -923,6 +926,7 @@ async function prepareSourceAssetContext(record, mediaRoot, now, services = {}, 
     deps: {
       fetchImpl: services.fetchImpl,
       pexelsApiKey,
+      aspectRatio: safeString(creativeDefaults.aspectRatio || creativeDefaults.aspect_ratio),
     },
   });
   const assetContext = await applySourceImageAnalysis(preparedAssetContext, record, services);

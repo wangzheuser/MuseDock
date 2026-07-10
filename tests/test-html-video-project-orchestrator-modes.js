@@ -178,6 +178,7 @@ async function writeFile(filePath, content) {
     { id: 'frame_tts_01', duration_sec: 2.8 },
     { id: 'frame_tts_02', duration_sec: 4 },
   ]);
+  assert.equal(ttsFitExport.project.output.duration, 6.8);
   assert.equal(ttsFitExport.project.audio.tail_padding_sec, 0.4);
   assert.ok(ttsFitExport.diagnostics.some(item => item.code === 'frame_duration_auto_extended_for_narration'));
   assert.ok(ttsFitExport.diagnostics.some(item => item.code === 'narration_tail_padding_added'));

@@ -254,6 +254,8 @@ async function downloadImageAsset(image, index, assetDir, deps = {}) {
       alt: safeString(image.alt),
       mime: mime || 'image/jpeg',
       bytes: buffer.length,
+      width: Number(image.width) || null,
+      height: Number(image.height) || null,
       title: safeString(image.title || image.alt),
       attribution: image.attribution || null,
     },
@@ -295,6 +297,18 @@ function buildSearchQueries(sourceMaterial = {}, max = 3) {
   return Array.from(new Set(queries.map(safeString).filter(Boolean))).slice(0, max);
 }
 
+/**
+ * 根据目标画幅选择 Pexels 搜索方向。
+ * @param {string} aspectRatio 宽高比，例如 9:16。
+ * @returns {'portrait'|'landscape'|'square'} Pexels orientation 参数。
+ */
+function resolvePexelsOrientation(aspectRatio = '') {
+  const [width, height] = safeString(aspectRatio).split(':').map(Number);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return 'portrait';
+  if (width === height) return 'square';
+  return width > height ? 'landscape' : 'portrait';
+}
+
 function githubRawBaseUrl(sourceMaterial = {}) {
   if (safeString(sourceMaterial.kind) !== 'github_repo') return '';
   const metadata = sourceMaterial.metadata || {};
@@ -333,12 +347,13 @@ async function searchPexelsImages(sourceMaterial = {}, deps = {}) {
   const images = [];
   const seen = new Set();
   const failures = [];
+  const orientation = resolvePexelsOrientation(deps.aspectRatio || sourceMaterial.aspectRatio || sourceMaterial.aspect_ratio);
   for (const query of queries) {
     if (images.length >= DEFAULT_MAX_SEARCH_IMAGES) break;
     const url = new URL('https://api.pexels.com/v1/search');
     url.searchParams.set('query', query);
     url.searchParams.set('per_page', '3');
-    url.searchParams.set('orientation', 'portrait');
+    url.searchParams.set('orientation', orientation);
     const response = await fetchImpl(url.href, {
       headers: { authorization: apiKey, 'user-agent': UA },
       signal: deps.signal || AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
@@ -350,7 +365,8 @@ async function searchPexelsImages(sourceMaterial = {}, deps = {}) {
     const data = await response.json().catch(() => ({}));
     const photos = Array.isArray(data.photos) ? data.photos : [];
     for (const photo of photos) {
-      const imageUrl = safeString(photo?.src?.large2x || photo?.src?.large || photo?.src?.original);
+      // 发布视频优先使用原始图，避免 1080P 画面继续放大低分辨率预览图。
+      const imageUrl = safeString(photo?.src?.original || photo?.src?.large2x || photo?.src?.large);
       if (!imageUrl || seen.has(imageUrl)) continue;
       seen.add(imageUrl);
       images.push({
@@ -358,6 +374,8 @@ async function searchPexelsImages(sourceMaterial = {}, deps = {}) {
         alt: safeString(photo.alt || query),
         title: safeString(photo.alt || query),
         source: 'search',
+        width: Number(photo.width) || null,
+        height: Number(photo.height) || null,
         attribution: {
           provider: 'Pexels',
           photographer: safeString(photo.photographer),
@@ -380,7 +398,7 @@ async function searchPexelsImages(sourceMaterial = {}, deps = {}) {
         : `Pexels 搜图请求失败：HTTP ${failures.join('、')}。`;
     return { success: false, code, message, images: [], queries };
   }
-  return { success: true, images, queries };
+  return { success: true, images, queries, orientation };
 }
 
 async function prepareSourceAssets({
@@ -470,6 +488,7 @@ async function prepareSourceAssets({
 module.exports = {
   extractMarkdownImages,
   buildSearchQueries,
+  resolvePexelsOrientation,
   searchPexelsImages,
   prepareSourceAssets,
 };

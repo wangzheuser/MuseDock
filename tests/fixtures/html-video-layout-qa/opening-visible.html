@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>首帧主体可见</title>
+  <style>
+    *{box-sizing:border-box}
+    @keyframes enter{from{opacity:.72;transform:translateX(18px)}to{opacity:1;transform:translateX(0)}}
+    body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#181818;color:#fff;font-family:Arial,"Microsoft YaHei",sans-serif}
+    .card{position:absolute;left:280px;top:170px;width:1360px;height:650px;padding:90px;background:#ff5722;opacity:1;animation:enter .8s ease-out both}
+    h1{margin:0 0 30px;font-size:110px;color:#181818}
+    p{margin:0;font-size:42px;color:#181818}
+  </style>
+</head>
+<body data-hv-canvas data-width="1920" data-height="1080">
+  <main class="card" data-role="main-visual">
+    <h1 data-text-key="headline">晨间启动</h1>
+    <p data-text-key="body">首帧可见，后续继续完成入场动画</p>
+  </main>
+</body>
+</html>

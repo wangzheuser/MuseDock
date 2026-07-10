@@ -3,8 +3,8 @@ const creativeWorkflows = require('./services/creative/creativeWorkflows');
 const creativeWorkflowTasks = require('./services/creative/creativeWorkflowTasks');
 
 const PORT = Number(process.env.MUSEDOCK_PORT) || 3000;
-// 浏览器/局域网模式默认 0.0.0.0；Electron 主进程注入 127.0.0.1，桌面版不对外开 API
-const HOST = process.env.MUSEDOCK_HOST || '0.0.0.0';
+// 默认只监听本机；需要局域网访问时显式设置 MUSEDOCK_HOST=0.0.0.0。
+const HOST = process.env.MUSEDOCK_HOST || '127.0.0.1';
 
 async function runStartupRecovery() {
   await creativeWorkflowTasks.recoverOrphanedWorkflows();

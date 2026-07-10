@@ -598,7 +598,6 @@ async function getTemplateOverview(options = {}) {
     : [];
   const compatibilityOptions = {
     aspectRatio: defaults?.aspectRatio,
-    durationSec: defaults?.targetDurationSec,
   };
 
   return {

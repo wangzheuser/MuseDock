@@ -105,7 +105,8 @@ async function inspectGeneratedFrameLayout({
   target,
 }) {
   const safeSceneId = String(sceneId || node.id || 'frame').replace(/[^A-Za-z0-9_.-]+/g, '_') || 'frame';
-  const relativePath = `frames/.qa/${safeSceneId}.html`;
+  // QA 文件与正式 frame 保持同层，确保 ../assets 等相对素材路径仍然有效。
+  const relativePath = `frames/.qa-${safeSceneId}.html`;
   const absolutePath = projectStore.resolveProjectPath(projectDir, relativePath);
   await fsp.mkdir(path.dirname(absolutePath), { recursive: true });
   await fsp.writeFile(absolutePath, String(html || ''), 'utf8');
@@ -119,6 +120,8 @@ async function inspectGeneratedFrameLayout({
   } catch (error) {
     // ponytail: QA 基建失败不拦帧，渲染前的 layout gate 仍是最终兜底
     return { success: true, issues: [], metrics: { skipped: true, error: error.message || String(error) } };
+  } finally {
+    await fsp.rm(absolutePath, { force: true }).catch(() => {});
   }
 }
 
@@ -281,7 +284,7 @@ async function runFrameHtmlPhase(ctx) {
           type: 'html_video_frame_layout_repair_started',
           stage: 'project',
           sub_stage: 'frame_html',
-          message: `第 ${index + 1}/${nodes.length} 帧检测到布局遮挡，正在自动修复...`,
+          message: `第 ${index + 1}/${nodes.length} 帧检测到布局或开场画面问题，正在自动修复...`,
           frame_id: node.id,
           data: { frame_id: node.id, issues: firstBlocking.slice(0, 3) },
         });
@@ -342,8 +345,8 @@ async function runFrameHtmlPhase(ctx) {
           stage: 'project',
           sub_stage: 'frame_html',
           message: unresolved.length
-            ? `第 ${index + 1}/${nodes.length} 帧布局自动修复后仍有疑似遮挡，已记录警告。`
-            : `第 ${index + 1}/${nodes.length} 帧布局遮挡已自动修复。`,
+            ? `第 ${index + 1}/${nodes.length} 帧自动修复后仍有布局或开场画面问题，已记录警告。`
+            : `第 ${index + 1}/${nodes.length} 帧布局和开场画面问题已自动修复。`,
           frame_id: node.id,
           data: { frame_id: node.id, resolved: unresolved.length === 0, remaining_issues: unresolved.slice(0, 3) },
         });
