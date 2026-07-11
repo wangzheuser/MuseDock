@@ -84,6 +84,25 @@ function latestItem(items = []) {
     .sort((a, b) => timestampMs(b?.created_at || b?.createdAt) - timestampMs(a?.created_at || a?.createdAt))[0] || null;
 }
 
+const NON_CONTENT_REVISION_TYPES = new Set([
+  'render',
+  'delete_export',
+  'frame_html_draft',
+  'frame_html_draft_discard',
+]);
+
+/**
+ * 获取最近一次会改变正式成片内容的版本。
+ * @param {Array<object>} revisions 工程版本列表。
+ * @returns {object|null} 最近的内容版本。
+ */
+function latestContentRevision(revisions = []) {
+  return latestItem(arrayOrEmpty(revisions).filter(revision => {
+    const changeType = safeString(revision?.change?.type);
+    return !NON_CONTENT_REVISION_TYPES.has(changeType);
+  }));
+}
+
 function collectNarrationTailRiskFrames(project = {}) {
   return arrayOrEmpty(project.frames)
     .map((frame, index) => {
@@ -116,9 +135,10 @@ function buildProjectEditState(project = {}, options = {}) {
   const revisions = arrayOrEmpty(project.revisions);
   const exportsList = arrayOrEmpty(options.exportsList || project.exports);
   const latestRevision = latestItem(revisions);
+  const latestRenderedContentRevision = latestContentRevision(revisions);
   const latestExport = latestItem(exportsList.filter(item => item?.kind !== 'preview')) || latestItem(exportsList);
   const latestPreview = latestItem(exportsList.filter(item => item?.kind === 'preview'));
-  const latestRevisionMs = timestampMs(latestRevision?.created_at || latestRevision?.createdAt);
+  const latestContentRevisionMs = timestampMs(latestRenderedContentRevision?.created_at || latestRenderedContentRevision?.createdAt);
   const latestExportMs = timestampMs(latestExport?.created_at || latestExport?.createdAt);
   const latestPreviewMs = timestampMs(latestPreview?.created_at || latestPreview?.createdAt);
 
@@ -138,8 +158,8 @@ function buildProjectEditState(project = {}, options = {}) {
     latest_revision: latestRevision || null,
     latest_export: latestExport || null,
     latest_preview: latestPreview || null,
-    export_outdated: latestRevisionMs > 0 && (!latestExportMs || latestRevisionMs > latestExportMs),
-    preview_outdated: latestRevisionMs > 0 && (!latestPreviewMs || latestRevisionMs > latestPreviewMs),
+    export_outdated: latestContentRevisionMs > 0 && (!latestExportMs || latestContentRevisionMs > latestExportMs),
+    preview_outdated: latestContentRevisionMs > 0 && (!latestPreviewMs || latestContentRevisionMs > latestPreviewMs),
   };
 }
 

@@ -26,15 +26,19 @@
     "test": "node tests/run-all.js",
     "test:filter": "node tests/run-all.js",
     "test:ai-text": "node tests/test-ai-text-model.js",
-    "eval:quality": "node scripts/quality-eval/index.js"
+    "eval:quality": "node scripts/quality-eval/index.js",
+    "mcp": "node scripts/musedock-mcp.mjs",
+    "skill:install": "node scripts/install-musedock-skill.mjs"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.11.1",
     "cors": "^2.8.5",
     "express": "^4.21.0",
     "playwright-core": "^1.51.0",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.0.2",

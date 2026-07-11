@@ -56,7 +56,7 @@ npm run dist   # 产物：dist-electron/MuseDock Setup <version>.exe
 
 ## HTML 视频工程（HyperFrames）
 
-当前阶段创作链路已收敛为 HyperFrames 单引擎：分镜 DSL 驱动 AI 生成 HTML/CSS/GSAP 帧，Playwright 驱动系统 Chrome 录制，ffmpeg 合成音视频。
+当前阶段创作链路已收敛为 HyperFrames 单引擎：分镜 DSL 驱动 AI 生成 HTML/CSS/GSAP 帧，Playwright 驱动系统 Chrome 按时间轴逐帧截图，ffmpeg 以 CFR 合成音视频。
 
 ```text
 输入/来源 -> scene_spec -> content graph -> raw HTML frames
@@ -65,6 +65,67 @@ npm run dist   # 产物：dist-electron/MuseDock Setup <version>.exe
 ```
 
 `project.output.resolution` 是输出画幅的权威来源，生成 HTML 必须带 `data-hv-canvas`、`data-width`、`data-height` 画布契约。
+
+## Codex / Claude Code / Cursor 接入
+
+MuseDock 同时提供本地 STDIO MCP Server 和 `musedock-video` Skill。MCP 只适配协议并调用现有 REST 服务，浏览器、Electron 和 Agent 共用同一套任务、工程、版本、质检与导出逻辑；Skill 负责指导 Agent 先完善短选题、再创建视频，并按“检查工程 → 局部草稿 → 场景预览与布局 QA → 接受 → 全片预览 → 正式导出”的流程完成二次编辑。
+
+先安装依赖、配置设置中心并启动 MuseDock：
+
+```bash
+npm install
+npm start
+```
+
+再把以下示例中的 `/absolute/path/to/MuseDock` 替换为仓库绝对路径。
+
+### Codex
+
+```bash
+codex mcp add musedock \
+  --env MUSEDOCK_BASE_URL=http://127.0.0.1:3000 \
+  -- node "/absolute/path/to/MuseDock/scripts/musedock-mcp.mjs"
+npm run skill:install -- codex
+```
+
+### Claude Code
+
+```bash
+claude mcp add --scope user musedock \
+  -e MUSEDOCK_BASE_URL=http://127.0.0.1:3000 \
+  -- node "/absolute/path/to/MuseDock/scripts/musedock-mcp.mjs"
+npm run skill:install -- claude
+```
+
+### Cursor
+
+把下面配置写入全局 `~/.cursor/mcp.json`，或项目级 `.cursor/mcp.json`：
+
+```json
+{
+  "mcpServers": {
+    "musedock": {
+      "command": "node",
+      "args": ["/absolute/path/to/MuseDock/scripts/musedock-mcp.mjs"],
+      "env": {
+        "MUSEDOCK_BASE_URL": "http://127.0.0.1:3000"
+      }
+    }
+  }
+}
+```
+
+```bash
+npm run skill:install -- cursor
+```
+
+也可一次安装三个客户端的 Skill：
+
+```bash
+npm run skill:install -- all
+```
+
+安装器只会更新带 MuseDock 管理标记的同名 Skill，不会覆盖用户自建内容。模型、TTS 和素材服务密钥仍只在 MuseDock 设置中心或后端环境变量中配置，不需要写入 MCP 或 Skill。耗时的草稿生成、场景预览、TTS、布局检查、全片预览和导出会返回 `operation_id`，Agent 通过 `get_operation` 查询；MCP 进程重启后可用 `inspect_video`、`get_video` 恢复持久化状态。
 
 ## 当前边界
 
@@ -83,6 +144,8 @@ npm run dev            # 后端 + Vite 前端
 npm run dev:frontend   # 只启动前端开发服务
 npm run build:frontend # 构建前端产物到 frontend-dist
 npm run start          # 启动后端并托管 frontend-dist（http://localhost:3000）
+npm run mcp            # 手动启动 STDIO MCP（通常由 Agent 客户端自动启动）
+npm run skill:install -- all # 安装 Codex / Claude Code / Cursor Skill
 npm run electron       # 用 Electron 壳跑本地代码（需先 build:frontend）
 npm run dist           # 打包 Windows 安装包到 dist-electron/
 npm test               # 完整测试
@@ -120,6 +183,8 @@ npm run eval:quality -- --rescore baseline         # 不重新生成，只重新
 | `MUSEDOCK_DATA_DIR` | 所有可写数据（DB/Cookie/素材/配置）的根目录，Electron 打包后指向 `%APPDATA%/musedock` | 仓库根目录 |
 | `MUSEDOCK_PORT` | 后端监听端口 | `3000`（Electron 内默认 `38017`，被占用自动换） |
 | `MUSEDOCK_HOST` | 后端监听地址 | `0.0.0.0`（Electron 内为 `127.0.0.1`） |
+| `MUSEDOCK_BASE_URL` | MCP 适配进程连接的 MuseDock REST 地址 | `http://127.0.0.1:3000` |
+| `MUSEDOCK_MCP_HTTP_TIMEOUT_MS` | MCP 调用单个 REST 请求的超时时间 | `900000`（15 分钟） |
 | `ASR_LANGUAGE` | MiMo ASR 识别语言，支持 `auto`、`zh`、`en` | `auto` |
 | `FFMPEG_PATH` | 手动指定 ffmpeg 可执行文件路径 | 空 |
 | `FFPROBE_PATH` | 手动指定 ffprobe 可执行文件路径 | 空 |
@@ -132,6 +197,8 @@ npm run eval:quality -- --rescore baseline         # 不重新生成，只重新
 ```text
 frontend-react/   # React + Vite 前端（pages / components / api）
 server/           # Express 服务：routes / services / templates / resources / scraper
+server/integrations/mcp/ # MuseDock REST 到 MCP 的本地协议适配层
+integrations/skills/     # Codex / Claude Code / Cursor 可安装 Skill
 electron/         # Electron 主进程（桌面壳，复用 server）
 assets/sfx/       # 自动音效增强使用的本地短音效白名单与素材
 data/             # 本地数据库、配置（config/）、任务和素材（media/）
