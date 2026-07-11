@@ -219,6 +219,9 @@ assert.ok(exportsPanel.includes('技术质检未通过'), 'exports panel should 
 assert.ok(exportsPanel.includes('video_bitrate'), 'exports panel should show actual video bitrate');
 assert.ok(exportsPanel.includes('audio_sample_rate'), 'exports panel should show actual audio sample rate');
 assert.ok(exportsPanel.includes('motion_effective_fps_estimate'), 'exports panel should show estimated effective motion FPS');
+assert.ok(exportsPanel.includes('跟随工程'), 'exports panel should allow FPS to follow the project');
+assert.ok(exportsPanel.includes('projectFps'), 'exports panel should receive the project FPS');
+assert.ok(exportsPanel.includes('画面变化估算约'), 'exports panel should describe motion FPS as an estimate instead of a quality failure');
 assert.ok(exportsPanel.includes('CRF17 质量模式'), 'exports panel should identify content-adaptive publish encoding');
 assert.ok(exportsPanel.includes('存在发布质量建议'), 'exports panel should show concrete media quality suggestions');
 

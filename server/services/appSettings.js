@@ -9,12 +9,14 @@ const DEFAULT_AI_CONFIG_PATH = aiModelConfig.DEFAULT_CONFIG_PATH
   || path.join(require('../dataRoot'), 'data/config/ai-models.json');
 
 const ALLOWED_ASPECT_RATIOS = ['9:16', '16:9', '1:1', '4:5'];
+const ALLOWED_CREATIVE_FPS = [30, 60];
 
 const DEFAULT_CONFIG = {
   version: 1,
   creativeDefaults: {
     aspectRatio: '9:16',
     targetDurationSec: 60,
+    fps: 30,
     templateByAspectRatio: {
       '9:16': 'news_signal_vertical',
       '16:9': 'bold_signal',
@@ -75,6 +77,9 @@ function normalizeCreativeDefaults(input = {}) {
       ? source.aspectRatio
       : DEFAULT_CONFIG.creativeDefaults.aspectRatio,
     targetDurationSec: normalizeDurationSec(source.targetDurationSec),
+    fps: ALLOWED_CREATIVE_FPS.includes(Number(source.fps))
+      ? Number(source.fps)
+      : DEFAULT_CONFIG.creativeDefaults.fps,
     templateByAspectRatio,
     lockTemplate: source.lockTemplate === true,
     useResearch: typeof source.useResearch === 'boolean'

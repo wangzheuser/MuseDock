@@ -258,11 +258,44 @@ function assertIncludesPair(args, key, value) {
   });
   assert.equal(qualityWarning.success, true);
   assert.equal(qualityWarning.pass, false);
-  assert.equal(qualityWarning.issues.some(item => item.code === 'high_fps_capture_risk'), true);
+  assert.equal(qualityWarning.issues.some(item => item.code === 'high_fps_static_content' && item.severity === 'info'), true);
   assert.equal(qualityWarning.metrics.unique_frames_estimate, 144);
   assert.equal(qualityWarning.metrics.motion_effective_fps_estimate, 24);
   assert.equal(qualityWarning.issues.some(item => item.code === 'audio_sample_rate_unexpected'), true);
   assert.equal(qualityWarning.issues.some(item => item.code === 'extra_streams_present'), true);
+
+  const highFpsStaticInfo = await composer.probeMediaQualityWithFfprobe({
+    videoPath: muxOutput,
+    expectedWidth: 1080,
+    expectedHeight: 1920,
+    expectedFps: 60,
+    requireAudio: true,
+    encodingMode: composer.H264_PUBLISH_ENCODING,
+    ffprobePath: 'ffprobe-test',
+    ffmpegPath: 'ffmpeg-test',
+    runCommand: async command => command === 'ffmpeg-test'
+      ? { ok: true, stdout: '', stderr: 'frame= 300 fps=0.0 time=00:00:06.00' }
+      : {
+        ok: true,
+        stdout: JSON.stringify({
+          streams: [
+            {
+              codec_type: 'video', codec_name: 'h264', profile: 'High', width: 1080, height: 1920,
+              pix_fmt: 'yuv420p', avg_frame_rate: '60/1', bit_rate: '4000000', nb_frames: '360', color_range: 'tv',
+              color_space: 'bt709', color_transfer: 'bt709', color_primaries: 'bt709',
+            },
+            { codec_type: 'audio', codec_name: 'aac', sample_rate: '48000', channels: 2, bit_rate: '192000' },
+          ],
+          format: { duration: '6', size: '3200000', bit_rate: '4192000' },
+        }),
+        stderr: '',
+      },
+  });
+  assert.equal(highFpsStaticInfo.success, true);
+  assert.equal(highFpsStaticInfo.pass, true);
+  assert.equal(highFpsStaticInfo.publish_ready, true);
+  assert.equal(highFpsStaticInfo.issues[0].code, 'high_fps_static_content');
+  assert.match(highFpsStaticInfo.issues[0].message, /已按 60 FPS 逐帧生成/);
 
   const qualityFailure = await composer.probeMediaQualityWithFfprobe({
     videoPath: muxOutput,

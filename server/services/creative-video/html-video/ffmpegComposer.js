@@ -454,21 +454,22 @@ async function probeMediaQualityWithFfprobe({
   if (extraStreams.length) addIssue('extra_streams_present', 'warning', `导出文件包含 ${extraStreams.length} 条额外数据流，建议发布前清除。`);
   if (fps > 30 && duplicateFrameMetrics?.duplicate_frame_ratio >= 0.15) {
     addIssue(
-      'high_fps_capture_risk',
-      'warning',
-      `高帧率视频约 ${(duplicateFrameMetrics.duplicate_frame_ratio * 100).toFixed(0)}% 为近似重复或静止帧，有效动态帧率估算约 ${duplicateFrameMetrics.motion_effective_fps_estimate.toFixed(2)}fps。`,
+      'high_fps_static_content',
+      'info',
+      `视频已按 ${fps.toFixed(0)} FPS 逐帧生成，其中约 ${(duplicateFrameMetrics.duplicate_frame_ratio * 100).toFixed(0)}% 为静止或近似画面；画面变化估算约 ${duplicateFrameMetrics.motion_effective_fps_estimate.toFixed(2)} FPS，静态内容使用高帧率的收益有限。`,
     );
   } else if (fps > 30 && !duplicateFrameMetrics) {
-    addIssue('high_fps_capture_risk', 'warning', '当前 Chromium 录制模式的高帧率视频未完成重复帧检测，应检查真实运动流畅度。');
+    addIssue('high_fps_motion_analysis_unavailable', 'info', '视频已按高帧率逐帧生成，但未完成画面变化分析。');
   }
 
   const blockingIssues = issues.filter(issue => issue.severity === 'error');
+  const warningIssues = issues.filter(issue => issue.severity === 'warning');
   return {
     success: blockingIssues.length === 0,
-    pass: issues.length === 0,
+    pass: blockingIssues.length === 0 && warningIssues.length === 0,
     publish_ready: blockingIssues.length === 0,
     code: blockingIssues[0]?.code || '',
-    message: blockingIssues[0]?.message || (issues.length ? '技术质检通过，但存在发布质量建议。' : '最终视频技术质检通过。'),
+    message: blockingIssues[0]?.message || (warningIssues.length ? '技术质检通过，但存在发布质量建议。' : '最终视频技术质检通过。'),
     metrics: {
       width,
       height,

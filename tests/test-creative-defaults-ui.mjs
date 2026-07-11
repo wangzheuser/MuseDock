@@ -17,6 +17,8 @@ const combinedCreativeDefaultsSource = `${componentSource}\n${creativeDefaultsOp
 for (const text of [
   '默认画面比例',
   '默认目标时长',
+  '默认生成帧率',
+  '60 FPS',
   '帧 HTML 并发上限',
   '按比例默认模板',
   '锁定模板',
@@ -31,6 +33,7 @@ for (const text of [
 
 assert.doesNotMatch(componentSource, /captionMode|showCaptionBar|renderQuality/);
 assert.match(componentSource, /frameHtmlConcurrency/);
+assert.match(componentSource, /fps/);
 assert.match(settingsPageSource, /CreativeDefaultsSettings/);
 
 console.log('creative defaults ui tests passed');

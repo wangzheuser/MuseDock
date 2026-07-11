@@ -149,6 +149,7 @@ function buildCreativeDefaultsOverride(defaults = {}) {
       15,
       180,
     ),
+    fps: normalized.fps === 60 ? 60 : 30,
     templateByAspectRatio: normalized.templateByAspectRatio,
     lockTemplate: normalized.lockTemplate === true,
     useResearch: normalized.useResearch !== false,

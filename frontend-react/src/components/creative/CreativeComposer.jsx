@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import {
   ASPECT_RATIOS,
+  CREATIVE_FPS_OPTIONS,
   DEFAULT_TTS_VOICE,
   getTemplateDisplayName,
   getTemplateId,
@@ -131,6 +132,7 @@ function CreativeRunSettingsPanel({
   const summaryItems = [
     { label: '画幅', value: currentAspectRatio },
     { label: '时长', value: `${defaults.targetDurationSec || 60}s` },
+    { label: '帧率', value: `${defaults.fps || 30} FPS` },
     { label: '模板', value: getSelectedTemplateLabel(templates, templateId) },
     { label: '旁白音色', value: getVoiceLabel(voiceOptions, defaults.ttsVoice) },
     { label: '联网', value: defaults.useResearch !== false ? '开启' : '关闭' },
@@ -218,6 +220,20 @@ function CreativeRunSettingsPanel({
                   targetDurationSec: event.target.value === '' ? '' : Number(event.target.value),
                 })}
               />
+            </label>
+
+            <label className="grid gap-1.5">
+              <span className="text-xs font-semibold text-[#5f6876]">生成帧率</span>
+              <select
+                value={defaults.fps || 30}
+                disabled={isBusy}
+                onChange={event => updateDefaults({ fps: Number(event.target.value) })}
+                className={FIELD_CLASS}
+              >
+                {CREATIVE_FPS_OPTIONS.map(fps => (
+                  <option key={fps} value={fps}>{fps === 60 ? '60 FPS（高动态，渲染更慢）' : '30 FPS（通用）'}</option>
+                ))}
+              </select>
             </label>
 
             <label className="grid gap-1.5">

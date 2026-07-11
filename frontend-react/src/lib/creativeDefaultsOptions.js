@@ -1,5 +1,7 @@
 export const ASPECT_RATIOS = ['9:16', '16:9', '1:1', '4:5'];
 
+export const CREATIVE_FPS_OPTIONS = [30, 60];
+
 export const DEFAULT_TTS_VOICE = 'mimo_default';
 
 export const FALLBACK_TTS_VOICES = [
@@ -18,6 +20,7 @@ export const FALLBACK_TTS_VOICES = [
 export const DEFAULT_CREATIVE_DEFAULTS = {
   aspectRatio: '9:16',
   targetDurationSec: 60,
+  fps: 30,
   templateByAspectRatio: {
     '9:16': '',
     '16:9': '',
@@ -72,6 +75,7 @@ export const TEMPLATE_NAME_ZH = {
  */
 export function normalizeCreativeDefaults(defaults = {}) {
   const source = defaults && typeof defaults === 'object' ? defaults : {};
+  const fps = Number(source.fps);
   return {
     ...DEFAULT_CREATIVE_DEFAULTS,
     ...source,
@@ -79,6 +83,7 @@ export function normalizeCreativeDefaults(defaults = {}) {
       ...DEFAULT_CREATIVE_DEFAULTS.templateByAspectRatio,
       ...(source.templateByAspectRatio || {}),
     },
+    fps: CREATIVE_FPS_OPTIONS.includes(fps) ? fps : DEFAULT_CREATIVE_DEFAULTS.fps,
     ttsVoice: String(source.ttsVoice || DEFAULT_TTS_VOICE).trim() || DEFAULT_TTS_VOICE,
   };
 }

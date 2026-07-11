@@ -290,6 +290,7 @@ export function HtmlVideoProjectEditor({ editor, onExported }) {
           <ExportsPanel
             exportsList={editor.exportsList}
             projectResolution={editor.project?.output?.resolution}
+            projectFps={editor.project?.output?.fps}
             disabled={disabled}
             exporting={editor.status === 'exporting'}
             onExport={handleExport}

@@ -747,6 +747,8 @@ function buildCreativeDefaultsSnapshot(defaults = {}, creativeDefaultsOverride =
   const targetDurationSec = Number.isFinite(Number(overrideSource.targetDurationSec))
     ? Number(overrideSource.targetDurationSec)
     : Number(defaultsSource.targetDurationSec);
+  const defaultFps = [30, 60].includes(Number(defaultsSource.fps)) ? Number(defaultsSource.fps) : 30;
+  const fps = [30, 60].includes(Number(overrideSource.fps)) ? Number(overrideSource.fps) : defaultFps;
   const useResearchFromDefaults = defaultsSource.useResearch !== false;
   const useResearch = typeof overrideSource.useResearch === 'boolean'
     ? overrideSource.useResearch
@@ -762,6 +764,7 @@ function buildCreativeDefaultsSnapshot(defaults = {}, creativeDefaultsOverride =
   return {
     aspectRatio,
     targetDurationSec,
+    fps,
     templateByAspectRatio,
     templateId,
     lockTemplate: typeof overrideSource.lockTemplate === 'boolean'
@@ -821,6 +824,7 @@ function buildWorkflowTarget(snapshot = {}) {
   return {
     aspect_ratio: safeString(snapshot.aspectRatio),
     duration_sec: Number(snapshot.targetDurationSec),
+    fps: Number(snapshot.fps) === 60 ? 60 : 30,
     preferredTemplateId: safeString(snapshot.templateId),
     lockTemplate: snapshot.lockTemplate === true,
     generateAudio: snapshot.generateAudio !== false,
@@ -904,6 +908,7 @@ function mergeProjectOptions(recordTarget = {}, incoming = {}) {
 
 function buildFreeformTargetOptions(target = {}) {
   const durationSec = Number(target.duration_sec ?? target.durationSec ?? target.targetDurationSec ?? target.target_duration_sec);
+  const fps = Number(target.fps);
   const aspectRatio = safeString(target.aspect_ratio || target.aspectRatio);
   const ttsVoice = safeString(target.ttsVoice || target.tts_voice);
   return {
@@ -911,6 +916,7 @@ function buildFreeformTargetOptions(target = {}) {
       targetDurationSec: durationSec,
       target_duration_sec: durationSec,
     } : {}),
+    ...([30, 60].includes(fps) ? { fps } : {}),
     ...(aspectRatio ? { aspectRatio, aspect_ratio: aspectRatio } : {}),
     ...(ttsVoice ? { voice: normalizeTtsVoice(ttsVoice), ttsVoice: normalizeTtsVoice(ttsVoice) } : {}),
   };

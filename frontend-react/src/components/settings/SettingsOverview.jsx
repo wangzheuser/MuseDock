@@ -34,6 +34,11 @@ export function SettingsOverview({ appSettings, modelSettings, systemHealth, onN
       action: 'creative',
     },
     {
+      title: '默认生成帧率',
+      value: `${creativeDefaults.fps || 30} FPS`,
+      action: 'creative',
+    },
+    {
       title: '默认模板策略',
       value: creativeDefaults.lockTemplate
         ? `锁定 ${activeTemplate || '未选择模板'}`

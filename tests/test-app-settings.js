@@ -19,6 +19,7 @@ async function run() {
   assert.deepStrictEqual(defaults.creativeDefaults, {
     aspectRatio: '9:16',
     targetDurationSec: 60,
+    fps: 30,
     templateByAspectRatio: {
       '9:16': 'news_signal_vertical',
       '16:9': 'bold_signal',
@@ -46,6 +47,7 @@ async function run() {
     creativeDefaults: {
       aspectRatio: '3:2',
       targetDurationSec: 999,
+      fps: 60,
       templateByAspectRatio: {
         '9:16': ' vertical-template ',
         '16:9': 123,
@@ -74,6 +76,7 @@ async function run() {
   assert.deepStrictEqual(saved.creativeDefaults, {
     aspectRatio: '9:16',
     targetDurationSec: 180,
+    fps: 60,
     templateByAspectRatio: {
       '9:16': 'vertical-template',
       '16:9': '',
@@ -144,6 +147,9 @@ async function run() {
   assert.equal(appSettings.normalizeCreativeDefaults({}).sourceImageAnalysisEnabled, false);
   assert.equal(appSettings.normalizeCreativeDefaults({}).extractDouyinFrames, false);
   assert.equal(appSettings.normalizeCreativeDefaults({}).frameHtmlConcurrency, 1);
+  assert.equal(appSettings.normalizeCreativeDefaults({}).fps, 30);
+  assert.equal(appSettings.normalizeCreativeDefaults({ fps: 60 }).fps, 60);
+  assert.equal(appSettings.normalizeCreativeDefaults({ fps: 120 }).fps, 30);
   assert.equal(appSettings.normalizeCreativeDefaults({ generateAudio: false }).generateAudio, false);
   assert.equal(appSettings.normalizeCreativeDefaults({ generateCaptions: false }).generateCaptions, false);
   assert.equal(appSettings.normalizeCreativeDefaults({ emotionalVoice: true }).emotionalVoice, true);

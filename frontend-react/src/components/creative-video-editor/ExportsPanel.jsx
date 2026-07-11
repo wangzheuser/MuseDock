@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle2, CircleHelp, Clipboard, Download, Play, XCi
 import { EditorInlineActions, EditorPanel, EditorPanelHeader } from './editorUi.jsx';
 
 const PLATFORM_PRESETS = {
-  custom: { label: '自定义', width: '', height: '', fps: 30 },
+  custom: { label: '自定义', width: '', height: '', fps: 'project' },
   douyin: { label: '抖音 / 小红书 竖屏', width: 1080, height: 1920, fps: 30 },
   douyin_landscape: { label: '抖音横屏', width: 1920, height: 1080, fps: 30 },
   xiaohongshu_landscape: { label: '小红书横屏', width: 1920, height: 1080, fps: 30 },
@@ -97,7 +97,8 @@ function getQualityDisplay(report) {
   if (!report) return { label: '暂无技术质检数据', className: 'text-[#6b7280]', icon: CircleHelp };
   if (report.skipped) return { label: '技术质检已跳过', className: 'text-amber-700', icon: AlertTriangle };
   if (report.publish_ready === false || report.success === false) return { label: '技术质检未通过', className: 'text-red-700', icon: XCircle };
-  if (report.pass === false || (report.issues || []).length > 0) return { label: '技术质检通过，存在优化建议', className: 'text-amber-700', icon: AlertTriangle };
+  const hasActionableIssue = (report.issues || []).some(issue => ['error', 'warning'].includes(issue?.severity));
+  if (report.pass === false || hasActionableIssue) return { label: '技术质检通过，存在优化建议', className: 'text-amber-700', icon: AlertTriangle };
   return { label: '技术质检通过', className: 'text-emerald-700', icon: CheckCircle2 };
 }
 
@@ -107,7 +108,7 @@ function defaultExportDraft() {
     fileName: 'output',
     width: '',
     height: '',
-    fps: 30,
+    fps: 'project',
     playbackSpeed: '1.0',
     tailProtection: 'pad_end',
   };
@@ -140,7 +141,9 @@ function normalizeStoredDraft(value) {
     fileName: String(input.fileName || defaults.fileName).slice(0, 80),
     width: input.width === '' ? '' : Number(input.width) || defaults.width,
     height: input.height === '' ? '' : Number(input.height) || defaults.height,
-    fps: Number(input.fps) || defaults.fps,
+    fps: input.fps === 'project' || [30, 60].includes(Number(input.fps))
+      ? input.fps
+      : defaults.fps,
     playbackSpeed: speed.ok ? speed.formatted : defaults.playbackSpeed,
     tailProtection: input.tailProtection === 'none' ? 'none' : defaults.tailProtection,
   };
@@ -178,6 +181,7 @@ function saveExportDraft(draft) {
 export function ExportsPanel({
   exportsList = [],
   projectResolution = {},
+  projectFps = 30,
   disabled,
   exporting,
   onExport,
@@ -214,6 +218,9 @@ export function ExportsPanel({
     const height = Number(draft.height);
     const projectWidth = Number(projectResolution.width);
     const projectHeight = Number(projectResolution.height);
+    const resolvedFps = draft.fps === 'project'
+      ? ([30, 60].includes(Number(projectFps)) ? Number(projectFps) : 30)
+      : Number(draft.fps);
     const parsedSpeed = parsePlaybackSpeedInput(draft.playbackSpeed);
     if (!parsedSpeed.ok) {
       setSpeedError(parsedSpeed.message);
@@ -238,7 +245,7 @@ export function ExportsPanel({
         file_name: draft.fileName,
         width: Number.isFinite(width) && width > 0 ? width : undefined,
         height: Number.isFinite(height) && height > 0 ? height : undefined,
-        fps: Number(draft.fps) || undefined,
+        fps: resolvedFps,
         playback_speed: parsedSpeed.speed,
         tail_protection: draft.tailProtection,
       },
@@ -292,7 +299,11 @@ export function ExportsPanel({
           </label>
           <label>
             <span>FPS</span>
-            <input type="number" min="1" value={draft.fps} disabled={disabled} onChange={event => setDraft(prev => ({ ...prev, fps: event.target.value }))} />
+            <select value={draft.fps} disabled={disabled} onChange={event => setDraft(prev => ({ ...prev, fps: event.target.value }))}>
+              <option value="project">跟随工程（{[30, 60].includes(Number(projectFps)) ? Number(projectFps) : 30} FPS）</option>
+              <option value="30">30 FPS</option>
+              <option value="60">60 FPS</option>
+            </select>
           </label>
         </div>
         {resolutionError ? <p className="m-0 text-xs font-semibold text-red-600">{resolutionError}</p> : null}
@@ -348,11 +359,11 @@ export function ExportsPanel({
                   {metrics.width || 0}×{metrics.height || 0} · {Number(metrics.fps || 0).toFixed(2)} FPS · {formatVideoBitrate(metrics.video_bitrate)}
                   {metrics.audio_sample_rate ? ` · 音频 ${Math.round(Number(metrics.audio_sample_rate) / 1000)}kHz` : ''}
                   {metrics.encoding_mode?.includes('crf17') ? ' · CRF17 质量模式' : ''}
-                  {metrics.motion_effective_fps_estimate ? ` · 有效动态约 ${Number(metrics.motion_effective_fps_estimate).toFixed(2)} FPS` : ''}
+                  {metrics.motion_effective_fps_estimate ? ` · 画面变化估算约 ${Number(metrics.motion_effective_fps_estimate).toFixed(2)} FPS` : ''}
                 </span>
               ) : null}
               {(qualityReport?.issues || []).map(issue => (
-                <span className={issue?.severity === 'error' ? 'text-red-700' : 'text-amber-700'} key={issue?.code || issue?.message}>
+                <span className={issue?.severity === 'error' ? 'text-red-700' : issue?.severity === 'warning' ? 'text-amber-700' : 'text-[#64748b]'} key={issue?.code || issue?.message}>
                   {issue?.message || '存在发布质量建议。'}
                 </span>
               ))}

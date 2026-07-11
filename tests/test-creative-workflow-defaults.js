@@ -24,6 +24,7 @@ function createDefaults(overrides = {}) {
   return {
     aspectRatio: '16:9',
     targetDurationSec: 90,
+    fps: 30,
     templateByAspectRatio: {
       '16:9': 'bold_signal',
       '9:16': 'news_signal_vertical',
@@ -122,6 +123,7 @@ function createServices({
 function assertSnapshotRecord(record, {
   aspectRatio = '16:9',
   durationSec = 90,
+  fps = 30,
   templateId = 'bold_signal',
   lockTemplate = true,
   useResearch = false,
@@ -137,6 +139,7 @@ function assertSnapshotRecord(record, {
   assert.ok(record.creative_defaults_snapshot, 'snapshot fields missing');
   assert.equal(record.creative_defaults_snapshot.aspectRatio, aspectRatio);
   assert.equal(record.creative_defaults_snapshot.targetDurationSec, durationSec);
+  assert.equal(record.creative_defaults_snapshot.fps, fps);
   assert.equal(record.creative_defaults_snapshot.templateId, templateId);
   assert.equal(record.creative_defaults_snapshot.lockTemplate, lockTemplate);
   assert.equal(record.creative_defaults_snapshot.useResearch, useResearch);
@@ -151,6 +154,7 @@ function assertSnapshotRecord(record, {
   assert.ok(record.target, 'target fields missing');
   assert.equal(record.target.aspect_ratio, aspectRatio);
   assert.equal(record.target.duration_sec, durationSec);
+  assert.equal(record.target.fps, fps);
   assert.equal(record.target.preferredTemplateId, templateId);
   assert.equal(record.target.lockTemplate, lockTemplate);
   assert.equal(record.target.generateAudio, generateAudio);
@@ -196,12 +200,14 @@ async function testCreativeDefaultsOverrideWins() {
     creativeDefaultsOverride: {
       useResearch: true,
       aspectRatio: '9:16',
+      fps: 60,
     },
   });
   assertSnapshotRecord(record, {
     aspectRatio: '9:16',
     templateId: 'news_signal_vertical',
     useResearch: true,
+    fps: 60,
   });
 }
 
@@ -437,6 +443,7 @@ async function testSkipValidationUsesAppSettingsAndRunUsesRecordTarget() {
   assert.equal(projectCall.options.skipValidation, true);
   assert.equal(projectCall.options.projectOptions.aspect_ratio, 'runtime_aspect');
   assert.equal(projectCall.options.projectOptions.duration_sec, 90);
+  assert.equal(projectCall.options.projectOptions.fps, 30);
   assert.equal(projectCall.options.projectOptions.preferredTemplateId, 'bold_signal');
   assert.equal(projectCall.options.projectOptions.lockTemplate, true);
   assert.equal(projectCall.options.projectOptions.frameHtmlConcurrency, 1);

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils.js';
 import {
   ASPECT_RATIOS,
+  CREATIVE_FPS_OPTIONS,
   DEFAULT_TTS_VOICE,
   getCreativeDefaults,
   getTemplateId,
@@ -136,7 +137,7 @@ export function CreativeDefaultsSettings({
       <div className="mb-4 flex items-start justify-between gap-3 max-[520px]:flex-col">
         <div>
           <h3 className="m-0 text-lg font-bold">创作默认值</h3>
-          <p className="mt-1 text-[13px] text-[#69717e]">设置一键创作默认使用的画面比例、目标时长、模板策略和联网研究开关。</p>
+          <p className="mt-1 text-[13px] text-[#69717e]">设置一键创作默认使用的画面比例、目标时长、生成帧率、模板策略和联网研究开关。</p>
         </div>
         <button
           type="button"
@@ -177,6 +178,21 @@ export function CreativeDefaultsSettings({
               targetDurationSec: event.target.value === '' ? '' : Number(event.target.value),
             })}
           />
+        </label>
+
+        <label className="grid gap-1.5">
+          <span className="text-xs font-semibold text-[#5f6876]">默认生成帧率</span>
+          <select
+            value={creativeDefaults.fps || 30}
+            disabled={disabled}
+            onChange={event => updateCreativeDefaults({ fps: Number(event.target.value) })}
+            className="h-[38px] w-full rounded-lg border border-[#d9dde5] bg-white px-2.5 text-[13px] text-[#30343b] outline-none transition focus:border-[#25f4ee] focus:ring-2 focus:ring-[#25f4ee]/15 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {CREATIVE_FPS_OPTIONS.map(fps => (
+              <option key={fps} value={fps}>{fps === 60 ? '60 FPS（高动态，渲染约需双倍时间）' : '30 FPS（通用）'}</option>
+            ))}
+          </select>
+          <span className="text-[11px] leading-relaxed text-[#7b8492]">60 FPS 会从源头逐帧渲染；静态资讯画面的清晰度主要由分辨率和编码质量决定。</span>
         </label>
 
         <label className="grid gap-1.5">
