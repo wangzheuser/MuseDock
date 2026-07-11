@@ -6,18 +6,21 @@ const root = process.cwd();
 const componentPath = path.join(root, 'frontend-react/src/components/settings/CreativeDefaultsSettings.jsx');
 const settingsPagePath = path.join(root, 'frontend-react/src/pages/SettingsPage.jsx');
 const creativeDefaultsOptionsPath = path.join(root, 'frontend-react/src/lib/creativeDefaultsOptions.js');
+const composerPath = path.join(root, 'frontend-react/src/components/creative/CreativeComposer.jsx');
 
-const [componentSource, settingsPageSource, creativeDefaultsOptionsSource] = await Promise.all([
+const [componentSource, settingsPageSource, creativeDefaultsOptionsSource, composerSource] = await Promise.all([
   readFile(componentPath, 'utf8'),
   readFile(settingsPagePath, 'utf8'),
   readFile(creativeDefaultsOptionsPath, 'utf8'),
+  readFile(composerPath, 'utf8'),
 ]);
-const combinedCreativeDefaultsSource = `${componentSource}\n${creativeDefaultsOptionsSource}`;
+const combinedCreativeDefaultsSource = `${componentSource}\n${creativeDefaultsOptionsSource}\n${composerSource}`;
 
 for (const text of [
   '默认画面比例',
   '默认目标时长',
   '默认生成帧率',
+  '默认导出倍速',
   '60 FPS',
   '帧 HTML 并发上限',
   '按比例默认模板',
@@ -34,6 +37,10 @@ for (const text of [
 assert.doesNotMatch(componentSource, /captionMode|showCaptionBar|renderQuality/);
 assert.match(componentSource, /frameHtmlConcurrency/);
 assert.match(componentSource, /fps/);
+assert.match(combinedCreativeDefaultsSource, /playbackSpeed/);
+assert.match(composerSource, /min="0\.1"/);
+assert.match(composerSource, /max="2\.0"/);
+assert.match(composerSource, /step="0\.1"/);
 assert.match(settingsPageSource, /CreativeDefaultsSettings/);
 
 console.log('creative defaults ui tests passed');

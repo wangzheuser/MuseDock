@@ -135,6 +135,17 @@ function numberInRangeOrFallback(value, fallback, min, max) {
 }
 
 /**
+ * 归一化导出倍速，避免提交超范围或超过一位小数的值。
+ * @param {unknown} value 表单值。
+ * @returns {number} 合法导出倍速。
+ */
+function playbackSpeedOrDefault(value) {
+  const text = String(value ?? '').trim();
+  if (!/^\d+(\.\d)?$/.test(text)) return DEFAULT_CREATIVE_DEFAULTS.playbackSpeed;
+  return numberInRangeOrFallback(Number(text), DEFAULT_CREATIVE_DEFAULTS.playbackSpeed, 0.1, 2);
+}
+
+/**
  * 生成提交给后端的本次创作覆盖项，避免把 UI 临时字段混入请求。
  * @param {object} defaults 当前页面选择的创作默认值。
  * @returns {object} creativeDefaultsOverride 请求体。
@@ -150,6 +161,7 @@ function buildCreativeDefaultsOverride(defaults = {}) {
       180,
     ),
     fps: normalized.fps === 60 ? 60 : 30,
+    playbackSpeed: playbackSpeedOrDefault(normalized.playbackSpeed),
     templateByAspectRatio: normalized.templateByAspectRatio,
     lockTemplate: normalized.lockTemplate === true,
     useResearch: normalized.useResearch !== false,

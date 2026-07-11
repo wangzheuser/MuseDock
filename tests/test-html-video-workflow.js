@@ -115,6 +115,7 @@ async function readProjectJson(projectDir) {
       preferredTemplateId: 'vertical',
       lockTemplate: true,
       generateAudio: false,
+      playback_speed: 1.5,
     },
     templateRegistry,
     skipValidation: true,
@@ -157,6 +158,11 @@ async function readProjectJson(projectDir) {
           return { success: true, output_path: outputPath };
         },
         muxAudioWithFfmpeg: async ({ videoPath }) => ({ success: true, skipped: true, output_path: videoPath }),
+        retimeVideoWithFfmpeg: async ({ outputPath, playbackSpeed }) => {
+          assert.equal(playbackSpeed, 1.5);
+          await writeFile(outputPath, 'retimed-mp4');
+          return { success: true, output_path: outputPath };
+        },
       },
       visualQaService: { inspectRenderedVideo: async () => ({ success: true, issues: [], metrics: {} }) },
     },
@@ -164,6 +170,8 @@ async function readProjectJson(projectDir) {
   assert.equal(auditedRawResult.success, true);
   const auditedRawProject = await readProjectJson(auditedRawResult.html_video_project_path);
   const auditedRawCalls = auditedRawProject.generation_checkpoint.model_calls;
+  assert.equal(auditedRawProject.output.default_playback_speed, 1.5);
+  assert.equal(auditedRawProject.exports.at(-1).playback_speed, 1.5);
   const contentGraphAudit = auditedRawCalls.find(call => call.agent === 'ContentGraphAgent' && call.stage === 'content_graph');
   const frameHtmlAudit = auditedRawCalls.find(call => call.agent === 'FrameHtmlAgent' && call.stage === 'frame_html' && call.frame_id === 'scene_01');
   assert.ok(contentGraphAudit);
@@ -473,7 +481,7 @@ async function readProjectJson(projectDir) {
       layoutQaService: {
         inspectFrameHtmlLayout: async ({ htmlPath, frame }) => {
           await fs.access(htmlPath);
-          layoutQaCalls.push({ htmlPath, frameId: frame.id });
+          layoutQaCalls.push({ htmlPath, frameId: frame.id, html: await fs.readFile(htmlPath, 'utf8') });
           return {
             success: false,
             issues: [{ code: 'text_overlap', message: '标题覆盖正文。', severity: 'error' }],
@@ -496,6 +504,8 @@ async function readProjectJson(projectDir) {
   // 帧生成阶段：首检 + 修复后复检；渲染前 gate 再检一次
   assert.equal(layoutQaCalls.length, 3);
   assert.ok(layoutQaCalls[0].htmlPath.includes('.qa'));
+  assert.match(layoutQaCalls[0].html, /data-hv-layer="captions"/);
+  assert.match(layoutQaCalls[1].html, /data-hv-layer="captions"/);
   assert.equal(layoutRepairPrompts.length, 1);
   assert.match(layoutRepairPrompts[0], /标题覆盖正文/);
   assert.equal(layoutQaFailureResult.html_video_diagnostics.some(item => item.code === 'frame_layout_qa_unresolved' && item.severity === 'warning'), true);

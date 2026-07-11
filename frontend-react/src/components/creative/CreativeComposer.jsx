@@ -124,6 +124,10 @@ function CreativeRunSettingsPanel({
   const sourceImageAnalysisReady = canUseSourceImageAnalysis(activeModels);
   const sourceImageAnalysisEnabled = defaults.sourceImageAnalysisEnabled === true;
   const currentAspectRatio = defaults.aspectRatio || '9:16';
+  const playbackSpeedText = String(defaults.playbackSpeed ?? '').trim();
+  const playbackSpeedInvalid = !/^\d+(\.\d)?$/.test(playbackSpeedText)
+    || Number(playbackSpeedText) < 0.1
+    || Number(playbackSpeedText) > 2;
   const templateId = defaults.templateByAspectRatio?.[currentAspectRatio] || '';
   const aspectTemplates = useMemo(
     () => getAspectTemplates(templates, currentAspectRatio),
@@ -133,6 +137,7 @@ function CreativeRunSettingsPanel({
     { label: '画幅', value: currentAspectRatio },
     { label: '时长', value: `${defaults.targetDurationSec || 60}s` },
     { label: '帧率', value: `${defaults.fps || 30} FPS` },
+    { label: '导出', value: `${playbackSpeedInvalid ? '1.0' : Number(playbackSpeedText).toFixed(1)}x` },
     { label: '模板', value: getSelectedTemplateLabel(templates, templateId) },
     { label: '旁白音色', value: getVoiceLabel(voiceOptions, defaults.ttsVoice) },
     { label: '联网', value: defaults.useResearch !== false ? '开启' : '关闭' },
@@ -234,6 +239,31 @@ function CreativeRunSettingsPanel({
                   <option key={fps} value={fps}>{fps === 60 ? '60 FPS（高动态，渲染更慢）' : '30 FPS（通用）'}</option>
                 ))}
               </select>
+            </label>
+
+            <label className="grid gap-1.5">
+              <span className="text-xs font-semibold text-[#5f6876]">默认导出倍速</span>
+              <span className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5">
+                <input
+                  type="number"
+                  min="0.1"
+                  max="2.0"
+                  step="0.1"
+                  required
+                  value={defaults.playbackSpeed}
+                  disabled={isBusy}
+                  aria-invalid={playbackSpeedInvalid}
+                  aria-describedby="creative-playback-speed-help"
+                  className={FIELD_CLASS}
+                  onChange={event => updateDefaults({
+                    playbackSpeed: event.target.value === '' ? '' : Number(event.target.value),
+                  })}
+                />
+                <span className="text-xs font-semibold text-[#5f6876]">x</span>
+              </span>
+              <span id="creative-playback-speed-help" className={cn('text-[11px] leading-relaxed', playbackSpeedInvalid ? 'font-semibold text-red-600' : 'text-[#7b8492]')}>
+                {playbackSpeedInvalid ? '请输入 0.1 到 2.0 之间、最多一位小数的导出倍速。' : '1.0 为原速，仅影响最终导出。'}
+              </span>
             </label>
 
             <label className="grid gap-1.5">

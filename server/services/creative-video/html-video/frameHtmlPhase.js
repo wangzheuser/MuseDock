@@ -4,6 +4,7 @@ const path = require('path');
 const projectStore = require('./projectStore');
 const frameHtmlAgent = require('./frameHtmlAgent');
 const frameFallbackBuilder = require('./frameFallbackBuilder');
+const { ensureCaptionLayer } = require('./captionLayer');
 const { markCheckpointStage, markCheckpointFrame } = require('./projectSchema');
 const { createDiagnostic, normalizeDiagnostics } = require('./diagnostics');
 const { normalizeCaptions, trustedSceneDuration } = require('./rawHtmlFrameBuilder');
@@ -103,19 +104,25 @@ async function inspectGeneratedFrameLayout({
   scene,
   html,
   target,
+  generateCaptions = true,
 }) {
   const safeSceneId = String(sceneId || node.id || 'frame').replace(/[^A-Za-z0-9_.-]+/g, '_') || 'frame';
   // QA 文件与正式 frame 保持同层，确保 ../assets 等相对素材路径仍然有效。
   const relativePath = `frames/.qa-${safeSceneId}.html`;
   const absolutePath = projectStore.resolveProjectPath(projectDir, relativePath);
   await fsp.mkdir(path.dirname(absolutePath), { recursive: true });
-  await fsp.writeFile(absolutePath, String(html || ''), 'utf8');
+  const durationSec = trustedSceneDuration(scene || {}, node);
+  // 使用最终渲染一致的字幕层做 QA，避免字幕注入后才发现遮挡。
+  const qaHtml = generateCaptions
+    ? ensureCaptionLayer(String(html || ''), normalizeCaptions(scene || {}, durationSec))
+    : String(html || '');
+  await fsp.writeFile(absolutePath, qaHtml, 'utf8');
   try {
     return await layoutQaService.inspectFrameHtmlLayout({
       htmlPath: absolutePath,
       frame: { id: node.id || sceneId },
       resolution: frameHtmlAgent.resolveResolution(target),
-      durationSec: trustedSceneDuration(scene || {}, node),
+      durationSec,
     });
   } catch (error) {
     // ponytail: QA 基建失败不拦帧，渲染前的 layout gate 仍是最终兜底
@@ -276,6 +283,7 @@ async function runFrameHtmlPhase(ctx) {
         node,
         scene,
         target: templateRenderTarget,
+        generateCaptions: mediaOptions.generateCaptions !== false,
       };
       const firstQa = await inspectGeneratedFrameLayout({ ...layoutQaArgs, html: htmlResult.html });
       const firstBlocking = blockingLayoutIssues(firstQa);

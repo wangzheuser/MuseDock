@@ -151,15 +151,26 @@ function normalizeStoredDraft(value) {
 
 /**
  * 从浏览器恢复上次导出配置；无浏览器环境或数据损坏时回退默认值。
+ * @param {unknown} defaultPlaybackSpeed 当前任务默认导出倍速。
  * @returns {object} 初始导出配置。
  */
-function createInitialDraft() {
+function createInitialDraft(defaultPlaybackSpeed) {
   const storage = getExportDraftStorage();
-  if (!storage) return defaultExportDraft();
+  const configuredSpeed = parsePlaybackSpeedInput(defaultPlaybackSpeed);
+  if (!storage) {
+    return {
+      ...defaultExportDraft(),
+      ...(configuredSpeed.ok ? { playbackSpeed: configuredSpeed.formatted } : {}),
+    };
+  }
   try {
-    return normalizeStoredDraft(JSON.parse(storage.getItem(EXPORT_DRAFT_STORAGE_KEY) || '{}'));
+    const stored = normalizeStoredDraft(JSON.parse(storage.getItem(EXPORT_DRAFT_STORAGE_KEY) || '{}'));
+    return configuredSpeed.ok ? { ...stored, playbackSpeed: configuredSpeed.formatted } : stored;
   } catch {
-    return defaultExportDraft();
+    return {
+      ...defaultExportDraft(),
+      ...(configuredSpeed.ok ? { playbackSpeed: configuredSpeed.formatted } : {}),
+    };
   }
 }
 
@@ -182,6 +193,7 @@ export function ExportsPanel({
   exportsList = [],
   projectResolution = {},
   projectFps = 30,
+  defaultPlaybackSpeed,
   disabled,
   exporting,
   onExport,
@@ -191,7 +203,7 @@ export function ExportsPanel({
   onDeleteExport,
   onPlay = openPlaybackUrl,
 }) {
-  const [draft, setDraft] = useState(createInitialDraft);
+  const [draft, setDraft] = useState(() => createInitialDraft(defaultPlaybackSpeed));
   const [notes, setNotes] = useState({});
   const [speedError, setSpeedError] = useState('');
   const [resolutionError, setResolutionError] = useState('');

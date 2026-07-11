@@ -311,12 +311,19 @@ function normalizeOutput(value) {
   const height = Number(resolution.height);
   const fps = Number(input.fps);
   const duration = Number(input.duration ?? input.duration_sec);
+  const defaultPlaybackSpeed = Number(input.default_playback_speed ?? input.defaultPlaybackSpeed);
   const output = {
     resolution: {
       width: Number.isFinite(width) && width > 0 ? width : DEFAULT_OUTPUT_RESOLUTION.width,
       height: Number.isFinite(height) && height > 0 ? height : DEFAULT_OUTPUT_RESOLUTION.height,
     },
     fps: Number.isFinite(fps) && fps > 0 ? fps : 30,
+    default_playback_speed: Number.isFinite(defaultPlaybackSpeed)
+      && defaultPlaybackSpeed >= 0.1
+      && defaultPlaybackSpeed <= 2
+      && Math.abs(defaultPlaybackSpeed * 10 - Math.round(defaultPlaybackSpeed * 10)) < 0.000001
+      ? defaultPlaybackSpeed
+      : 1,
   };
   if (Number.isFinite(duration) && duration > 0) {
     output.duration = duration;

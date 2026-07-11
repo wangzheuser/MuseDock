@@ -25,6 +25,7 @@ function createDefaults(overrides = {}) {
     aspectRatio: '16:9',
     targetDurationSec: 90,
     fps: 30,
+    playbackSpeed: 1,
     templateByAspectRatio: {
       '16:9': 'bold_signal',
       '9:16': 'news_signal_vertical',
@@ -124,6 +125,7 @@ function assertSnapshotRecord(record, {
   aspectRatio = '16:9',
   durationSec = 90,
   fps = 30,
+  playbackSpeed = 1,
   templateId = 'bold_signal',
   lockTemplate = true,
   useResearch = false,
@@ -140,6 +142,7 @@ function assertSnapshotRecord(record, {
   assert.equal(record.creative_defaults_snapshot.aspectRatio, aspectRatio);
   assert.equal(record.creative_defaults_snapshot.targetDurationSec, durationSec);
   assert.equal(record.creative_defaults_snapshot.fps, fps);
+  assert.equal(record.creative_defaults_snapshot.playbackSpeed, playbackSpeed);
   assert.equal(record.creative_defaults_snapshot.templateId, templateId);
   assert.equal(record.creative_defaults_snapshot.lockTemplate, lockTemplate);
   assert.equal(record.creative_defaults_snapshot.useResearch, useResearch);
@@ -155,6 +158,7 @@ function assertSnapshotRecord(record, {
   assert.equal(record.target.aspect_ratio, aspectRatio);
   assert.equal(record.target.duration_sec, durationSec);
   assert.equal(record.target.fps, fps);
+  assert.equal(record.target.playback_speed, playbackSpeed);
   assert.equal(record.target.preferredTemplateId, templateId);
   assert.equal(record.target.lockTemplate, lockTemplate);
   assert.equal(record.target.generateAudio, generateAudio);
@@ -201,6 +205,7 @@ async function testCreativeDefaultsOverrideWins() {
       useResearch: true,
       aspectRatio: '9:16',
       fps: 60,
+      playbackSpeed: 1.5,
     },
   });
   assertSnapshotRecord(record, {
@@ -208,6 +213,7 @@ async function testCreativeDefaultsOverrideWins() {
     templateId: 'news_signal_vertical',
     useResearch: true,
     fps: 60,
+    playbackSpeed: 1.5,
   });
 }
 

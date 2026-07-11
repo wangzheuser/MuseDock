@@ -17,6 +17,7 @@ const DEFAULT_CONFIG = {
     aspectRatio: '9:16',
     targetDurationSec: 60,
     fps: 30,
+    playbackSpeed: 1,
     templateByAspectRatio: {
       '9:16': 'news_signal_vertical',
       '16:9': 'bold_signal',
@@ -56,6 +57,20 @@ function normalizeSmallInteger(value, defaultValue, min, max) {
   return Math.min(max, Math.max(min, Math.round(number)));
 }
 
+/**
+ * 归一化默认导出倍速。
+ * @param {unknown} value 倍速值。
+ * @returns {number} 0.1 到 2.0 之间且最多一位小数的倍速。
+ */
+function normalizePlaybackSpeed(value) {
+  const text = String(value ?? '').trim();
+  if (!/^\d+(\.\d)?$/.test(text)) return DEFAULT_CONFIG.creativeDefaults.playbackSpeed;
+  const number = Number(text);
+  return Number.isFinite(number) && number >= 0.1 && number <= 2
+    ? number
+    : DEFAULT_CONFIG.creativeDefaults.playbackSpeed;
+}
+
 function normalizeCreativeDefaults(input = {}) {
   const source = input && typeof input === 'object' ? input : {};
   const templateSource = source.templateByAspectRatio && typeof source.templateByAspectRatio === 'object'
@@ -80,6 +95,7 @@ function normalizeCreativeDefaults(input = {}) {
     fps: ALLOWED_CREATIVE_FPS.includes(Number(source.fps))
       ? Number(source.fps)
       : DEFAULT_CONFIG.creativeDefaults.fps,
+    playbackSpeed: normalizePlaybackSpeed(source.playbackSpeed),
     templateByAspectRatio,
     lockTemplate: source.lockTemplate === true,
     useResearch: typeof source.useResearch === 'boolean'

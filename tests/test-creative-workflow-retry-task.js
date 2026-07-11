@@ -489,6 +489,7 @@ function fakeHtmlVideoServices(calls = {}) {
     assert.equal(calls.generateArgs.workflowId, WORKFLOW_ID);
     assert.equal(calls.generateArgs.runId, 'run-retry-task');
     assert.equal(calls.generateArgs.reuseContentGraph, true);
+    assert.equal(calls.generateArgs.runLayoutQa, true);
     assert.equal(calls.generateArgs.projectOptions.reuseContentGraph, true);
     assert.equal(result.data.model_calls.at(-1).stage, 'frame_html');
     assert.equal(result.data.model_calls.at(-1).model.model_id, 'test-model');

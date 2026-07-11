@@ -1062,6 +1062,21 @@ function normalizeFrameHtmlConcurrency(target = {}, projectOptions = {}) {
   return Math.min(5, Math.max(1, Math.round(number)));
 }
 
+/**
+ * 读取任务默认导出倍速，非法值回退原速。
+ * @param {object} target 工作流目标。
+ * @returns {number} 合法导出倍速。
+ */
+function normalizeDefaultPlaybackSpeed(target = {}) {
+  const value = Number(target.playback_speed ?? target.playbackSpeed);
+  return Number.isFinite(value)
+    && value >= 0.1
+    && value <= 2
+    && Math.abs(value * 10 - Math.round(value * 10)) < 0.000001
+    ? value
+    : 1;
+}
+
 function resolveRegistry(input) {
   if (input) return input;
   return createTemplateRegistry({ rootDir: DEFAULT_ROOT_DIR });
@@ -1101,6 +1116,7 @@ async function generateHtmlVideo(options = {}) {
     generateCaptions: mediaOptionEnabled('generateCaptions', target, projectOptions),
   };
   const frameHtmlConcurrency = normalizeFrameHtmlConcurrency(target, projectOptions);
+  const defaultPlaybackSpeed = normalizeDefaultPlaybackSpeed(target);
   const reuseContentGraphRequested = options.reuseContentGraph === true || projectOptions?.reuseContentGraph === true;
   const regenerateFrameHtmlRequested = options.regenerateFrameHtml === true || projectOptions?.regenerateFrameHtml === true;
   const registry = resolveRegistry(templateRegistry);
@@ -1485,6 +1501,10 @@ async function generateHtmlVideo(options = {}) {
     }
   }
   project = applyMediaOptionsToProject(project, mediaOptions);
+  project.output = {
+    ...objectOrEmpty(project.output),
+    default_playback_speed: defaultPlaybackSpeed,
+  };
   const sourceProjectAssets = projectAssetsFromCreativeContext(creativeContext);
   if (sourceProjectAssets.length) {
     const byPath = new Map((Array.isArray(project.assets) ? project.assets : []).map(asset => [String(asset.path || ''), asset]));
@@ -1690,6 +1710,7 @@ async function generateHtmlVideo(options = {}) {
     onProgress,
     runLayoutQa: runLayoutQa === true && !skipValidation,
     targetDurationSec: trustedTargetDurationSec,
+    playbackSpeed: defaultPlaybackSpeed,
   });
   rendered.project = await attachAssetUsageReport({
     project: rendered.project || project,

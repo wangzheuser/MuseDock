@@ -64,6 +64,10 @@ export function CreativeDefaultsSettings({
     && activeModels?.text?.supportsMultimodal === true;
   const sourceImageAnalysisUnavailable = modelSettingsLoading !== true && !canUseSourceImageAnalysis;
   const sourceImageAnalysisUnsupported = sourceImageAnalysisEnabled && sourceImageAnalysisUnavailable;
+  const playbackSpeedText = String(creativeDefaults.playbackSpeed ?? '').trim();
+  const playbackSpeedInvalid = !/^\d+(\.\d)?$/.test(playbackSpeedText)
+    || Number(playbackSpeedText) < 0.1
+    || Number(playbackSpeedText) > 2;
   const sourceImageAnalysisWarning = sourceImageAnalysisUnsupported
     ? '来源图片多模态分析已开启，但当前分析模型不支持图片输入。请切换到支持多模态的分析模型，或先关闭该开关。'
     : sourceImageAnalysisUnavailable
@@ -142,7 +146,7 @@ export function CreativeDefaultsSettings({
         <button
           type="button"
           className="min-h-9 rounded-lg bg-[#111827] px-4 text-sm font-bold text-white transition hover:bg-[#020617] disabled:cursor-not-allowed disabled:opacity-55"
-          disabled={disabled || saving || !appSettings}
+          disabled={disabled || saving || !appSettings || playbackSpeedInvalid}
           onClick={handleSave}
         >
           {saving ? '正在保存创作默认值...' : '保存创作默认值'}
@@ -193,6 +197,32 @@ export function CreativeDefaultsSettings({
             ))}
           </select>
           <span className="text-[11px] leading-relaxed text-[#7b8492]">60 FPS 会从源头逐帧渲染；静态资讯画面的清晰度主要由分辨率和编码质量决定。</span>
+        </label>
+
+        <label className="grid gap-1.5">
+          <span className="text-xs font-semibold text-[#5f6876]">默认导出倍速</span>
+          <span className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5">
+            <input
+              type="number"
+              min="0.1"
+              max="2.0"
+              step="0.1"
+              value={creativeDefaults.playbackSpeed}
+              disabled={disabled}
+              aria-invalid={playbackSpeedInvalid}
+              aria-describedby="default-playback-speed-help"
+              className="h-[38px] w-full rounded-lg border border-[#d9dde5] bg-white px-2.5 text-[13px] text-[#30343b] outline-none transition focus:border-[#25f4ee] focus:ring-2 focus:ring-[#25f4ee]/15 disabled:cursor-not-allowed disabled:opacity-60"
+              onChange={event => updateCreativeDefaults({
+                playbackSpeed: event.target.value === '' ? '' : Number(event.target.value),
+              })}
+            />
+            <span className="text-xs font-semibold text-[#5f6876]">x</span>
+          </span>
+          <span id="default-playback-speed-help" className={cn('text-[11px] leading-relaxed', playbackSpeedInvalid ? 'font-semibold text-red-600' : 'text-[#7b8492]')}>
+            {playbackSpeedInvalid
+              ? '请输入 0.1 到 2.0 之间、最多一位小数的导出倍速。'
+              : '影响首次自动成片和工程后续导出的初始倍速，1.0 为原速。'}
+          </span>
         </label>
 
         <label className="grid gap-1.5">

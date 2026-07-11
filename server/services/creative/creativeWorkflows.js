@@ -138,6 +138,19 @@ function sanitizeExportFileName(value, fallback = 'output') {
   return text || fallback;
 }
 
+/**
+ * 归一化任务默认导出倍速。
+ * @param {unknown} value 倍速值。
+ * @param {number} fallback 非法值回退值。
+ * @returns {number} 合法倍速。
+ */
+function normalizePlaybackSpeed(value, fallback = 1) {
+  const text = String(value ?? '').trim();
+  if (!/^\d+(\.\d)?$/.test(text)) return fallback;
+  const speed = Number(text);
+  return Number.isFinite(speed) && speed >= 0.1 && speed <= 2 ? speed : fallback;
+}
+
 function exportOptionsFromPayload(payload = {}) {
   const input = plainObject(payload.export_options || payload.exportOptions || payload);
   const width = Number(input.width ?? input.resolution?.width);
@@ -715,6 +728,7 @@ async function defaultRetryFrameHtmlAction({ workflow, project, projectDir, medi
     preferredTemplateId: safeString(target.preferredTemplateId) || storedTemplateId || '',
     lockTemplate: target.lockTemplate === true || Boolean(storedTemplateId),
     reuseContentGraph: true,
+    runLayoutQa: true,
     projectOptions: {
       reuseContentGraph: true,
     },
@@ -749,6 +763,8 @@ function buildCreativeDefaultsSnapshot(defaults = {}, creativeDefaultsOverride =
     : Number(defaultsSource.targetDurationSec);
   const defaultFps = [30, 60].includes(Number(defaultsSource.fps)) ? Number(defaultsSource.fps) : 30;
   const fps = [30, 60].includes(Number(overrideSource.fps)) ? Number(overrideSource.fps) : defaultFps;
+  const defaultPlaybackSpeed = normalizePlaybackSpeed(defaultsSource.playbackSpeed);
+  const playbackSpeed = normalizePlaybackSpeed(overrideSource.playbackSpeed, defaultPlaybackSpeed);
   const useResearchFromDefaults = defaultsSource.useResearch !== false;
   const useResearch = typeof overrideSource.useResearch === 'boolean'
     ? overrideSource.useResearch
@@ -765,6 +781,7 @@ function buildCreativeDefaultsSnapshot(defaults = {}, creativeDefaultsOverride =
     aspectRatio,
     targetDurationSec,
     fps,
+    playbackSpeed,
     templateByAspectRatio,
     templateId,
     lockTemplate: typeof overrideSource.lockTemplate === 'boolean'
@@ -825,6 +842,7 @@ function buildWorkflowTarget(snapshot = {}) {
     aspect_ratio: safeString(snapshot.aspectRatio),
     duration_sec: Number(snapshot.targetDurationSec),
     fps: Number(snapshot.fps) === 60 ? 60 : 30,
+    playback_speed: normalizePlaybackSpeed(snapshot.playbackSpeed),
     preferredTemplateId: safeString(snapshot.templateId),
     lockTemplate: snapshot.lockTemplate === true,
     generateAudio: snapshot.generateAudio !== false,

@@ -181,6 +181,7 @@ assert.ok(editor.includes('HtmlVideoSourcePanel'), 'HtmlVideoProjectEditor shoul
 assert.ok(editor.includes('HtmlVideoDraftPanel'), 'HtmlVideoProjectEditor should compose draft panel');
 assert.ok(editor.includes('HtmlVideoQualityPanel'), 'HtmlVideoProjectEditor should compose quality panel');
 assert.ok(editor.includes('projectResolution={editor.project?.output?.resolution}'), 'editor should pass the fixed project resolution to export settings');
+assert.ok(editor.includes('defaultPlaybackSpeed={editor.project?.output?.default_playback_speed}'), 'editor should pass the task default playback speed to export settings');
 assert.ok(editor.includes('HtmlVideoAiEditPanel'), 'HtmlVideoProjectEditor should compose AI edit panel');
 assert.doesNotMatch(editor, /ReservedCapabilitiesPanel/, 'reserved panel should remain hidden');
 
@@ -208,6 +209,7 @@ assert.ok(exportsPanel.includes('0.1 到 2.0'), 'exports panel should describe t
 assert.ok(exportsPanel.includes('最多 1 位小数'), 'exports panel should describe one decimal limit');
 assert.doesNotMatch(exportsPanel, /SPEED_OPTIONS/, 'exports panel should not use fixed speed options');
 assert.ok(exportsPanel.includes('localStorage'), 'exports panel should persist export draft in browser localStorage');
+assert.ok(exportsPanel.includes('defaultPlaybackSpeed'), 'exports panel should prefer the task default playback speed');
 assert.ok(exportsPanel.includes('musedock.htmlVideo.exportDraft.v1'), 'exports panel should use a stable localStorage key');
 assert.ok(exportsPanel.includes('抖音横屏'), 'exports panel should include Douyin landscape preset');
 assert.ok(exportsPanel.includes('小红书横屏'), 'exports panel should include Xiaohongshu landscape preset');
