@@ -42,6 +42,9 @@ for (const text of [
 }
 
 assert.doesNotMatch(systemSource, /清理全部/);
+assert.match(systemSource, /estimate\.bytes > 0/);
+assert.match(systemSource, /暂无可清理数据/);
+assert.match(systemSource, /disabled=\{disabled \|\| !!cleanupLoading \|\| !canCleanup\}/);
 assert.match(dialogSource, /确认清理/);
 assert.match(dialogSource, /正在清理/);
 assert.match(dialogSource, /此操作不可恢复/);

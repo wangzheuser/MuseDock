@@ -26,6 +26,7 @@ assert.match(panel, /EditorSection/);
 assert.doesNotMatch(panel, /data-success-message/);
 assert.match(panel, /time_sec/);
 assert.match(panel, /global_time_sec/);
+assert.match(panel, /Math\.round\(Number\(value\) \* 100\) \/ 100/, '音效时间输入应限制为两位小数');
 assert.match(panel, /保存音效设置/);
 assert.match(panel, /显示已停用音效/);
 assert.doesNotMatch(panel, /start_seconds/);

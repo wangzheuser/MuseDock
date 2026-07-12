@@ -66,7 +66,7 @@ export function FrameInputsPanel({ frame, disabled, onSave, onRenderPreview }) {
       </EditorPanelHeader>
       <label>
         <span>模板</span>
-        <input value={draft.template_id || draft.template || ''} disabled={disabled} onChange={event => setDraft({ ...draft, template_id: event.target.value })} />
+        <input value={draft.template_id || draft.template || ''} readOnly aria-readonly="true" title="模板由工程创建时确定" />
       </label>
       <label>
         <span>时长（秒）</span>
@@ -89,34 +89,28 @@ export function FrameInputsPanel({ frame, disabled, onSave, onRenderPreview }) {
           }}
         />
       </label>
-      <label>
-        <span>旁白</span>
-        <textarea
-          value={draft.narration_text || ''}
-          disabled={disabled}
-          rows={3}
-          onChange={event => setDraft({ ...draft, narration_text: event.target.value })}
-        />
-      </label>
-      <label>
-        <span>帧输入 JSON</span>
-        <textarea
-          value={draft.inputsText}
-          disabled={disabled}
-          rows={6}
-          onChange={event => {
-            const inputsText = event.target.value;
-            try {
-              const inputs = JSON.parse(inputsText || '{}');
-              setInputsError('');
-              setDraft({ ...draft, inputs, inputsText });
-            } catch (error) {
-              setInputsError(`JSON 格式错误：${error.message}`);
-              setDraft({ ...draft, inputsText });
-            }
-          }}
-        />
-      </label>
+      <details className="rounded-md border border-[#e5e7eb] bg-white p-2">
+        <summary className="cursor-pointer text-sm font-semibold text-[#4b5563]">高级：帧输入 JSON</summary>
+        <label className="mt-2">
+          <span>帧输入 JSON</span>
+          <textarea
+            value={draft.inputsText}
+            disabled={disabled}
+            rows={6}
+            onChange={event => {
+              const inputsText = event.target.value;
+              try {
+                const inputs = JSON.parse(inputsText || '{}');
+                setInputsError('');
+                setDraft({ ...draft, inputs, inputsText });
+              } catch (error) {
+                setInputsError(`JSON 格式错误：${error.message}`);
+                setDraft({ ...draft, inputsText });
+              }
+            }}
+          />
+        </label>
+      </details>
       {inputsError ? <p className="m-0 rounded-md bg-red-50 px-2 py-1 text-xs font-semibold text-red-600">{inputsError}</p> : null}
     </EditorPanel>
   );

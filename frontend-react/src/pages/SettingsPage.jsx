@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { Status } from '../components/Status.jsx';
@@ -29,6 +29,7 @@ export function SettingsPage() {
     return SECTIONS.some(item => item.id === section) ? section : 'overview';
   });
   const [appSettings, setAppSettings] = useState(null);
+  const [savedAppSettings, setSavedAppSettings] = useState(null);
   const [templates, setTemplates] = useState([]);
   const [ttsVoices, setTtsVoices] = useState([]);
   const [systemHealth, setSystemHealth] = useState(null);
@@ -71,7 +72,11 @@ export function SettingsPage() {
       ]);
       if (!mounted) return;
 
-      if (appResult.status === 'fulfilled') setAppSettings(unwrapData(appResult.value));
+      if (appResult.status === 'fulfilled') {
+        const loadedSettings = unwrapData(appResult.value);
+        setAppSettings(loadedSettings);
+        setSavedAppSettings(loadedSettings);
+      }
       if (templatesResult.status === 'fulfilled') setTemplates(unwrapData(templatesResult.value) || []);
       if (ttsVoicesResult.status === 'fulfilled') {
         const voiceData = unwrapData(ttsVoicesResult.value);
@@ -118,7 +123,9 @@ export function SettingsPage() {
     setStatus({ type: 'loading', message: savingMessage });
     try {
       const response = await api.saveAppSettings(nextSettings);
-      setAppSettings(unwrapData(response));
+      const savedSettings = unwrapData(response);
+      setAppSettings(savedSettings);
+      setSavedAppSettings(savedSettings);
       setStatus({ type: 'success', message: successMessage });
     } catch (error) {
       setStatus({ type: 'error', message: `${failurePrefix}：${error.message || '未知错误'}` });
@@ -126,6 +133,11 @@ export function SettingsPage() {
       setSavingApp(false);
     }
   }, [activeSection]);
+
+  const appSettingsDirty = useMemo(() => (
+    Boolean(appSettings && savedAppSettings)
+    && JSON.stringify(appSettings) !== JSON.stringify(savedAppSettings)
+  ), [appSettings, savedAppSettings]);
 
   const renderSection = () => {
     if (activeSection === 'overview') {
@@ -149,6 +161,7 @@ export function SettingsPage() {
           ttsVoices={ttsVoices}
           disabled={loadingApp || savingApp || modelSettings.loading}
           saving={savingApp}
+          dirty={appSettingsDirty}
           onChange={setAppSettings}
           onSave={saveAppSettings}
         />
@@ -165,6 +178,7 @@ export function SettingsPage() {
         systemHealth={systemHealth}
         disabled={loadingApp || savingApp}
         saving={savingApp}
+        dirty={appSettingsDirty}
         onChange={setAppSettings}
         onSave={saveAppSettings}
         onRefresh={loadSystemHealth}

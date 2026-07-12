@@ -446,7 +446,7 @@ function SourceImageAssetsDialog({ assets, diagnostics, usageById, workflowId })
                       {formatImageAnalysisStatus(status)}
                     </span>
                     <span className={cn('rounded-full px-2 py-0.5 text-xs font-bold ring-1', used ? 'bg-green-50 text-green-700 ring-green-200' : 'bg-slate-100 text-slate-700 ring-slate-200')}>
-                      {usage ? (used ? '已用于镜头' : '最终未引用') : '未生成引用报告'}
+                      {usage ? (used ? '已用于镜头' : '最终未引用') : '未执行引用分析'}
                     </span>
                   </div>
                   {analysis.summary ? <p className="mt-2 text-[13px] leading-relaxed text-[#30343b]">{analysis.summary}</p> : null}
@@ -621,6 +621,11 @@ export function CreativeTaskDetail({
   const editableWorkflowId = workflowId || workflow?.workflow_id || workflow?.id || '';
   const isDone = workflow?.status === 'done';
   const durationLabel = formatWorkflowDurationLabel(workflow);
+  const target = plainObject(workflow?.target);
+  const defaultsSnapshot = plainObject(workflow?.creative_defaults_snapshot);
+  const aspectRatio = firstText(target.aspect_ratio, target.aspectRatio, defaultsSnapshot.aspectRatio);
+  const fps = Number(target.fps || defaultsSnapshot.fps);
+  const playbackSpeed = Number(target.playback_speed || defaultsSnapshot.playbackSpeed);
   const errorLogText = buildWorkflowErrorLog({
     workflowId: editableWorkflowId,
     workflow,
@@ -673,6 +678,9 @@ export function CreativeTaskDetail({
                 {durationLabel}
               </span>
             ) : null}
+            {aspectRatio ? <span className="rounded-full bg-[#f8fafc] px-3 py-1 text-xs font-bold text-[#4b5563] ring-1 ring-[#e7e9ee]">{aspectRatio}</span> : null}
+            {Number.isFinite(fps) && fps > 0 ? <span className="rounded-full bg-[#f8fafc] px-3 py-1 text-xs font-bold text-[#4b5563] ring-1 ring-[#e7e9ee]">{fps} FPS</span> : null}
+            {Number.isFinite(playbackSpeed) && playbackSpeed > 0 ? <span className="rounded-full bg-[#f8fafc] px-3 py-1 text-xs font-bold text-[#4b5563] ring-1 ring-[#e7e9ee]">导出 {playbackSpeed.toFixed(1)}x</span> : null}
             <strong className={cn('rounded-full px-3 py-1 text-xs font-bold ring-1', STATUS_CHIP_CLASS[statusClass])}>
               {getWorkflowStatusText(workflow, status)}
             </strong>

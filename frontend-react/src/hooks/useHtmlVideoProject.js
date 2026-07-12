@@ -56,6 +56,24 @@ function latestItem(items = []) {
     .sort((a, b) => timeMs(b?.created_at || b?.createdAt) - timeMs(a?.created_at || a?.createdAt))[0] || null;
 }
 
+const NON_CONTENT_REVISION_TYPES = new Set([
+  'render',
+  'delete_export',
+  'frame_html_draft',
+  'frame_html_draft_discard',
+]);
+
+/**
+ * 读取最近一次真正改变成片内容的版本，避免质检或导出记录刷新误判工程已过期。
+ * @param {Array<object>} revisions 工程版本。
+ * @returns {object|null} 最近内容版本。
+ */
+function latestContentRevision(revisions = []) {
+  return latestItem(revisions.filter(revision => (
+    !NON_CONTENT_REVISION_TYPES.has(String(revision?.change?.type || '').trim())
+  )));
+}
+
 /**
  * 读取工程帧稳定 ID，兼容旧数据只提供 scene_id 的情况。
  * @param {object} frame 工程帧。
@@ -125,9 +143,10 @@ function buildEditState(project, exportsList, layoutQa) {
   const issues = blockingLayoutIssues(qa);
   const revisions = Array.isArray(project?.revisions) ? project.revisions : [];
   const latestRevision = latestItem(revisions);
+  const latestRenderedContentRevision = latestContentRevision(revisions);
   const latestExport = latestItem((Array.isArray(exportsList) ? exportsList : []).filter(item => item?.kind !== 'preview')) || latestItem(exportsList);
   const latestPreview = latestItem((Array.isArray(exportsList) ? exportsList : []).filter(item => item?.kind === 'preview'));
-  const latestRevisionMs = timeMs(latestRevision?.created_at || latestRevision?.createdAt);
+  const latestRevisionMs = timeMs(latestRenderedContentRevision?.created_at || latestRenderedContentRevision?.createdAt);
   const latestExportMs = timeMs(latestExport?.created_at || latestExport?.createdAt);
   const latestPreviewMs = timeMs(latestPreview?.created_at || latestPreview?.createdAt);
   return {

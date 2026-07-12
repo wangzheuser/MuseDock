@@ -33,11 +33,19 @@ function getStorageEstimate(systemHealth, item) {
   return systemHealth?.storage?.[item.storageKey] || null;
 }
 
+/**
+ * 判断存储统计是否明确存在可清理数据。
+ */
+function hasCleanupData(estimate) {
+  return !Number.isFinite(estimate?.bytes) || estimate.bytes > 0;
+}
+
 export function SystemSettings({
   appSettings,
   systemHealth,
   disabled,
   saving,
+  dirty,
   onChange,
   onSave,
   onRefresh,
@@ -106,7 +114,7 @@ export function SystemSettings({
 
   return (
     <section>
-      <div className="mb-4 flex items-start justify-between gap-3 max-[520px]:flex-col">
+      <div className="sticky top-0 z-10 -mx-2 mb-4 flex items-start justify-between gap-3 border-b border-[#edf0f4] bg-white/95 px-2 pb-3 pt-1 backdrop-blur max-[520px]:flex-col">
         <div>
           <h3 className="m-0 text-lg font-bold">系统</h3>
           <p className="mt-1 text-[13px] text-[#69717e]">管理质检、html-video 环境、模板状态和本地数据维护。</p>
@@ -129,6 +137,7 @@ export function SystemSettings({
             {saving ? '正在保存系统设置...' : '保存系统设置'}
           </button>
         </div>
+        {dirty ? <span className="absolute bottom-1 right-2 text-[11px] font-semibold text-amber-700">有尚未保存的修改</span> : null}
       </div>
 
       <div className="grid gap-[18px] py-2">
@@ -192,6 +201,7 @@ export function SystemSettings({
             {CLEANUP_ITEMS.map(item => {
               const estimate = getStorageEstimate(systemHealth, item);
               const isLoading = cleanupLoading === item.target;
+              const canCleanup = hasCleanupData(estimate);
               return (
                 <div className="rounded-lg border border-[#edf0f4] bg-[#fafbfc] p-3" key={item.target}>
                   <span className="text-xs font-semibold text-[#5f6876]">{item.label}</span>
@@ -199,10 +209,10 @@ export function SystemSettings({
                   <button
                     className="min-h-8 rounded-md border border-[#d9dde5] bg-white px-3 text-xs font-semibold text-[#30343b] transition hover:border-[#f1c3bd] hover:bg-[#fff7f5] hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-55"
                     type="button"
-                    disabled={disabled || !!cleanupLoading}
+                    disabled={disabled || !!cleanupLoading || !canCleanup}
                     onClick={() => setPendingCleanup(item)}
                   >
-                    {isLoading ? `正在清理${item.label}...` : `清理${item.label}`}
+                    {isLoading ? `正在清理${item.label}...` : canCleanup ? `清理${item.label}` : '暂无可清理数据'}
                   </button>
                 </div>
               );

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, CircleHelp, Clipboard, Download, Play, XCircle } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { EditorInlineActions, EditorPanel, EditorPanelHeader } from './editorUi.jsx';
 
 const PLATFORM_PRESETS = {
@@ -208,6 +209,8 @@ export function ExportsPanel({
   const [speedError, setSpeedError] = useState('');
   const [resolutionError, setResolutionError] = useState('');
   const [copyStatus, setCopyStatus] = useState({});
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     saveExportDraft(draft);
@@ -278,6 +281,17 @@ export function ExportsPanel({
     }, 1800);
   }
 
+  async function confirmDeleteExport() {
+    if (!pendingDelete?.id || deleting) return;
+    setDeleting(true);
+    try {
+      await onDeleteExport?.(pendingDelete.id);
+      setPendingDelete(null);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <EditorPanel>
       <EditorPanelHeader>
@@ -300,7 +314,7 @@ export function ExportsPanel({
           <span>文件名</span>
           <input value={draft.fileName} disabled={disabled} onChange={event => setDraft(prev => ({ ...prev, fileName: event.target.value }))} />
         </label>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-3 gap-2 max-[560px]:grid-cols-1">
           <label>
             <span>宽</span>
             <input type="number" min="1" value={draft.width} disabled={disabled} onChange={event => setDraft(prev => ({ ...prev, width: event.target.value }))} />
@@ -319,7 +333,7 @@ export function ExportsPanel({
           </label>
         </div>
         {resolutionError ? <p className="m-0 text-xs font-semibold text-red-600">{resolutionError}</p> : null}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-2 max-[560px]:grid-cols-1">
           <label>
             <span>导出倍速</span>
             <span className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1">
@@ -359,7 +373,7 @@ export function ExportsPanel({
         const metrics = qualityReport?.metrics || {};
         const warningCount = (qualityReport?.issues || []).filter(issue => issue?.severity === 'warning').length;
         return (
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-[#e5e7eb] pt-2 text-xs text-[#4b5563] [&_strong]:break-all [&_strong]:text-[#111827]" key={itemKey}>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-[#e5e7eb] bg-white p-3 text-xs text-[#4b5563] max-[720px]:grid-cols-1 [&_strong]:break-all [&_strong]:text-[#111827]" key={itemKey}>
             <div className="grid min-w-0 gap-[3px]">
               <strong>{getExportLabel(item, index)}</strong>
               <span>{formatExportTime(item.created_at) || item.status || '已生成'}{item.kind === 'preview' ? ' · 预览' : ''}{item.playback_speed && Number(item.playback_speed) !== 1 ? ` · ${item.playback_speed}x` : ''}{item.tail_padding_sec ? ` · 已保护尾音 +${Number(item.tail_padding_sec).toFixed(1)}s` : ''}</span>
@@ -392,18 +406,28 @@ export function ExportsPanel({
               <button type="button" className="inline-flex flex-none items-center gap-1" disabled={disabled || !playbackUrl} onClick={() => copyPlaybackUrl(itemKey, playbackUrl)}>
                 <Clipboard size={14} aria-hidden="true" />复制路径
               </button>
-              <button type="button" disabled={disabled || !item.id} onClick={() => {
-                if (typeof window !== 'undefined' && !window.confirm('确定删除这条导出记录和本地文件吗？')) return;
-                onDeleteExport?.(item.id);
-              }}>删除</button>
+              <button type="button" className="text-red-700 hover:text-red-800" disabled={disabled || !item.id} onClick={() => setPendingDelete(item)}>删除</button>
             </EditorInlineActions>
-            <div className="col-span-2 mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+            <div className="col-span-2 mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-2 max-[720px]:col-span-1">
               <input value={notes[item.id] ?? item.note ?? ''} disabled={disabled || !item.id} placeholder="添加备注" onChange={event => setNotes(prev => ({ ...prev, [item.id]: event.target.value }))} />
               <button type="button" disabled={disabled || !item.id} onClick={() => onPatchExport?.(item.id, { note: notes[item.id] ?? item.note ?? '' })}>保存备注</button>
             </div>
           </div>
         );
       }) : <p>暂无导出记录</p>}
+      <Dialog open={Boolean(pendingDelete)} onOpenChange={(open) => { if (!open && !deleting) setPendingDelete(null); }}>
+        <DialogContent className="bg-white text-[#111827]" showCloseButton={!deleting}>
+          <DialogHeader>
+            <DialogTitle>删除导出记录</DialogTitle>
+            <DialogDescription>将同时删除本地导出文件，此操作不可恢复。</DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm font-semibold text-red-800">{pendingDelete ? getExportLabel(pendingDelete, 0) : ''}</div>
+          <DialogFooter>
+            <button type="button" className="min-h-9 rounded-lg border border-[#d9dde5] bg-white px-4 text-sm font-semibold" disabled={deleting} onClick={() => setPendingDelete(null)}>取消</button>
+            <button type="button" className="min-h-9 rounded-lg bg-red-600 px-4 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-55" disabled={deleting} onClick={confirmDeleteExport}>{deleting ? '正在删除...' : '确认删除'}</button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </EditorPanel>
   );
 }

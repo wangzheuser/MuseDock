@@ -47,6 +47,7 @@ export function CreativeDefaultsSettings({
   ttsVoices,
   disabled,
   saving,
+  dirty,
   onChange,
   onSave,
 }) {
@@ -138,7 +139,7 @@ export function CreativeDefaultsSettings({
 
   return (
     <section>
-      <div className="mb-4 flex items-start justify-between gap-3 max-[520px]:flex-col">
+      <div className="sticky top-0 z-10 -mx-2 mb-4 flex items-start justify-between gap-3 border-b border-[#edf0f4] bg-white/95 px-2 pb-3 pt-1 backdrop-blur max-[520px]:flex-col">
         <div>
           <h3 className="m-0 text-lg font-bold">创作默认值</h3>
           <p className="mt-1 text-[13px] text-[#69717e]">设置一键创作默认使用的画面比例、目标时长、生成帧率、模板策略和联网研究开关。</p>
@@ -151,6 +152,7 @@ export function CreativeDefaultsSettings({
         >
           {saving ? '正在保存创作默认值...' : '保存创作默认值'}
         </button>
+        {dirty ? <span className="absolute bottom-1 right-2 text-[11px] font-semibold text-amber-700">有尚未保存的修改</span> : null}
       </div>
 
       <div className="grid grid-cols-2 gap-3 max-[900px]:grid-cols-1">

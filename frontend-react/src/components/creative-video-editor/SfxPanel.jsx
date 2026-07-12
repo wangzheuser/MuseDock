@@ -34,10 +34,11 @@ function formatTime(event) {
 }
 
 function editableDraft(event) {
+  const roundTime = value => Math.round(Number(value) * 100) / 100;
   return {
     volume_db: Number.isFinite(Number(event?.volume_db)) ? Number(event.volume_db) : -18,
-    time_sec: Number.isFinite(Number(event?.time_sec)) ? Number(event.time_sec) : 0,
-    global_time_sec: Number.isFinite(Number(event?.global_time_sec)) ? Number(event.global_time_sec) : 0,
+    time_sec: Number.isFinite(Number(event?.time_sec)) ? roundTime(event.time_sec) : 0,
+    global_time_sec: Number.isFinite(Number(event?.global_time_sec)) ? roundTime(event.global_time_sec) : 0,
   };
 }
 

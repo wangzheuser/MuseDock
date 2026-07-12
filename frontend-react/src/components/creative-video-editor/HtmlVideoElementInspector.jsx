@@ -137,10 +137,6 @@ export function HtmlVideoElementInspector({
               <dd className="m-0 break-all text-[13px] text-slate-100">{elementInfo.label}</dd>
             </div>
             <div>
-              <dt className="text-xs text-slate-400">选择器</dt>
-              <dd className="m-0 break-all text-[13px] text-slate-100">{elementInfo.selector}</dd>
-            </div>
-            <div>
               <dt className="text-xs text-slate-400">位置</dt>
               <dd className="m-0 break-all text-[13px] text-slate-100">
                 {Math.round(elementInfo.left)} / {Math.round(elementInfo.top)}
@@ -153,6 +149,10 @@ export function HtmlVideoElementInspector({
               </dd>
             </div>
           </dl>
+          <details className="rounded-md border border-slate-700 bg-slate-900/50 p-2">
+            <summary className="cursor-pointer text-xs font-semibold text-slate-400">技术信息</summary>
+            <p className="mb-0 mt-2 break-all text-xs text-slate-300">选择器：{elementInfo.selector}</p>
+          </details>
           <div className="grid min-w-0 grid-cols-2 gap-2">
             <NumberField label="X" value={elementInfo.left} disabled={disabled || deleted || locked} onChange={value => onGeometryChange?.({ left: value })} />
             <NumberField label="Y" value={elementInfo.top} disabled={disabled || deleted || locked} onChange={value => onGeometryChange?.({ top: value })} />

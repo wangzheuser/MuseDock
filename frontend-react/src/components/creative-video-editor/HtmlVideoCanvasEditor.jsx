@@ -359,6 +359,7 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
   const [dirty, setDirty] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [previewSlotSize, setPreviewSlotSize] = useState({ width: 0, height: 0 });
+  const [previewZoom, setPreviewZoom] = useState(1);
 
   const frame = editor.selectedFrame;
   const frameId = frameIdOf(frame);
@@ -375,7 +376,7 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
     [previewSlotSize, previewRatio],
   );
   const previewFrameStyle = previewSize.width && previewSize.height
-    ? { width: `${previewSize.width}px`, height: `${previewSize.height}px` }
+    ? { width: `${Math.round(previewSize.width * previewZoom)}px`, height: `${Math.round(previewSize.height * previewZoom)}px` }
     : { width: '100%', height: '100%' };
 
   function clearPlaybackTimer() {
@@ -1018,6 +1019,9 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
           <div className="flex items-center justify-between gap-2 border-b border-slate-700 bg-slate-800 px-2.5 py-2 max-[720px]:flex-col max-[720px]:items-start">
             <span className="text-xs text-slate-300">{previewError || (playbackState === 'playing' ? '正在播放镜头动画...' : editingReady ? '已停在镜头可编辑帧，可开始编辑。' : '正在准备预览...')}</span>
             <div className="flex flex-wrap justify-end gap-1.5">
+              <button className={secondaryButtonClass} type="button" disabled={disabled || previewZoom <= 0.75} aria-label="缩小画布" onClick={() => setPreviewZoom(value => Math.max(0.75, Number((value - 0.25).toFixed(2))))}>−</button>
+              <button className={secondaryButtonClass} type="button" disabled={disabled} title="恢复适合窗口" onClick={() => setPreviewZoom(1)}>{Math.round(previewZoom * 100)}%</button>
+              <button className={secondaryButtonClass} type="button" disabled={disabled || previewZoom >= 1.75} aria-label="放大画布" onClick={() => setPreviewZoom(value => Math.min(1.75, Number((value + 0.25).toFixed(2))))}>＋</button>
               <button className={secondaryButtonClass} type="button" disabled={disabled} onClick={replay}>重新播放</button>
               <button className={secondaryButtonClass} type="button" disabled={disabled} onClick={jumpToEnd}>跳到结尾并编辑</button>
             </div>
@@ -1029,7 +1033,7 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
             </div>
           ) : null}
           {!htmlReady && !htmlLoadError ? <p className="m-3 rounded-lg border border-slate-700 bg-slate-800 p-3 text-sm text-slate-300">正在加载当前镜头 HTML...</p> : null}
-          <div ref={previewSlotRef} className="grid h-full min-h-0 place-items-center overflow-hidden px-2 pb-2">
+          <div ref={previewSlotRef} className={`grid h-full min-h-0 place-items-center overflow-auto px-2 pb-2 ${DARK_SCROLLBAR_CLASS}`}>
             <iframe
               key={iframeKey}
               ref={iframeRef}

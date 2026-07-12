@@ -319,6 +319,10 @@ for (const componentPath of [
 assert.ok(hook.includes('saveAndAcceptFrameEdit'), 'hook should expose saveAndAcceptFrameEdit');
 assert.ok(hook.includes('resolveSavedDraftId'), 'hook should resolve the saved draft id before accepting');
 assert.ok(hook.includes('保存修改失败'), 'hook should expose a combined save-and-accept failure message');
+assert.ok(hook.includes('latestContentRevision'), 'client edit state should compare exports with content revisions only');
+for (const revisionType of ['render', 'delete_export', 'frame_html_draft', 'frame_html_draft_discard']) {
+  assert.ok(hook.includes(`'${revisionType}'`), `client edit state should ignore non-content revision: ${revisionType}`);
+}
 
 const canvasEditor = fs.readFileSync('frontend-react/src/components/creative-video-editor/HtmlVideoCanvasEditor.jsx', 'utf-8');
 const inspector = fs.readFileSync('frontend-react/src/components/creative-video-editor/HtmlVideoElementInspector.jsx', 'utf-8');

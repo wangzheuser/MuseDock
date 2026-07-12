@@ -4,6 +4,7 @@ import { api } from '../api/client.js';
 import { CreativeComposer } from '../components/creative/CreativeComposer.jsx';
 import { CreativeSidebar } from '../components/creative/CreativeSidebar.jsx';
 import { CreativeTaskDetail } from '../components/creative/CreativeTaskDetail.jsx';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog.jsx';
 import {
   DEFAULT_CREATIVE_DEFAULTS,
   normalizeCreativeDefaults,
@@ -336,6 +337,7 @@ export function OneClickCreativePage() {
   const [status, setStatus] = useState('idle');
   const [message, setMessage] = useState('');
   const [deletingWorkflowId, setDeletingWorkflowId] = useState('');
+  const [pendingDeleteTask, setPendingDeleteTask] = useState(null);
   const [retryPlan, setRetryPlan] = useState(null);
   const [retryPlanStatus, setRetryPlanStatus] = useState('idle');
   const [retryPlanMessage, setRetryPlanMessage] = useState('');
@@ -861,9 +863,6 @@ export function OneClickCreativePage() {
   }
 
   async function deleteTask(task) {
-    const confirmed = window.confirm(`确定删除任务「${task.title}」吗？此操作不可恢复。`);
-    if (!confirmed) return;
-
     setDeletingWorkflowId(task.workflow_id);
     let deleteOk = false;
     try {
@@ -876,8 +875,8 @@ export function OneClickCreativePage() {
     }
 
     if (!deleteOk) {
-      window.alert('删除任务失败，请稍后重试。该任务仍保留在列表中。');
-      return;
+      setMessage('删除任务失败，请稍后重试。该任务仍保留在列表中。');
+      return false;
     }
 
     persistTasks(prev => prev.filter(item => item.workflow_id !== task.workflow_id));
@@ -886,14 +885,12 @@ export function OneClickCreativePage() {
     if (selectedWorkflowId === task.workflow_id) {
       startNewTask();
     }
+    return true;
   }
 
-  async function stopAndDeleteTask(targetWorkflowId) {
+  async function performStopAndDeleteTask(targetWorkflowId) {
     const id = String(targetWorkflowId || '').trim();
     if (!id || deletingWorkflowId) return;
-
-    const confirmed = window.confirm('确定停止并删除当前任务吗？任务记录和已生成资源都会被删除，此操作不可恢复。');
-    if (!confirmed) return;
 
     setDeletingWorkflowId(id);
     setStatus('deleting');
@@ -911,7 +908,7 @@ export function OneClickCreativePage() {
     if (!deleteOk) {
       setStatus('failed');
       setMessage('停止并删除任务失败，请稍后重试。');
-      return;
+      return false;
     }
 
     persistTasks(prev => prev.filter(item => item.workflow_id !== id));
@@ -919,6 +916,23 @@ export function OneClickCreativePage() {
     if (selectedWorkflowId === id || workflowId === id) {
       startNewTask();
     }
+    return true;
+  }
+
+  function stopAndDeleteTask(targetWorkflowId) {
+    setPendingDeleteTask({
+      workflow_id: targetWorkflowId,
+      title: workflow?.topic || workflow?.creative_context?.input?.raw_text || '当前创作任务',
+      stop: true,
+    });
+  }
+
+  async function confirmDeleteTask() {
+    if (!pendingDeleteTask || deletingWorkflowId) return;
+    const success = pendingDeleteTask.stop
+      ? await performStopAndDeleteTask(pendingDeleteTask.workflow_id)
+      : await deleteTask(pendingDeleteTask);
+    if (success) setPendingDeleteTask(null);
   }
 
   async function handleRetryWorkflow() {
@@ -1238,7 +1252,7 @@ export function OneClickCreativePage() {
         onToggleSidebar={() => setSidebarCollapsed(value => !value)}
         onNewTask={startNewTask}
         onSelectTask={selectTask}
-        onDeleteTask={deleteTask}
+        onDeleteTask={(task) => setPendingDeleteTask(task)}
       />
 
       <section className="min-h-0 min-w-0 overflow-auto bg-white">
@@ -1288,6 +1302,23 @@ export function OneClickCreativePage() {
           />
         </div>
       </section>
+      <Dialog open={Boolean(pendingDeleteTask)} onOpenChange={(open) => { if (!open && !deletingWorkflowId) setPendingDeleteTask(null); }}>
+        <DialogContent className="bg-white text-[#111827]" showCloseButton={!deletingWorkflowId}>
+          <DialogHeader>
+            <DialogTitle>{pendingDeleteTask?.stop ? '停止并删除任务' : '删除创作任务'}</DialogTitle>
+            <DialogDescription>
+              {pendingDeleteTask?.stop
+                ? '任务会立即停止，任务记录和已生成资源将被删除。'
+                : '任务记录和已生成资源将被删除。'}此操作不可恢复。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm font-semibold text-red-800">{pendingDeleteTask?.title || pendingDeleteTask?.workflow_id || ''}</div>
+          <DialogFooter>
+            <button type="button" className="min-h-9 rounded-lg border border-[#d9dde5] bg-white px-4 text-sm font-semibold" disabled={Boolean(deletingWorkflowId)} onClick={() => setPendingDeleteTask(null)}>取消</button>
+            <button type="button" className="min-h-9 rounded-lg bg-red-600 px-4 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-55" disabled={Boolean(deletingWorkflowId)} onClick={confirmDeleteTask}>{deletingWorkflowId ? '正在删除...' : '确认删除'}</button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
