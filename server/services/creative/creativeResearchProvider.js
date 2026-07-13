@@ -12,12 +12,14 @@ function safeString(value) {
 
 async function defaultResearchProvider({
   query,
+  now,
   aiModelConfig: injectedAiModelConfig,
   aiTextModel: injectedAiTextModel,
   webSearchProvider,
 } = {}) {
   return runResearchProvider({
     query,
+    now,
     aiModelConfig: injectedAiModelConfig || aiModelConfig,
     aiTextModel: injectedAiTextModel || aiTextModel,
     webSearchProvider: webSearchProvider || defaultWebSearchProvider,
@@ -95,24 +97,127 @@ function parseBingResults(html, limit) {
   return results;
 }
 
-function normalizeSearchResults(value) {
+/**
+ * 解析搜狗网页搜索中的普通结果卡片。
+ */
+function parseSogouResults(html, limit) {
+  const results = [];
+  const blocks = String(html || '').match(/<div class="vrwrap"[^>]*>[\s\S]*?<!--STATUS VR OK-->/gi) || [];
+  for (const block of blocks) {
+    if (results.length >= limit) break;
+    const title = block.match(/<h3[^>]*>[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/i)?.[1];
+    const summary = block.match(/<div[^>]+class="[^"]*(?:space-txt|base-ellipsis)[^"]*"[^>]*>([\s\S]*?)<\/div>/i)?.[1];
+    const url = block.match(/\sdata-url="(https?:\/\/[^"\s]+)"/i)?.[1];
+    const date = block.match(/class="citeLinkClass"[\s\S]*?<span>[^<]*<\/span>[\s\S]*?<span>[^<]*<\/span>\s*<span>([^<]+)<\/span>/i)?.[1];
+    if (!title || !url) continue;
+    results.push({
+      title: stripHtml(title),
+      url: stripHtml(url),
+      summary: stripHtml(summary),
+      published_at: stripHtml(date),
+    });
+  }
+  return results;
+}
+
+const GENERIC_QUERY_TERMS = new Set([
+  '今天', '最新', '消息', '新闻', '相关', '内容', '官方', '发布', '情况', '目前', '现在', '战争', '冲突', '进展',
+  'latest', 'news', 'official', 'release', 'update', 'updates',
+]);
+
+/**
+ * 提取用于过滤无关搜索结果的主题关键词。
+ */
+function extractQueryKeywords(query) {
+  const text = safeString(query).replace(/site:\S+/gi, ' ');
+  const latin = text.match(/[a-z][a-z0-9._-]{2,}/gi) || [];
+  const chinese = (text.match(/[\u3400-\u9fff]{2,}/g) || []).flatMap(chunk => {
+    const subject = chunk
+      .replace(/今天|最新|消息|新闻|相关|内容|官方|发布|情况|目前|现在|战争|冲突|进展/g, '')
+      .replace(/[和与及的]/g, '');
+    if (subject.length <= 2) return subject ? [subject] : [];
+    return Array.from({ length: subject.length - 1 }, (_, index) => subject.slice(index, index + 2));
+  });
+  return [...new Set([...latin, ...chinese].map(item => item.toLowerCase()))]
+    .filter(item => ![...GENERIC_QUERY_TERMS].some(generic => item.includes(generic)));
+}
+
+/**
+ * 判断搜索结果是否至少命中一个有效主题词。
+ */
+function isRelevantSearchResult(result, query) {
+  const keywords = extractQueryKeywords(query);
+  if (!keywords.length) return true;
+  const haystack = `${result.title} ${result.url} ${result.summary}`.toLowerCase();
+  const latinWords = new Set(haystack.split(/[^a-z0-9]+/).filter(Boolean));
+  const matches = keywords.filter(keyword => (
+    /^[a-z0-9._-]+$/.test(keyword) ? latinWords.has(keyword) : haystack.includes(keyword)
+  )).length;
+  return matches >= Math.min(2, keywords.length);
+}
+
+/**
+ * 从搜索摘要中提取绝对或相对发布时间。
+ */
+function inferPublishedAt(value, now = '') {
+  const text = safeString(value);
+  const dateMatch = text.match(/(20\d{2})[年/-](\d{1,2})[月/-](\d{1,2})日?/);
+  if (dateMatch) {
+    return `${dateMatch[1]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[3].padStart(2, '0')}`;
+  }
+  const relativeMatch = text.match(/(\d+)\s*(小时|天)(?:前|之前)/);
+  const base = Date.parse(now);
+  if (!Number.isFinite(base)) return '';
+  if (/^今天$/.test(text)) return new Date(base).toISOString().slice(0, 10);
+  if (/^昨天$/.test(text)) return new Date(base - 86400000).toISOString().slice(0, 10);
+  if (!relativeMatch) return '';
+  const amount = Number(relativeMatch[1]);
+  const milliseconds = amount * (relativeMatch[2] === '天' ? 86400000 : 3600000);
+  return new Date(base - milliseconds).toISOString();
+}
+
+/**
+ * 规范化、去重并过滤搜索结果。
+ */
+function normalizeSearchResults(value, query = '', now = '') {
   const rawResults = Array.isArray(value)
     ? value
     : (Array.isArray(value?.results) ? value.results : []);
-  return rawResults
-    .map(item => ({
+  const seen = new Set();
+  return rawResults.map(item => {
+    const summary = safeString(item?.summary || item?.snippet || item?.description);
+    const rawPublishedAt = safeString(item?.published_at || item?.publishedAt);
+    const publishedAt = inferPublishedAt(rawPublishedAt, now) || rawPublishedAt || inferPublishedAt(summary, now);
+    return {
       title: safeString(item?.title),
-      url: safeString(item?.url || item?.link),
-      summary: safeString(item?.summary || item?.snippet || item?.description),
-    }))
-    .filter(item => item.url)
-    .slice(0, 5);
+      url: safeString(item?.url || item?.link).replace(/&amp;/g, '&'),
+      summary,
+      ...(publishedAt ? { published_at: publishedAt } : {}),
+      ...(safeString(item?.evidence) ? { evidence: safeString(item.evidence) } : {}),
+    };
+  }).filter(item => {
+    if (!item.url || seen.has(item.url) || !isRelevantSearchResult(item, query)) return false;
+    seen.add(item.url);
+    return true;
+  }).slice(0, 5);
 }
 
 function buildSearchQuery(value) {
   const text = safeString(value);
   const firstLine = text.split(/\r?\n/).map(safeString).find(Boolean) || text;
   return firstLine.length > 120 ? firstLine.slice(0, 120) : firstLine;
+}
+
+/**
+ * 为时效查询追加检索当天日期，减少历史结果占位。
+ */
+function buildTimeGroundedSearchQuery(value, now = '') {
+  const query = buildSearchQuery(value);
+  if (!query || !/(今天|最新|刚刚|近期|目前|战争|冲突|发布|上线|更新|latest|today|war|conflict|release|update)/i.test(query)) return query;
+  const timestamp = Date.parse(now);
+  if (!Number.isFinite(timestamp)) return query;
+  const date = new Date(timestamp).toISOString().slice(0, 10);
+  return query.includes(date) ? query : `${query} ${date}`;
 }
 
 function summarizeSearchSources(sources) {
@@ -136,6 +241,10 @@ async function defaultWebSearchProvider({ query, limit = 5, fetchImpl = global.f
     Accept: 'text/html,application/xhtml+xml',
   };
   const endpoints = [
+    ...(/[\u3400-\u9fff]/.test(normalizedQuery) ? [{
+      url: `https://www.sogou.com/web?query=${encodeURIComponent(normalizedQuery)}`,
+      parse: parseSogouResults,
+    }] : []),
     {
       url: `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(normalizedQuery)}`,
       parse: parseDuckDuckGoLiteResults,
@@ -163,7 +272,7 @@ async function defaultWebSearchProvider({ query, limit = 5, fetchImpl = global.f
         continue;
       }
       const html = await response.text();
-      const results = endpoint.parse(html, limit);
+      const results = normalizeSearchResults(endpoint.parse(html, limit), normalizedQuery);
       if (results.length > 0) return { results };
       errors.push(`搜索结果为空: ${endpoint.url}`);
     } catch (error) {
@@ -193,14 +302,17 @@ function parseToolCallArguments(toolCall) {
 
 async function runResearchProvider({
   query,
+  now,
   aiTextModel: textModelService,
   webSearchProvider,
 } = {}) {
   const normalizedQuery = safeString(query);
+  const webQuery = buildTimeGroundedSearchQuery(normalizedQuery, now);
+  const asOf = safeString(now) || new Date().toISOString();
   const messages = [
     {
       role: 'system',
-      content: '你是一个联网研究助手。请搜索最新资料，为用户提供准确、有帮助的信息。',
+      content: `你是一个联网研究助手。资料核验截止时间为 ${asOf}（UTC）。请优先使用最新且直接相关的来源，为用户提供准确、有帮助的信息。`,
     },
     {
       role: 'user',
@@ -232,10 +344,10 @@ async function runResearchProvider({
         },
       });
 
-      const searchResult = await webSearchProvider({ query: normalizedQuery, limit: 5 });
-      const sources = normalizeSearchResults(searchResult);
+      const searchResult = await webSearchProvider({ query: webQuery, limit: 5 });
+      const sources = normalizeSearchResults(searchResult, normalizedQuery, asOf);
       if (sources.length > 0) {
-        const finalResult = await summarize(normalizedQuery, sources, 1);
+        const finalResult = await summarize(webQuery, sources, 1);
         if (finalResult.success) {
           return {
             summary: finalResult.text || '',
@@ -245,9 +357,9 @@ async function runResearchProvider({
       }
 
       const searchQuery = buildSearchQuery(normalizedQuery);
-      if (searchQuery && searchQuery !== normalizedQuery) {
+      if (searchQuery && searchQuery !== webQuery) {
         const retrySearchResult = await webSearchProvider({ query: searchQuery, limit: 5 });
-        const retrySources = normalizeSearchResults(retrySearchResult);
+        const retrySources = normalizeSearchResults(retrySearchResult, normalizedQuery, asOf);
         if (retrySources.length === 0) {
           return sources.length > 0 ? { summary: summarizeSearchSources(sources), sources } : { summary: '', sources: [] };
         }
@@ -296,7 +408,7 @@ async function runResearchProvider({
         const args = parseToolCallArguments(toolCall);
         const searchQuery = safeString(args.query) || safeString(query);
         const searchResult = await webSearchProvider({ query: searchQuery, limit: 5 });
-        const normalizedResults = normalizeSearchResults(searchResult);
+        const normalizedResults = normalizeSearchResults(searchResult, searchQuery, asOf);
         searchSources = searchSources.concat(normalizedResults);
         toolMessages.push({
           role: 'tool',
@@ -334,7 +446,7 @@ async function runResearchProvider({
       }
       return {
         summary: finalResult.text || '',
-        sources: normalizeSearchResults(searchSources),
+        sources: normalizeSearchResults(searchSources, normalizedQuery, asOf),
       };
     }
 
@@ -394,7 +506,9 @@ module.exports = {
   parseDuckDuckGoLiteResults,
   parseDuckDuckGoHtmlResults,
   parseBingResults,
+  parseSogouResults,
   normalizeSearchResults,
+  buildTimeGroundedSearchQuery,
   getFirstAssistantMessage,
   getWebSearchToolCalls,
   parseToolCallArguments,

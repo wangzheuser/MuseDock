@@ -26,6 +26,7 @@ function compactText(value, maxLength = 1200) {
 function summarizeCreativeContextForPrompt(creativeContext = {}) {
   const input = objectOrEmpty(creativeContext.input);
   const sourceContext = objectOrEmpty(creativeContext.source_context);
+  const researchContext = objectOrEmpty(creativeContext.research_context);
   const assetContext = objectOrEmpty(creativeContext.asset_context);
   const brief = objectOrEmpty(creativeContext.brief);
   const audio = objectOrEmpty(creativeContext.audio);
@@ -35,6 +36,8 @@ function summarizeCreativeContextForPrompt(creativeContext = {}) {
     ['原始正文', input.raw_text || input.text || input.content],
     ['来源摘要', sourceContext.summary],
     ['来源全文', sourceContext.transcript || sourceContext.markdown || sourceContext.content],
+    ['联网研究摘要', researchContext.summary],
+    ['联网检索时间', researchContext.updated_at],
     ['创作摘要', brief.summary],
     ['评论摘要', creativeContext.comments_summary || creativeContext.comment_summary || creativeContext.comment_insights],
     ['二级评论摘要', creativeContext.secondary_comments_summary || creativeContext.reply_summary],
@@ -44,6 +47,13 @@ function summarizeCreativeContextForPrompt(creativeContext = {}) {
     const maxLength = label.includes('全文') ? 2400 : label.includes('正文') ? 1600 : 700;
     const text = compactText(value, maxLength);
     if (text) lines.push(`${label}：${text}`);
+  });
+  const researchSources = Array.isArray(researchContext.sources) ? researchContext.sources.slice(0, 5) : [];
+  researchSources.forEach((source, index) => {
+    const title = compactText(source?.title || `来源${index + 1}`, 120);
+    const url = compactText(source?.url, 200);
+    const publishedAt = compactText(source?.published_at, 60);
+    if (url) lines.push(`研究来源 ${index + 1}：${title}；发布时间=${publishedAt || '未知'}；${url}`);
   });
   const assets = Array.isArray(assetContext.assets) ? assetContext.assets.slice(0, 8) : [];
   if (assets.length) {

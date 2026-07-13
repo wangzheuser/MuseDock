@@ -6,6 +6,17 @@ async function run() {
   const briefMessages = agent.buildFreeformBriefMessages({
     run: { result: { rewrite_script: '测试口播' } },
     skillContext: 'Use HyperFrames.',
+    options: {
+      creative_context: {
+        research_context: {
+          status: 'ready',
+          query: 'OpenAI 最新发布',
+          updated_at: '2026-07-13T08:00:00.000Z',
+          summary: '官方发布页确认了最新信息。',
+          sources: [{ title: 'OpenAI News', url: 'https://openai.com/news/', published_at: '2026-07-13' }],
+        },
+      },
+    },
   });
   assert.match(briefMessages[1].content, /audio_direction/);
   assert.match(briefMessages[1].content, /voice/);
@@ -19,6 +30,9 @@ async function run() {
   assert.match(briefMessages[1].content, /keywords\/cards 禁止照抄 narration_text 原句/);
   assert.match(briefMessages[1].content, /"keywords"/);
   assert.match(briefMessages[1].content, /"cards"/);
+  assert.match(briefMessages[1].content, /官方发布页确认了最新信息/);
+  assert.match(briefMessages[1].content, /https:\/\/openai\.com\/news\//);
+  assert.match(briefMessages[1].content, /时效事实必须以联网研究资料为准/);
 
   const parsed = agent.parseFreeformBriefResponse(JSON.stringify({ title: '测试短片' }));
   assert.equal(parsed.success, true);

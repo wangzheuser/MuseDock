@@ -1528,7 +1528,7 @@ async function runCreativeWorkflow(workflowId, options = {}) {
   stoppedOrFailed = failIfStoppedOrNull(await runStage(record, 'research', rootDir, async ({ reportStage }) => {
     const inputContext = record.creative_context?.input || record.input || {};
     const useResearch = inputContext.use_research === true;
-    const query = inputContext.raw_text || inputContext.aweme_id || record.research_context?.query || '';
+    const query = record.research_context?.query || inputContext.raw_text || inputContext.aweme_id || '';
     await reportStage(useResearch ? '正在联网研究最新资料...' : '联网研究已关闭，继续下一步。', 20);
     const nextResearchContext = await services.researchService.createResearchContext({
       enabled: useResearch,

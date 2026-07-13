@@ -981,11 +981,13 @@ async function testSourceUrlFetchFailureUsesDefaultChineseMessage() {
 async function testResearchRunsInBackgroundStage() {
   const { rootDir, mediaRoot } = createTempDirs();
   let researchCalls = 0;
+  let receivedResearchQuery = '';
   const { services, calls } = createFakeServices({
     services: {
       researchService: {
         createResearchContext: async ({ enabled, query, now }) => {
           researchCalls += 1;
+          receivedResearchQuery = query;
           return enabled
             ? { status: 'ready', query, sources: [], summary: '后台研究完成', updated_at: now }
             : { status: 'disabled', query: '', sources: [], summary: '', updated_at: now };
@@ -995,7 +997,8 @@ async function testResearchRunsInBackgroundStage() {
   });
 
   const created = await createCreativeWorkflow({
-    input: '做一期关于 AI 视频生产的知识科普',
+    input: '制作一条关于 AI 视频生产最新进展的知识科普短视频，并使用新闻风格呈现。',
+    researchQuery: 'AI 视频生产 最新进展 2026',
     useResearch: true,
     assetIds: [],
   }, { rootDir, mediaRoot, services });
@@ -1009,6 +1012,7 @@ async function testResearchRunsInBackgroundStage() {
 
   assert.equal(run.success, true);
   assert.equal(researchCalls, 1);
+  assert.equal(receivedResearchQuery, 'AI 视频生产 最新进展 2026');
   assert.equal(calls[1].options.briefOptions.creative_context.research_context.status, 'ready');
   assert.equal(calls[1].options.briefOptions.creative_context.research_context.summary, '后台研究完成');
 

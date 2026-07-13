@@ -56,7 +56,7 @@ async function run() {
       };
     },
   });
-  assert.deepEqual(providerInput, { query });
+  assert.deepEqual(providerInput, { query, now });
   assert.equal(ready.status, 'ready');
   assert.equal(ready.query, query);
   assert.equal(ready.summary, '热点摘要');

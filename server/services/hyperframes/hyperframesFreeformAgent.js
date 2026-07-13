@@ -27,8 +27,29 @@ function getOptionSummary(options = {}) {
   };
 }
 
+/**
+ * 提取导演简报需要的联网研究资料。
+ */
+function getResearchSummary(options = {}) {
+  const research = options?.creative_context?.research_context;
+  if (!research || typeof research !== 'object' || Array.isArray(research)) return null;
+  return {
+    status: research.status || '',
+    query: research.query || '',
+    updated_at: research.updated_at || '',
+    summary: research.summary || '',
+    sources: (Array.isArray(research.sources) ? research.sources : []).slice(0, 5).map(source => ({
+      title: source?.title || '',
+      url: source?.url || '',
+      published_at: source?.published_at || '',
+      summary: source?.summary || '',
+    })),
+  };
+}
+
 function buildFreeformBriefMessages({ run = {}, skillContext = '', options = {} } = {}) {
   const optionSummary = getOptionSummary(options);
+  const researchSummary = getResearchSummary(options);
   return [
     {
       role: 'system',
@@ -49,6 +70,9 @@ function buildFreeformBriefMessages({ run = {}, skillContext = '', options = {} 
         '风格要求：',
         optionSummary.style_prompt || '未指定',
         '',
+        '联网研究资料：',
+        researchSummary ? safeJson(researchSummary, 9000) : '未提供',
+        '',
         '技能上下文：',
         String(skillContext || '未提供'),
         '',
@@ -65,6 +89,7 @@ function buildFreeformBriefMessages({ run = {}, skillContext = '', options = {} 
         '7. audio_direction 给出高级成片音频导演建议，必须包含 voice 和 style_prompt；style_prompt 可描述情绪、口吻、语速、停顿、吸气、笑声或哭腔，例如紧张、深呼吸、语速加快、沉默片刻、长叹一口气。',
         '8. storyboard.scenes[].narration_text 和 captions.text 只能包含观众可见、可朗读的正文；吸气、停顿、语速等表演指令只能写入 audio_direction.style_prompt，不要写进旁白或字幕。',
         '9. design_md 使用 Markdown 文本描述视觉方向、版式、动效和检查要点。',
+        '10. 时效事实必须以联网研究资料为准；资料不足或没有可靠来源时必须明确写成“尚未确认”，不得把用户输入中的说法直接当成事实。',
         '',
         '输出示例：',
         safeJson({

@@ -47,7 +47,7 @@ async function createResearchContext({
   }
 
   try {
-    const result = await provider({ query: normalizedQuery });
+    const result = await provider({ query: normalizedQuery, now: updatedAt });
     const sources = Array.isArray(result && result.sources)
       ? result.sources.map(source => normalizeSource(source, updatedAt))
       : [];

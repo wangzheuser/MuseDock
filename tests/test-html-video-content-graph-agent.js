@@ -32,6 +32,11 @@ const creativeContext = {
     raw_text: '原始正文里提到基础版 12 元，专业版 20 元。',
   },
   source_context: { summary: '来源摘要：用户关心价格差异。' },
+  research_context: {
+    summary: '联网核验确认专业版当前价格为 20 元。',
+    updated_at: '2026-07-13T08:00:00.000Z',
+    sources: [{ title: '官方价格页', url: 'https://example.com/pricing', published_at: '2026-07-13' }],
+  },
   brief: { summary: '用两帧解释价格对比。' },
   comments_summary: '评论问有没有更便宜的版本。',
   secondary_comments_summary: '二级评论追问专业版权益。',
@@ -47,6 +52,9 @@ const prompt = agent.buildContentGraphPrompt({
 assert.match(prompt, /原始标题/);
 assert.match(prompt, /原始正文里提到基础版 12 元/);
 assert.match(prompt, /来源摘要：用户关心价格差异/);
+assert.match(prompt, /联网核验确认专业版当前价格为 20 元/);
+assert.match(prompt, /研究来源 1：官方价格页/);
+assert.match(prompt, /https:\/\/example\.com\/pricing/);
 assert.match(prompt, /用两帧解释价格对比/);
 assert.match(prompt, /评论问有没有更便宜的版本/);
 assert.match(prompt, /二级评论追问专业版权益/);
