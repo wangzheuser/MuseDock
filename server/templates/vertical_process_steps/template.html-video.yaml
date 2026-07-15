@@ -38,6 +38,15 @@ output:
     - 90
 inputs:
   schema:
+    layout_variant:
+      type: string
+      required: false
+      enum:
+        - hook
+        - detail
+        - evidence
+        - closing
+      description: 根据场景职责切换开场、正文、证据或结尾构图。
     headline:
       type: string
       required: true
@@ -78,7 +87,8 @@ inputs:
       required: false
       description: 当前场景时长，单位秒。
   examples:
-    - eyebrow: PLAYBOOK / 实操
+    - layout_variant: detail
+      eyebrow: PLAYBOOK / 实操
       section_no: 03/05
       headline: 三步把信息变成可执行方案
       subtitle: 每一步只回答一个问题，避免画面有结论却没有行动。

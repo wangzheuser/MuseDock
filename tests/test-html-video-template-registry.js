@@ -152,14 +152,22 @@ const expectedProductionIds = [
   'portrait_data_story',
   'portrait_editorial_explainer',
   'portrait_product_steps',
+  'portrait_source_brief',
   'square_compare_grid',
+  'square_data_evidence',
   'square_editorial_cards',
   'square_product_spotlight',
   'square_quote_signal',
   'vertical_editorial_digest',
+  'vertical_compare_decision',
+  'vertical_data_chart',
+  'vertical_documentary_story',
   'vertical_process_steps',
   'vertical_product_demo',
+  'vertical_source_context',
   'vertical_story_quote',
+  'wide_editorial_explainer',
+  'wide_process_blueprint',
 ];
 assert.deepEqual(productionIds, expectedProductionIds.sort());
 const defaultIndex = registry.buildCompactIndex();
@@ -182,10 +190,10 @@ for (const template of productionIndex) {
 }
 
 const expectedAspectCoverage = {
-  '9:16': 5,
-  '16:9': 8,
-  '1:1': 4,
-  '4:5': 4,
+  '9:16': 9,
+  '16:9': 10,
+  '1:1': 5,
+  '4:5': 5,
 };
 for (const [aspectRatio, minimumCount] of Object.entries(expectedAspectCoverage)) {
   const aspectTemplates = defaultRegistry.buildCompactIndex({ aspect_ratio: aspectRatio });

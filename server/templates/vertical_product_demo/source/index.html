@@ -17,6 +17,15 @@ main{margin-top:190px}.headline{font-size:92px;line-height:1.07;letter-spacing:-
 footer{position:absolute;left:64px;right:64px;bottom:365px;padding-top:18px}
 
 body{background:#f4f5ef;color:#172019}.decor{position:absolute;width:700px;height:700px;right:-320px;top:50px;border-radius:50%;background:var(--accent)}header{align-items:center}.logo{display:grid;place-items:center;width:52px;height:52px;border-radius:15px;background:#172019;color:var(--accent);font:900 26px/1 Arial}.headline{font-size:84px}.subtitle{color:#536058}.mock{height:360px;margin-top:44px;border:3px solid #172019;border-radius:28px;background:#fff;box-shadow:14px 15px 0 #172019;overflow:hidden;display:grid;place-items:center}.mock:before{content:"▶";width:96px;height:96px;border-radius:50%;display:grid;place-items:center;background:var(--accent);font-size:34px;padding-left:6px}.bullets{display:flex;gap:11px;flex-wrap:wrap}.bullet{border:2px solid #172019;border-radius:999px;background:#fff;padding:11px 16px;font-size:19px}.bullet b{display:none}footer{border-top:2px solid #172019}
+
+body[data-layout-variant="hook"] main{margin-top:285px}
+body[data-layout-variant="hook"] .headline{font-size:112px;max-width:930px}
+body[data-layout-variant="hook"] .subtitle{max-width:730px}
+body[data-layout-variant="evidence"] main{margin-top:130px}
+body[data-layout-variant="evidence"] .metric{display:block;font-size:132px;margin-bottom:34px}
+body[data-layout-variant="closing"] main{margin-top:360px;text-align:right}
+body[data-layout-variant="closing"] .headline,body[data-layout-variant="closing"] .subtitle{margin-left:auto}
+body[data-layout-variant="closing"] .bullets,body[data-layout-variant="closing"] .mock{display:none}
 </style>
 </head>
 <body data-hv-canvas data-width="1080" data-height="1920" data-template-family="clean-product-ui">
@@ -32,6 +41,8 @@ body{background:#f4f5ef;color:#172019}.decor{position:absolute;width:700px;heigh
 <footer><span data-hv-element-id="footer_text" data-hv-bind="footer_text">EDITABLE BY DEFAULT</span><span>● MUSEDock</span></footer>
 <script>
 const variables=window.__HV_VARS__||{};
+const layoutVariants=['hook','detail','evidence','closing'];
+document.body.dataset.layoutVariant=layoutVariants.includes(variables.layout_variant)?variables.layout_variant:'detail';
 for(const node of document.querySelectorAll('[data-hv-bind]')){
   const key=node.dataset.hvBind;
   if(key!=='bullets'&&variables[key]!==undefined&&variables[key]!==null&&variables[key]!=='')node.textContent=String(variables[key]);

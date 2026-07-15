@@ -36,6 +36,15 @@ output:
   duration_range_sec: [2, 90]
 inputs:
   schema:
+    layout_variant:
+      type: string
+      required: false
+      enum:
+        - hook
+        - detail
+        - evidence
+        - closing
+      description: 根据场景职责切换开场、正文、证据或结尾构图。
     headline:
       type: string
       required: true
@@ -71,7 +80,8 @@ inputs:
       required: false
       description: 当前场景时长，单位秒。
   examples:
-    - headline: 600 亿美元全股票收购
+    - layout_variant: detail
+      headline: 600 亿美元全股票收购
       eyebrow: 科技财经 / 并购
       metric: $60B
       bullets:

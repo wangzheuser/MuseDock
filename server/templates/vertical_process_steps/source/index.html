@@ -17,6 +17,15 @@ main{margin-top:190px}.headline{font-size:92px;line-height:1.07;letter-spacing:-
 footer{position:absolute;left:64px;right:64px;bottom:365px;padding-top:18px}
 
 body{background:#071c35;color:#eaf5ff;background-image:linear-gradient(rgba(89,216,255,.11) 1px,transparent 1px),linear-gradient(90deg,rgba(89,216,255,.11) 1px,transparent 1px);background-size:54px 54px;border-left:18px solid var(--accent)}header{color:var(--accent)}.headline{font-size:94px}.subtitle{color:#adc8df}.bullet{display:grid;grid-template-columns:58px 1fr;gap:18px;align-items:center;min-height:96px;border:1px solid #315578;background:rgba(8,39,70,.9);padding:17px 20px;box-shadow:7px 7px 0 rgba(89,216,255,.12)}.bullet b{display:grid;place-items:center;width:46px;height:46px;border-radius:50%;background:var(--accent);color:#071c35;font:900 20px/1 Arial}footer{border-top:1px solid #315578;color:var(--accent)}.decor{position:absolute;right:50px;top:170px;width:120px;height:120px;border:2px solid var(--accent);transform:rotate(45deg);opacity:.35}
+
+body[data-layout-variant="hook"] main{margin-top:285px}
+body[data-layout-variant="hook"] .headline{font-size:112px;max-width:930px}
+body[data-layout-variant="hook"] .subtitle{max-width:730px}
+body[data-layout-variant="evidence"] main{margin-top:130px}
+body[data-layout-variant="evidence"] .metric{display:block;font-size:132px;margin-bottom:34px}
+body[data-layout-variant="closing"] main{margin-top:360px;text-align:right}
+body[data-layout-variant="closing"] .headline,body[data-layout-variant="closing"] .subtitle{margin-left:auto}
+body[data-layout-variant="closing"] .bullets,body[data-layout-variant="closing"] .mock{display:none}
 </style>
 </head>
 <body data-hv-canvas data-width="1080" data-height="1920" data-template-family="technical-blueprint">
@@ -32,6 +41,8 @@ body{background:#071c35;color:#eaf5ff;background-image:linear-gradient(rgba(89,2
 <footer><span data-hv-element-id="footer_text" data-hv-bind="footer_text">WORKFLOW BLUEPRINT · 03</span><span>● MUSEDock</span></footer>
 <script>
 const variables=window.__HV_VARS__||{};
+const layoutVariants=['hook','detail','evidence','closing'];
+document.body.dataset.layoutVariant=layoutVariants.includes(variables.layout_variant)?variables.layout_variant:'detail';
 for(const node of document.querySelectorAll('[data-hv-bind]')){
   const key=node.dataset.hvBind;
   if(key!=='bullets'&&variables[key]!==undefined&&variables[key]!==null&&variables[key]!=='')node.textContent=String(variables[key]);

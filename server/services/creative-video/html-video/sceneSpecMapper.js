@@ -220,7 +220,63 @@ function firstMetric(visualText = {}, maxLength = 24) {
   return compactText(candidates.find(item => /[$￥¥]?\d|%/.test(displayText(item))) || visualText.headline || '', maxLength);
 }
 
-function buildFrameInputs({ templateInputs, templateSchema, scene, sourceScene, index, total }) {
+/**
+ * 根据场景职责为支持变体的模板选择布局。
+ * @param {object} scene 规范化场景。
+ * @param {object} sourceScene 原始场景。
+ * @param {number} index 场景索引。
+ * @param {number} total 场景总数。
+ * @returns {'hook'|'detail'|'evidence'|'closing'} 布局变体。
+ */
+function layoutVariantForFrame(scene = {}, sourceScene = {}, index = 0, total = 1) {
+  if (index === 0) return 'hook';
+  if (index === total - 1) return 'closing';
+  const roleText = [
+    scene.kind,
+    sourceScene.kind,
+    sourceScene.content_role,
+    sourceScene.visual_direction,
+    compactText(sourceScene.evidence_points, 160),
+  ].filter(Boolean).join(' ').toLowerCase();
+  return /(data|evidence|metric|chart|数据|证据|指标|图表)/.test(roleText) ? 'evidence' : 'detail';
+}
+
+/**
+ * 从场景卡片中提取结构化图表数值。
+ * @param {object} visualText 场景视觉文案。
+ * @returns {number[]} 最多四个数值。
+ */
+function chartValues(visualText = {}) {
+  const values = [...(Array.isArray(visualText.cards) ? visualText.cards : []), ...(Array.isArray(visualText.keywords) ? visualText.keywords : [])];
+  return values.map(item => {
+    const raw = item && typeof item === 'object'
+      ? (item.value ?? item.metric ?? item.amount ?? item.count ?? item.y)
+      : item;
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+    const matched = String(raw ?? '').replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+    return matched ? Number(matched[0]) : NaN;
+  }).filter(Number.isFinite).slice(0, 4);
+}
+
+/**
+ * 从场景卡片中提取图表标签。
+ * @param {object} visualText 场景视觉文案。
+ * @returns {string[]} 最多四个标签。
+ */
+function chartLabels(visualText = {}) {
+  const values = [...(Array.isArray(visualText.cards) ? visualText.cards : []), ...(Array.isArray(visualText.keywords) ? visualText.keywords : [])];
+  return values.map(item => {
+    if (item && typeof item === 'object') return compactText(item.title || item.label || item.name || item.key, 12);
+    return compactText(String(item || '').replace(/[$￥¥]?\s*-?\d[\d,.]*\s*%?/g, ''), 12);
+  }).filter(Boolean).slice(0, 4);
+}
+
+/**
+ * 将单个场景的语义字段映射到模板输入，避免跨镜头重复使用同一份示例文案。
+ * @param {object} options 映射上下文。
+ * @returns {object} 当前镜头模板输入。
+ */
+function buildFrameInputs({ templateInputs, templateSchema, scene, sourceScene = scene, index, total }) {
   const visualText = scene.visual_text || {};
   const headlineSource = visualText.headline || scene.title || scene.id;
   const cards = Array.isArray(visualText.cards)
@@ -231,6 +287,10 @@ function buildFrameInputs({ templateInputs, templateSchema, scene, sourceScene, 
     : [];
   const bulletItems = cards.length ? cards : keywords;
   const inputs = clone(templateInputs);
+
+  if (schemaHas(templateSchema, 'layout_variant')) {
+    inputs.layout_variant = layoutVariantForFrame(scene, sourceScene, index, total);
+  }
 
   if (schemaHas(templateSchema, 'headline')) {
     inputs.headline = compactText(headlineSource, fieldMaxLength(templateSchema, 'headline', 48));
@@ -245,6 +305,14 @@ function buildFrameInputs({ templateInputs, templateSchema, scene, sourceScene, 
   if (schemaHas(templateSchema, 'eyebrow')) {
     inputs.eyebrow = compactText(keywords.slice(0, 2).join(' / '), fieldMaxLength(templateSchema, 'eyebrow', 28));
   }
+  if (schemaHas(templateSchema, 'subtitle')) {
+    const subtitle = sourceScene?.update_detail
+      || sourceScene?.viewer_gain
+      || sourceScene?.workflow_impact
+      || sourceScene?.narration_text
+      || inputs.subtitle;
+    inputs.subtitle = compactText(subtitle, fieldMaxLength(templateSchema, 'subtitle', 72));
+  }
   if (schemaHas(templateSchema, 'card_label')) {
     inputs.card_label = compactText(keywords.slice(0, 2).join('｜') || inputs.card_label, fieldMaxLength(templateSchema, 'card_label', 24));
   }
@@ -252,6 +320,35 @@ function buildFrameInputs({ templateInputs, templateSchema, scene, sourceScene, 
   if (schemaHas(templateSchema, 'cards')) inputs.cards = bulletItems.slice(0, 4);
   if (schemaHas(templateSchema, 'metric')) {
     inputs.metric = firstMetric(visualText, fieldMaxLength(templateSchema, 'metric', 24));
+  }
+  if (schemaHas(templateSchema, 'chart_values')) {
+    const values = chartValues(visualText);
+    if (values.length) inputs.chart_values = values;
+  }
+  if (schemaHas(templateSchema, 'chart_labels')) {
+    const labels = chartLabels(visualText);
+    if (labels.length) inputs.chart_labels = labels;
+  }
+  if (schemaHas(templateSchema, 'source_author')) {
+    inputs.source_author = compactText(sourceScene?.source_attribution || inputs.source_author, fieldMaxLength(templateSchema, 'source_author', 28));
+  }
+  if (schemaHas(templateSchema, 'source_time')) {
+    inputs.source_time = compactText(sourceScene?.update_time || inputs.source_time, fieldMaxLength(templateSchema, 'source_time', 20));
+  }
+  if (schemaHas(templateSchema, 'source_note')) {
+    inputs.source_note = compactText(sourceScene?.viewer_gain || inputs.source_note, fieldMaxLength(templateSchema, 'source_note', 72));
+  }
+  if (schemaHas(templateSchema, 'source_quote')) {
+    const evidencePoint = Array.isArray(sourceScene?.evidence_points)
+      ? sourceScene.evidence_points[0]
+      : sourceScene?.evidence_points;
+    const sourceQuote = sourceScene?.source_quote
+      || sourceScene?.source_excerpt
+      || sourceScene?.direct_quote
+      || sourceScene?.update_detail
+      || evidencePoint
+      || inputs.source_quote;
+    inputs.source_quote = compactText(sourceQuote, fieldMaxLength(templateSchema, 'source_quote', 90));
   }
   if (schemaHas(templateSchema, 'footer_text')) {
     inputs.footer_text = compactText(bulletItems[0] || inputs.footer_text || '', fieldMaxLength(templateSchema, 'footer_text', 36));

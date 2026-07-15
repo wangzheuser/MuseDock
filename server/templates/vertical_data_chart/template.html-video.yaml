@@ -1,0 +1,135 @@
+id: vertical_data_chart
+name: 竖屏数据图解
+description: 深蓝数据板、纵向柱图和高亮指标，适合把少量明确数据转成手机端可读的证据画面。
+category: 数据图表
+tags:
+  - 竖屏
+  - 数据
+  - 柱图
+  - 指标
+  - 证据
+best_for:
+  - 三到四项数据比较
+  - 采用率与成本变化
+  - 榜单与阶段数据
+  - 有来源的量化结论
+not_for:
+  - 没有可靠数字的观点
+  - 长时间序列
+  - 人物情绪叙事
+scene_roles:
+  - evidence
+  - comparison
+  - explain
+visual_family: signal-chart-vertical
+evidence_policy: chart_values 和 metric 必须来自输入材料，缺少数字时改用非图表模板。
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source/index.html
+output:
+  resolution:
+    width: 1080
+    height: 1920
+  fps: 30
+  duration: 7
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    layout_variant:
+      type: string
+      required: false
+      enum:
+        - hook
+        - detail
+        - evidence
+        - closing
+      description: 根据场景职责切换开场、正文、证据或结尾构图。
+    headline:
+      type: string
+      required: true
+      max_length: 38
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 78
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 素材明确提供的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      items:
+        type: string
+        maxLength: 36
+      description: 当前场景要点。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 46
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+    chart_values:
+      type: array
+      required: true
+      max_items: 4
+      items:
+        type: number
+      description: 图表数值，最多四项。
+      min_items: 2
+    chart_labels:
+      type: array
+      required: false
+      max_items: 4
+      items:
+        type: string
+        maxLength: 12
+      description: 图表标签，与数值对应。
+      min_items: 2
+  examples:
+    - layout_variant: evidence
+      eyebrow: DATA SIGNAL
+      section_no: 04/06
+      headline: 真正拉开差距的，是返工次数
+      subtitle: 首版速度接近，但进入修改环节后，结构化草稿更容易收敛。
+      metric: -42%
+      chart_values:
+        - 92
+        - 68
+        - 49
+        - 31
+      chart_labels:
+        - 首版
+        - 复核
+        - 修改
+        - 定稿
+      footer_text: 示例数据 · 请替换为真实来源
+      duration_sec: 7
+preview:
+  poster: preview/poster.jpg
+  title: 竖屏数据图解预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []

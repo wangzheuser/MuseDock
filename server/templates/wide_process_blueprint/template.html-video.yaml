@@ -1,0 +1,113 @@
+id: wide_process_blueprint
+name: 横屏流程蓝图
+description: 深绿工程蓝图、横向步骤轨道与阶段节点，适合桌面端教程、工作流说明和方法复盘。
+category: 教程流程
+tags:
+  - 横屏
+  - 教程
+  - 流程
+  - 步骤
+  - 蓝图
+best_for:
+  - 工作流教程
+  - 三到四步方法
+  - 项目复盘
+  - 操作路径说明
+not_for:
+  - 人物情绪故事
+  - 信源原文引用
+  - 连续趋势图
+scene_roles:
+  - process
+  - tutorial
+  - method
+  - recap
+visual_family: wide-process-track
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source/index.html
+output:
+  resolution:
+    width: 1920
+    height: 1080
+  fps: 30
+  duration: 7
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    layout_variant:
+      type: string
+      required: false
+      enum:
+        - hook
+        - detail
+        - evidence
+        - closing
+      description: 根据场景职责切换开场、正文、证据或结尾构图。
+    headline:
+      type: string
+      required: true
+      max_length: 48
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 78
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 素材明确提供的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      items:
+        type: string
+        maxLength: 36
+      description: 当前场景要点。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 46
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+  examples:
+    - layout_variant: detail
+      eyebrow: PROCESS BLUEPRINT
+      section_no: 04 / 06
+      headline: 优质内容不是写完，而是跑完这条链路
+      subtitle: 把资料、判断、镜头和复核分开，每一步都有明确产物。
+      metric: 04 STEPS
+      bullets:
+        - 搜集｜保留出处与时间
+        - 判断｜提炼变化与影响
+        - 编排｜一镜头一个收获
+        - 复核｜检查事实与可读性
+      footer_text: INPUT → INSIGHT → SCENE → REVIEW
+      duration_sec: 7
+preview:
+  poster: preview/poster.jpg
+  title: 横屏流程蓝图预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []

@@ -1,0 +1,131 @@
+id: portrait_source_brief
+name: 竖版信源简报
+description: 4:5 报刊剪报、引语票据与边栏批注，适合信息流中的负责人发言和来源脉络梳理。
+category: 信源解读
+tags:
+  - 竖版
+  - 信源
+  - 简报
+  - 引用
+  - 报刊
+best_for:
+  - 负责人发言
+  - 社交平台动态
+  - 原话与解读
+  - 来源脉络梳理
+not_for:
+  - 无出处传闻
+  - 密集图表
+  - 产品演示
+scene_roles:
+  - source
+  - context
+  - explain
+visual_family: portrait-source-paper
+evidence_policy: 来源作者、时间与引语必须来自输入材料；无法确认时使用概述而非伪造引号。
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source/index.html
+output:
+  resolution:
+    width: 1080
+    height: 1350
+  fps: 30
+  duration: 7
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    layout_variant:
+      type: string
+      required: false
+      enum:
+        - hook
+        - detail
+        - evidence
+        - closing
+      description: 根据场景职责切换开场、正文、证据或结尾构图。
+    headline:
+      type: string
+      required: true
+      max_length: 38
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 78
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 素材明确提供的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      items:
+        type: string
+        maxLength: 36
+      description: 当前场景要点。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 46
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+    source_author:
+      type: string
+      required: false
+      max_length: 34
+      description: 信源作者、账号或机构。
+    source_time:
+      type: string
+      required: false
+      max_length: 24
+      description: 信源发布日期或相对时间。
+    source_quote:
+      type: string
+      required: false
+      max_length: 90
+      description: 材料中的短引用或核心原意。
+    source_note:
+      type: string
+      required: false
+      max_length: 72
+      description: 观众应带走的解读结论。
+  examples:
+    - layout_variant: detail
+      eyebrow: SOURCE BRIEF
+      section_no: 02/05
+      headline: 先别问“官宣了吗”
+      subtitle: 对创作者更有价值的问题，是这条公开发言改变了什么预期。
+      source_author: 团队负责人 · 公开回复
+      source_time: JUL 15 · 09:20
+      source_quote: 我们正在把可靠性放到功能数量之前。
+      source_note: 信号：下一阶段可能优先修复稳定性。
+      footer_text: 保留出处，也保留不确定性
+      duration_sec: 6
+preview:
+  poster: preview/poster.jpg
+  title: 竖版信源简报预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []

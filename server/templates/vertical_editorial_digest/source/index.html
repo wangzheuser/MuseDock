@@ -17,6 +17,15 @@ main{margin-top:190px}.headline{font-size:92px;line-height:1.07;letter-spacing:-
 footer{position:absolute;left:64px;right:64px;bottom:365px;padding-top:18px}
 
 body{background:#f3efe7;color:#151515;border-left:20px solid var(--accent)}header{color:var(--accent);border-bottom:2px solid #151515;padding-bottom:18px}.headline{font-family:STSong,"Songti SC",serif;font-size:104px;line-height:1.04}.subtitle{font-family:STSong,"Songti SC",serif;color:#514b43;font-size:32px}.bullets{border-top:4px solid #151515}.bullet{display:grid;grid-template-columns:64px 1fr;gap:18px;padding:21px 0;border-bottom:1px solid #aaa198}.bullet b{color:var(--accent);font:800 17px/1.8 "Courier New",monospace}footer{color:#151515}.decor{position:absolute;right:-120px;top:220px;width:280px;height:280px;border:45px solid var(--accent);border-radius:50%;opacity:.1}
+
+body[data-layout-variant="hook"] main{margin-top:285px}
+body[data-layout-variant="hook"] .headline{font-size:112px;max-width:930px}
+body[data-layout-variant="hook"] .subtitle{max-width:730px}
+body[data-layout-variant="evidence"] main{margin-top:130px}
+body[data-layout-variant="evidence"] .metric{display:block;font-size:132px;margin-bottom:34px}
+body[data-layout-variant="closing"] main{margin-top:360px;text-align:right}
+body[data-layout-variant="closing"] .headline,body[data-layout-variant="closing"] .subtitle{margin-left:auto}
+body[data-layout-variant="closing"] .bullets,body[data-layout-variant="closing"] .mock{display:none}
 </style>
 </head>
 <body data-hv-canvas data-width="1080" data-height="1920" data-template-family="editorial-light">
@@ -32,6 +41,8 @@ body{background:#f3efe7;color:#151515;border-left:20px solid var(--accent)}heade
 <footer><span data-hv-element-id="footer_text" data-hv-bind="footer_text">MUSEDock · EDITORIAL DIGEST</span><span>● MUSEDock</span></footer>
 <script>
 const variables=window.__HV_VARS__||{};
+const layoutVariants=['hook','detail','evidence','closing'];
+document.body.dataset.layoutVariant=layoutVariants.includes(variables.layout_variant)?variables.layout_variant:'detail';
 for(const node of document.querySelectorAll('[data-hv-bind]')){
   const key=node.dataset.hvBind;
   if(key!=='bullets'&&variables[key]!==undefined&&variables[key]!==null&&variables[key]!=='')node.textContent=String(variables[key]);

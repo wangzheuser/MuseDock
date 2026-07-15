@@ -125,6 +125,11 @@ function validateValue(value, schema = {}, path = 'value') {
   return errors;
 }
 
+/**
+ * 将模板声明中的扁平字段约束转换为校验器使用的 JSON Schema 字段。
+ * @param {object} field 模板字段声明。
+ * @returns {object} 标准化字段约束。
+ */
 function normalizeFieldSchema(field = {}) {
   const schema = {
     type: field.type || 'string',
@@ -134,6 +139,8 @@ function normalizeFieldSchema(field = {}) {
   if (field.maxLength != null) schema.maxLength = field.maxLength;
   if (field.min_length != null) schema.minLength = field.min_length;
   if (field.max_length != null) schema.maxLength = field.max_length;
+  if (field.min_items != null) schema.minLength = field.min_items;
+  if (field.max_items != null) schema.maxLength = field.max_items;
   if (field.minimum != null) schema.minimum = field.minimum;
   if (field.maximum != null) schema.maximum = field.maximum;
   if (field.items) schema.items = field.items;
@@ -142,10 +149,23 @@ function normalizeFieldSchema(field = {}) {
   return schema;
 }
 
+/**
+ * 读取模板输入约束，并兼容项目现有的扁平 schema 写法。
+ * @param {object} template 模板声明。
+ * @returns {object} JSON Schema object。
+ */
 function getTemplateInputSchema(template = {}) {
   const inputs = template.inputs || {};
   if (inputs.schema && typeof inputs.schema === 'object') {
-    return inputs.schema;
+    const declared = inputs.schema;
+    if (declared.type || declared.properties || declared.required) return declared;
+    const properties = {};
+    const required = [];
+    for (const [key, field] of Object.entries(declared)) {
+      properties[key] = normalizeFieldSchema(field);
+      if (field && field.required === true) required.push(key);
+    }
+    return { type: 'object', required, properties };
   }
   const properties = {};
   const required = [];

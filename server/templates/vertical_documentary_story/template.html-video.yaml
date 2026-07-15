@@ -1,0 +1,116 @@
+id: vertical_documentary_story
+name: 竖屏纪实故事
+description: 暖黑纪实画面、章节轨道和叙事摘录，适合人物经历、事件复盘与带现场感的观点故事。
+category: 故事叙事
+tags:
+  - 竖屏
+  - 纪实
+  - 人物
+  - 故事
+  - 照片
+best_for:
+  - 人物经历
+  - 事件复盘
+  - 现场观察
+  - 从细节进入观点
+not_for:
+  - 密集数据比较
+  - 步骤教程
+  - 产品功能清单
+scene_roles:
+  - hook
+  - story
+  - turning_point
+  - takeaway
+visual_family: documentary-photo-vertical
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source/index.html
+output:
+  resolution:
+    width: 1080
+    height: 1920
+  fps: 30
+  duration: 7
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    layout_variant:
+      type: string
+      required: false
+      enum:
+        - hook
+        - detail
+        - evidence
+        - closing
+      description: 根据场景职责切换开场、正文、证据或结尾构图。
+    headline:
+      type: string
+      required: true
+      max_length: 38
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 78
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 素材明确提供的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      items:
+        type: string
+        maxLength: 36
+      description: 当前场景要点。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 46
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+    image_src:
+      type: string
+      required: false
+      max_length: 120
+      description: 模板 assets 目录中的本地图片路径。
+  examples:
+    - layout_variant: detail
+      eyebrow: FIELD NOTE
+      section_no: 01/05
+      headline: 改变判断的，往往是现场里的一个细节
+      subtitle: 不是先给结论，而是让人物、动作和转折把观众带到结论。
+      metric: 18:40
+      bullets:
+        - 一次临时改稿
+        - 三轮现场复核
+      footer_text: 人物 / 场景 / 转折 / 收获
+      duration_sec: 7
+preview:
+  poster: preview/poster.jpg
+  title: 竖屏纪实故事预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []

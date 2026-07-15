@@ -38,6 +38,15 @@ output:
     - 90
 inputs:
   schema:
+    layout_variant:
+      type: string
+      required: false
+      enum:
+        - hook
+        - detail
+        - evidence
+        - closing
+      description: 根据场景职责切换开场、正文、证据或结尾构图。
     headline:
       type: string
       required: true
@@ -78,7 +87,8 @@ inputs:
       required: false
       description: 当前场景时长，单位秒。
   examples:
-    - eyebrow: PRODUCT NOTE / 功能
+    - layout_variant: detail
+      eyebrow: PRODUCT NOTE / 功能
       section_no: 02/04
       headline: 先生成草稿，再进入逐帧精修
       subtitle: 把“自动完成”改成“可控迭代”，每个片段都能独立检查和重做。

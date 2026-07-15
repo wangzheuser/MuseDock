@@ -38,6 +38,15 @@ output:
     - 90
 inputs:
   schema:
+    layout_variant:
+      type: string
+      required: false
+      enum:
+        - hook
+        - detail
+        - evidence
+        - closing
+      description: 根据场景职责切换开场、正文、证据或结尾构图。
     headline:
       type: string
       required: true
@@ -78,7 +87,8 @@ inputs:
       required: false
       description: 当前场景时长，单位秒。
   examples:
-    - eyebrow: POINT OF VIEW / 观点
+    - layout_variant: detail
+      eyebrow: POINT OF VIEW / 观点
       section_no: 04/07
       metric: INSIGHT
       headline: 用户不缺更多消息，缺的是看完之后知道怎么办

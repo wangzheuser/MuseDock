@@ -124,7 +124,7 @@ assert.equal(frames[0].template_id, 'glitch_title');
 assert.equal(frames[0].engine, 'hyperframes-playwright');
 assert.equal(frames[0].duration_sec, 4);
 assert.equal(frames[0].inputs.title, '信号失控');
-assert.equal(frames[0].inputs.subtitle, '评论区正在改写品牌传播');
+assert.equal(frames[0].inputs.subtitle, '第一段旁白');
 assert.equal(frames[0].inputs.section_no, '01/02');
 assert.deepEqual(frames[0].inputs.bullets, ['卡片一']);
 assert.deepEqual(frames[0].captions, sceneSpec.scenes[1].captions);
@@ -146,6 +146,7 @@ assert.equal(frames[1].id, 'scene_02');
 assert.equal(frames[1].order, 2);
 assert.equal(frames[1].duration_sec, 5);
 assert.equal(frames[1].inputs.title, '数据正在变化');
+assert.equal(frames[1].inputs.subtitle, '第二段旁白');
 assert.equal(frames[1].inputs.section_no, '02/02');
 assert.deepEqual(frames[1].inputs.bullets, ['卡片二']);
 
@@ -212,6 +213,44 @@ assert.equal(objectCardInputs.eyebrow, '成立时间：2022 / 26 亿美元');
 assert.equal(objectCardInputs.metric, '成立时间：2022');
 assert.equal(objectCardInputs.footer_text, '成立时间：2022');
 assert.equal(JSON.stringify(objectCardInputs).includes('[object Object]'), false);
+
+const structuredInputs = mapper.buildFrameInputs({
+  templateInputs: {},
+  templateSchema: {
+    layout_variant: { type: 'string' },
+    chart_values: { type: 'array' },
+    chart_labels: { type: 'array' },
+    source_author: { type: 'string' },
+    source_time: { type: 'string' },
+    source_note: { type: 'string' },
+    source_quote: { type: 'string' },
+    subtitle: { type: 'string' },
+  },
+  scene: {
+    id: 'scene_evidence',
+    kind: 'data',
+    visual_text: {
+      cards: [{ label: '采用率', value: 68 }, { label: '成本', value: '42%' }],
+    },
+  },
+  sourceScene: {
+    kind: 'data',
+    source_attribution: '产品负责人公开发言',
+    update_time: '7 月 14 日',
+    update_detail: '我们正在把可靠性放在功能数量之前。',
+    viewer_gain: '重点不是数字本身，而是变化方向。',
+  },
+  index: 1,
+  total: 3,
+});
+assert.equal(structuredInputs.layout_variant, 'evidence');
+assert.deepEqual(structuredInputs.chart_values, [68, 42]);
+assert.deepEqual(structuredInputs.chart_labels, ['采用率', '成本']);
+assert.equal(structuredInputs.source_author, '产品负责人公开发言');
+assert.equal(structuredInputs.source_time, '7 月 14 日');
+assert.equal(structuredInputs.source_note, '重点不是数字本身，而是变化方向。');
+assert.equal(structuredInputs.source_quote, '我们正在把可靠性放在功能数量之前。');
+assert.equal(structuredInputs.subtitle, '我们正在把可靠性放在功能数量之前。');
 
 const keywordFallbackInputs = mapper.buildFrameInputs({
   templateInputs: {},

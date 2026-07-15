@@ -1,0 +1,112 @@
+id: wide_editorial_explainer
+name: 横屏深度解释
+description: 非对称编辑部版式、侧栏论据与大留白，适合长视频中的概念拆解、影响分析和结论推进。
+category: 深度解读
+tags:
+  - 横屏
+  - 解读
+  - 编辑部
+  - 分析
+  - 论据
+best_for:
+  - 概念解释
+  - 影响分析
+  - 观点论证
+  - 长视频章节页
+not_for:
+  - 复杂数据图表
+  - 产品界面录屏
+  - 强情绪人物独白
+scene_roles:
+  - hook
+  - explain
+  - impact
+  - takeaway
+visual_family: wide-editorial-dossier
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source/index.html
+output:
+  resolution:
+    width: 1920
+    height: 1080
+  fps: 30
+  duration: 7
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    layout_variant:
+      type: string
+      required: false
+      enum:
+        - hook
+        - detail
+        - evidence
+        - closing
+      description: 根据场景职责切换开场、正文、证据或结尾构图。
+    headline:
+      type: string
+      required: true
+      max_length: 48
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 78
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 素材明确提供的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      items:
+        type: string
+        maxLength: 36
+      description: 当前场景要点。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 46
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+  examples:
+    - layout_variant: detail
+      eyebrow: EDITORIAL DOSSIER
+      section_no: 02 / 06
+      headline: 真正值得关注的，不只是消息本身
+      subtitle: 把事实、变化和影响拆开，观众才知道这件事与自己有什么关系。
+      metric: "03"
+      bullets:
+        - 已经发生：公开信息能确认什么
+        - 正在变化：团队优先级如何移动
+        - 与你有关：接下来该观察哪些信号
+      footer_text: FACT → CHANGE → IMPACT
+      duration_sec: 7
+preview:
+  poster: preview/poster.jpg
+  title: 横屏深度解释预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []

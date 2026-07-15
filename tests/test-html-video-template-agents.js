@@ -149,4 +149,16 @@ assert.ok(htmlInput.user_message.includes('HTML'));
 assert.equal(htmlInput.fallback_allowed, true);
 assert.equal(inputAgent.renderTemplateHtmlWithInputs, undefined);
 
+const flatSchemaTemplate = {
+  inputs: {
+    schema: {
+      headline: { type: 'string', required: true, max_length: 8 },
+      chart_values: { type: 'array', max_items: 2, items: { type: 'number' } },
+    },
+  },
+};
+assert.equal(inputAgent.parseTemplateInputResponse('{"chart_values":[1]}', { template: flatSchemaTemplate }).success, false);
+assert.equal(inputAgent.parseTemplateInputResponse('{"headline":"标题","chart_values":[1,2,3]}', { template: flatSchemaTemplate }).success, false);
+assert.equal(inputAgent.parseTemplateInputResponse('{"headline":"标题","chart_values":[1,2]}', { template: flatSchemaTemplate }).success, true);
+
 console.log('html video template agent tests passed');

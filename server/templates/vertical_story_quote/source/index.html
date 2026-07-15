@@ -17,6 +17,15 @@ main{margin-top:190px}.headline{font-size:92px;line-height:1.07;letter-spacing:-
 footer{position:absolute;left:64px;right:64px;bottom:365px;padding-top:18px}
 
 body{background:#27101f;color:#fff5e7}.decor{position:absolute;width:880px;height:880px;right:-280px;top:300px;border-radius:50%;background:radial-gradient(circle,#aa473f 0%,rgba(126,40,55,.5) 42%,transparent 70%)}.quote-mark{display:block;position:absolute;left:18px;top:150px;font:700 650px/1 Georgia,serif;color:rgba(240,179,91,.1)}header,footer,.metric{color:var(--accent)}.headline{font-family:STSong,"Songti SC",serif;font-size:96px;line-height:1.17}.subtitle{font-family:STSong,"Songti SC",serif;color:#dfcabc;font-size:32px;border-left:5px solid var(--accent);padding-left:22px}.bullets{display:none}footer{border-top:1px solid rgba(240,179,91,.4)}
+
+body[data-layout-variant="hook"] main{margin-top:285px}
+body[data-layout-variant="hook"] .headline{font-size:112px;max-width:930px}
+body[data-layout-variant="hook"] .subtitle{max-width:730px}
+body[data-layout-variant="evidence"] main{margin-top:130px}
+body[data-layout-variant="evidence"] .metric{display:block;font-size:132px;margin-bottom:34px}
+body[data-layout-variant="closing"] main{margin-top:360px;text-align:right}
+body[data-layout-variant="closing"] .headline,body[data-layout-variant="closing"] .subtitle{margin-left:auto}
+body[data-layout-variant="closing"] .bullets,body[data-layout-variant="closing"] .mock{display:none}
 </style>
 </head>
 <body data-hv-canvas data-width="1080" data-height="1920" data-template-family="theatrical-quote">
@@ -32,6 +41,8 @@ body{background:#27101f;color:#fff5e7}.decor{position:absolute;width:880px;heigh
 <footer><span data-hv-element-id="footer_text" data-hv-bind="footer_text">CONVERSATION SERIES · MUSEDock</span><span>● MUSEDock</span></footer>
 <script>
 const variables=window.__HV_VARS__||{};
+const layoutVariants=['hook','detail','evidence','closing'];
+document.body.dataset.layoutVariant=layoutVariants.includes(variables.layout_variant)?variables.layout_variant:'detail';
 for(const node of document.querySelectorAll('[data-hv-bind]')){
   const key=node.dataset.hvBind;
   if(key!=='bullets'&&variables[key]!==undefined&&variables[key]!==null&&variables[key]!=='')node.textContent=String(variables[key]);

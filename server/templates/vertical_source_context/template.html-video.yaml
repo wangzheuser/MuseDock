@@ -1,0 +1,132 @@
+id: vertical_source_context
+name: 竖屏信源解读
+description: 象牙白资料桌、红色批注和信源摘录卡，适合负责人发言、社交平台动态与非正式信息的语境解释。
+category: 信源解读
+tags:
+  - 竖屏
+  - 信源
+  - 引用
+  - 社交动态
+  - 解读
+best_for:
+  - 负责人公开发言
+  - 社交平台动态
+  - 信源语境补充
+  - 原话与解读并置
+not_for:
+  - 无出处的二手转述
+  - 纯数据排行
+  - 产品界面演示
+scene_roles:
+  - source
+  - context
+  - explain
+  - takeaway
+visual_family: source-desk
+evidence_policy: 只呈现材料中真实存在的作者、时间和原意，不补造引语。
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source/index.html
+output:
+  resolution:
+    width: 1080
+    height: 1920
+  fps: 30
+  duration: 7
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    layout_variant:
+      type: string
+      required: false
+      enum:
+        - hook
+        - detail
+        - evidence
+        - closing
+      description: 根据场景职责切换开场、正文、证据或结尾构图。
+    headline:
+      type: string
+      required: true
+      max_length: 38
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 78
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 素材明确提供的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      items:
+        type: string
+        maxLength: 36
+      description: 当前场景要点。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 46
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+    source_author:
+      type: string
+      required: false
+      max_length: 34
+      description: 信源作者、账号或机构。
+    source_time:
+      type: string
+      required: false
+      max_length: 24
+      description: 信源发布日期或相对时间。
+    source_quote:
+      type: string
+      required: false
+      max_length: 90
+      description: 材料中的短引用或核心原意。
+    source_note:
+      type: string
+      required: false
+      max_length: 72
+      description: 观众应带走的解读结论。
+  examples:
+    - layout_variant: detail
+      eyebrow: SOURCE CONTEXT
+      section_no: 02/06
+      headline: 这句话真正释放了什么信号？
+      subtitle: 不急着判定真假，先看谁说的、在什么语境下说，以及它改变了哪些预期。
+      source_author: 产品负责人 · 公开动态
+      source_time: 2 小时前
+      source_quote: 接下来的重点会放在更稳定的工具调用与长任务体验。
+      source_note: 可用信息：研发优先级已经发生变化。
+      footer_text: 原话 / 语境 / 可行动结论
+      duration_sec: 7
+preview:
+  poster: preview/poster.jpg
+  title: 竖屏信源解读预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []

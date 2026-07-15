@@ -1,0 +1,112 @@
+id: vertical_compare_decision
+name: 竖屏对比决策
+description: 珊瑚红与墨蓝分屏、中心决策轴和成对论据，适合方案选择、前后变化和误区纠正。
+category: 对比决策
+tags:
+  - 竖屏
+  - 对比
+  - 决策
+  - 分屏
+  - 利弊
+best_for:
+  - 方案 A/B 选择
+  - 前后对比
+  - 误区与事实
+  - 工具差异解释
+not_for:
+  - 单一人物故事
+  - 需要信源原文的内容
+  - 复杂连续数据
+scene_roles:
+  - comparison
+  - decision
+  - myth_vs_fact
+visual_family: split-decision-vertical
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source/index.html
+output:
+  resolution:
+    width: 1080
+    height: 1920
+  fps: 30
+  duration: 7
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    layout_variant:
+      type: string
+      required: false
+      enum:
+        - hook
+        - detail
+        - evidence
+        - closing
+      description: 根据场景职责切换开场、正文、证据或结尾构图。
+    headline:
+      type: string
+      required: true
+      max_length: 38
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 78
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 素材明确提供的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      items:
+        type: string
+        maxLength: 36
+      description: 当前场景要点。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 46
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+  examples:
+    - layout_variant: detail
+      eyebrow: MAKE A CHOICE
+      section_no: 03/06
+      headline: 看起来都能生成，差别到底在哪？
+      subtitle: 把判断标准放回创作流程：是否可修改、是否可复核、是否能稳定复用。
+      metric: A / B
+      bullets:
+        - 自动成片｜速度快，返工成本高
+        - 可编辑草稿｜多一步，控制力更强
+        - 只看速度｜容易忽略内容质量
+        - 看完整链路｜更适合持续创作
+      footer_text: 先选判断标准，再选方案
+      duration_sec: 7
+preview:
+  poster: preview/poster.jpg
+  title: 竖屏对比决策预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []
