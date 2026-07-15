@@ -51,6 +51,7 @@ const WORKFLOW_ID_PATTERN = /^\d{5,32}$/;
 const DEFAULT_STALE_STAGE_TIMEOUT_MS = 10 * 60 * 1000;
 const WORKFLOW_STOPPED = Symbol('workflow-stopped');
 const PROMPT_ORIGINS = new Set(['manual', 'guided', 'guided_edited']);
+const CONTENT_MODES = new Set(['news', 'analysis', 'discussion']);
 
 const STAGE_IDS = ['source', 'research', 'assets', 'agent_run', 'brief', 'audio', 'project', 'check', 'render', 'inspect'];
 const STAGE_LABELS = {
@@ -71,6 +72,16 @@ function safeString(value) {
     return '';
   }
   return String(value).trim();
+}
+
+/**
+ * 归一化自媒体内容类型，未指定时默认生成解读内容。
+ * @param {unknown} value 内容类型。
+ * @returns {'news'|'analysis'|'discussion'} 合法内容类型。
+ */
+function normalizeContentMode(value) {
+  const mode = safeString(value);
+  return CONTENT_MODES.has(mode) ? mode : 'analysis';
 }
 
 function supportsEmotionalTtsRuntime(config) {
@@ -685,22 +696,34 @@ function resolveServices(options = {}) {
   };
   resolved.resumeActions = {
     retryFrameHtml: context => defaultRetryFrameHtmlAction({ ...context, services: resolved }),
+    retryContentGraph: context => defaultRetryContentGraphAction({ ...context, services: resolved }),
     ...plainObject(services.resumeActions),
   };
   return resolved;
 }
 
-async function defaultRetryFrameHtmlAction({ workflow, project, projectDir, mediaRoot, services, taskContext } = {}) {
+/**
+ * 复用原任务上下文重新执行 HTML 视频工程生成，可选择是否沿用内容图。
+ */
+async function defaultResumeHtmlVideoAction({
+  workflow,
+  project,
+  projectDir,
+  mediaRoot,
+  services,
+  taskContext,
+  reuseContentGraph,
+} = {}) {
   const workflowId = safeString(workflow?.workflow_id || workflow?.id || project?.workflow_id);
   const runId = safeString(project?.run_id || project?.runId);
   if (!workflowId || !runId) {
     return {
       success: false,
-      message: '缺少 workflowId 或 runId，无法重试失败帧。',
+      message: '缺少 workflowId 或 runId，无法恢复 HTML 视频工程。',
       diagnostics: [createDiagnostic({
-        code: 'retry_frame_html_context_invalid',
-        sub_stage: 'frame_html',
-        user_message: '缺少 workflowId 或 runId，无法重试失败帧。',
+        code: 'retry_html_video_context_invalid',
+        sub_stage: reuseContentGraph ? 'frame_html' : 'content_graph',
+        user_message: '缺少 workflowId 或 runId，无法恢复 HTML 视频工程。',
         retryable: false,
       })],
     };
@@ -727,10 +750,10 @@ async function defaultRetryFrameHtmlAction({ workflow, project, projectDir, medi
     target,
     preferredTemplateId: safeString(target.preferredTemplateId) || storedTemplateId || '',
     lockTemplate: target.lockTemplate === true || Boolean(storedTemplateId),
-    reuseContentGraph: true,
+    reuseContentGraph,
     runLayoutQa: true,
     projectOptions: {
-      reuseContentGraph: true,
+      reuseContentGraph,
     },
     services: {
       ...services,
@@ -738,6 +761,20 @@ async function defaultRetryFrameHtmlAction({ workflow, project, projectDir, medi
     },
     onProgress: taskContext?.emit,
   });
+}
+
+/**
+ * 复用内容图，只重新生成失败的 HTML 帧及其工程状态。
+ */
+async function defaultRetryFrameHtmlAction(context = {}) {
+  return defaultResumeHtmlVideoAction({ ...context, reuseContentGraph: true });
+}
+
+/**
+ * 丢弃无效内容图并从 scene spec 重新生成内容图和帧工程。
+ */
+async function defaultRetryContentGraphAction(context = {}) {
+  return defaultResumeHtmlVideoAction({ ...context, reuseContentGraph: false });
 }
 
 function buildCreativeDefaultsSnapshot(defaults = {}, creativeDefaultsOverride = {}, payload = {}) {
@@ -757,10 +794,16 @@ function buildCreativeDefaultsSnapshot(defaults = {}, creativeDefaultsOverride =
     ...overrideTemplates,
   };
 
-  const aspectRatio = safeString(overrideSource.aspectRatio) || safeString(defaultsSource.aspectRatio);
+  const promptSettings = parseCreativeSettingsFromText(payloadSource.input);
+  const aspectRatio = safeString(overrideSource.aspectRatio)
+    || safeString(payloadSource.aspectRatio)
+    || promptSettings.aspectRatio
+    || safeString(defaultsSource.aspectRatio);
   const targetDurationSec = Number.isFinite(Number(overrideSource.targetDurationSec))
     ? Number(overrideSource.targetDurationSec)
-    : Number(defaultsSource.targetDurationSec);
+    : Number.isFinite(Number(payloadSource.targetDurationSec))
+      ? Number(payloadSource.targetDurationSec)
+      : promptSettings.targetDurationSec || Number(defaultsSource.targetDurationSec);
   const defaultFps = [30, 60].includes(Number(defaultsSource.fps)) ? Number(defaultsSource.fps) : 30;
   const fps = [30, 60].includes(Number(overrideSource.fps)) ? Number(overrideSource.fps) : defaultFps;
   const defaultPlaybackSpeed = normalizePlaybackSpeed(defaultsSource.playbackSpeed);
@@ -787,6 +830,9 @@ function buildCreativeDefaultsSnapshot(defaults = {}, creativeDefaultsOverride =
     lockTemplate: typeof overrideSource.lockTemplate === 'boolean'
       ? overrideSource.lockTemplate
       : defaultsSource.lockTemplate === true,
+    contentMode: normalizeContentMode(
+      overrideSource.contentMode || payloadSource.contentMode || defaultsSource.contentMode,
+    ),
     useResearch,
     generateAudio: typeof overrideSource.generateAudio === 'boolean'
       ? overrideSource.generateAudio
@@ -810,6 +856,28 @@ function buildCreativeDefaultsSnapshot(defaults = {}, creativeDefaultsOverride =
     frameHtmlConcurrency: Number.isFinite(frameHtmlConcurrency)
       ? Math.min(5, Math.max(1, Math.round(frameHtmlConcurrency)))
       : 1,
+  };
+}
+
+/**
+ * 从自然语言创作需求读取显式画幅和时长。
+ * 显式 creativeDefaultsOverride / payload 字段仍然优先，避免覆盖用户设置。
+ */
+function parseCreativeSettingsFromText(value = '') {
+  const text = safeString(value).replace(/\s+/g, ' ');
+  if (!text) return { aspectRatio: '', targetDurationSec: 0 };
+  // 中文标点不是 `\b` 的边界，使用负向字符类兼容“30秒、9:16”这类输入。
+  const durationMatch = text.match(/(?:制作|目标|时长|长度)?\s*(\d{1,3})\s*(?:秒|s)(?![\w])/i);
+  const aspectMatch = text.match(/(?:画幅|比例|画面)?\s*(\d{1,2})\s*[:：]\s*(\d{1,2})/);
+  const duration = Number(durationMatch?.[1]);
+  const width = Number(aspectMatch?.[1]);
+  const height = Number(aspectMatch?.[2]);
+  const aspectRatio = width > 0 && height > 0 && width <= 32 && height <= 32
+    ? `${width}:${height}`
+    : '';
+  return {
+    aspectRatio,
+    targetDurationSec: Number.isFinite(duration) && duration > 0 ? duration : 0,
   };
 }
 
@@ -845,6 +913,8 @@ function buildWorkflowTarget(snapshot = {}) {
     playback_speed: normalizePlaybackSpeed(snapshot.playbackSpeed),
     preferredTemplateId: safeString(snapshot.templateId),
     lockTemplate: snapshot.lockTemplate === true,
+    content_mode: normalizeContentMode(snapshot.contentMode),
+    auto_export: false,
     generateAudio: snapshot.generateAudio !== false,
     autoSfxEnabled: snapshot.autoSfxEnabled !== false,
     generateCaptions: snapshot.generateCaptions !== false,
@@ -855,6 +925,13 @@ function buildWorkflowTarget(snapshot = {}) {
       ? Math.min(5, Math.max(1, Math.round(Number(snapshot.frameHtmlConcurrency))))
       : 1,
   };
+}
+
+/**
+ * 判断提示词是否要求时效资讯，避免无联网素材时继续生成伪动态。
+ */
+function requestsTimelyUpdateCoverage(value = '') {
+  return /资讯|动态|更新|发布|上线|过去\s*24\s*小时|近\s*24\s*小时|最新消息|今天|今日/.test(String(value || ''));
 }
 
 /**
@@ -929,6 +1006,7 @@ function buildFreeformTargetOptions(target = {}) {
   const fps = Number(target.fps);
   const aspectRatio = safeString(target.aspect_ratio || target.aspectRatio);
   const ttsVoice = safeString(target.ttsVoice || target.tts_voice);
+  const contentMode = normalizeContentMode(target.content_mode || target.contentMode);
   return {
     ...(Number.isFinite(durationSec) && durationSec > 0 ? {
       targetDurationSec: durationSec,
@@ -937,6 +1015,8 @@ function buildFreeformTargetOptions(target = {}) {
     ...([30, 60].includes(fps) ? { fps } : {}),
     ...(aspectRatio ? { aspectRatio, aspect_ratio: aspectRatio } : {}),
     ...(ttsVoice ? { voice: normalizeTtsVoice(ttsVoice), ttsVoice: normalizeTtsVoice(ttsVoice) } : {}),
+    contentMode,
+    content_mode: contentMode,
   };
 }
 
@@ -980,7 +1060,9 @@ async function createCreativeWorkflow(payload = {}, options = {}) {
   const creativeDefaults = await services.appSettings.getCreativeDefaults(options);
   const snapshot = buildCreativeDefaultsSnapshot(
     creativeDefaults,
-    payload && typeof payload === 'object' ? payload.creativeDefaultsOverride : {},
+    payload && typeof payload === 'object'
+      ? (payload.creativeDefaultsOverride || payload.creativeDefaults || {})
+      : {},
     payload,
   );
   const effectivePayload = {
@@ -1330,7 +1412,7 @@ function isHtmlVideoLiteProjectResult(result) {
   const project = hyperframes.project || {};
   return project.render_mode === 'html-video'
     && Boolean(project.html_video_project_path)
-    && hyperframes.render?.status === 'rendered';
+    && (hyperframes.render?.status === 'rendered' || project.ready_for_edit === true);
 }
 
 async function markStage(record, stageId, status, message, now, extra = {}) {
@@ -1344,9 +1426,19 @@ async function markStage(record, stageId, status, message, now, extra = {}) {
 
 async function markHtmlVideoLiteFinalStages(record, now, projectStageResult = {}) {
   const hyperframes = projectStageResult.hyperframes_freeform || {};
+  const readyForEdit = hyperframes.project?.ready_for_edit === true;
   await markStage(record, 'check', 'skipped', 'html-video production 已完成，跳过旧 HyperFrames 工程校验。', now, {
     skipped_at: now,
   });
+  if (readyForEdit) {
+    await markStage(record, 'render', 'pending', '等待二次编辑完成后手动导出视频。', now, {
+      result: { success: true, render: hyperframes.render || null },
+    });
+    await markStage(record, 'inspect', 'pending', '导出视频后执行成片巡检。', now, {
+      result: { success: true, visual_inspect: hyperframes.visual_inspect || null },
+    });
+    return;
+  }
   await markStage(record, 'render', 'done', hyperframes.render?.message || 'html-video production 成片已导出。', now, {
     completed_at: now,
     result: {
@@ -1438,18 +1530,33 @@ async function runStage(record, stageId, rootDir, handler, services, taskContext
     }
 
     const failedAt = getNow(services);
-    const message = safeString(error && error.message) || `${STAGE_LABELS[stageId]}失败。`;
+    const rawMessage = safeString(error && error.message) || `${STAGE_LABELS[stageId]}失败。`;
+    const briefTimeout = stageId === 'brief' && /(?:超时|timeout)/i.test(rawMessage);
+    const failureCode = briefTimeout ? 'brief_model_timeout' : '';
+    const message = briefTimeout
+      ? '导演策划模型未在 90 秒内响应，未生成视频工程。请稍后重试；如仍超时，请缩短提示词或补充更明确的来源链接。'
+      : rawMessage;
     await markStage(record, stageId, 'failed', message, failedAt, {
       failed_at: failedAt,
+      ...(failureCode ? { diagnostic_code: failureCode } : {}),
     });
     record.success = false;
     record.status = 'failed';
     record.message = message;
     record.error = {
       stage: stageId,
+      ...(failureCode ? { code: failureCode } : {}),
       message,
       updated_at: failedAt,
     };
+    if (failureCode) {
+      record.last_failure = {
+        stage: stageId,
+        code: failureCode,
+        message,
+        updated_at: failedAt,
+      };
+    }
     if (error?.name === 'CreativeWorkflowStageError') {
       record.last_failure = createLastFailureFromError(error, stageId, failedAt);
       await syncProjectStageSummariesFromProjectDir(record, record.last_failure.project_dir);
@@ -1541,14 +1648,11 @@ async function runCreativeWorkflow(workflowId, options = {}) {
       ...(record.creative_context || {}),
       research_context: nextResearchContext,
     };
-    if (nextResearchContext?.status === 'failed') {
-      throw new Error(nextResearchContext.summary || '联网研究失败。');
-    }
     return {
       success: true,
-      message: nextResearchContext?.status === 'disabled'
-        ? '联网研究已关闭，继续下一步。'
-        : '联网研究资料已准备完成。',
+      message: nextResearchContext?.status === 'ready'
+        ? '联网研究素材已准备完成。'
+        : '联网研究未获得可用素材，将按现有输入继续创作。',
       research_context: nextResearchContext,
     };
   }, services, taskContext));
@@ -1556,12 +1660,64 @@ async function runCreativeWorkflow(workflowId, options = {}) {
     return stoppedOrFailed;
   }
 
-  stoppedOrFailed = failIfStoppedOrNull(await runStage(record, 'assets', rootDir, async ({ reportStage }) => (
-    ensureSuccess(
+  // 时效资讯没有可用研究素材时立即阻断，避免无关素材和导演模型长时间生成占位动态。
+  const researchInputText = record.creative_context?.input?.raw_text || record.input?.raw_text || '';
+  const researchContextAfterRun = record.research_context || {};
+  const researchSourcesAfterRun = Array.isArray(researchContextAfterRun.sources)
+    ? researchContextAfterRun.sources
+    : [];
+  const researchUnavailable = ['disabled', 'empty', 'failed'].includes(String(researchContextAfterRun.status || ''))
+    || (researchContextAfterRun.status === 'ready' && researchSourcesAfterRun.length === 0);
+  if (record.creative_context?.input?.use_research === true
+    && requestsTimelyUpdateCoverage(researchInputText)
+    && researchUnavailable) {
+    const blockedAt = getNow(services);
+    const blockedMessage = '已执行联网检索，但本次没有找到可用的资讯来源，已停止生成占位动态。请补充官方页面、负责人社交媒体或媒体链接后重试，或改为方法型解读。';
+    await markStage(record, 'research', 'failed', blockedMessage, blockedAt, {
+      failed_at: blockedAt,
+      blocked: true,
+      result: {
+        success: false,
+        code: 'research_materials_empty',
+        message: blockedMessage,
+        research_context: researchContextAfterRun,
+      },
+    });
+    record.success = false;
+    record.status = 'failed';
+    record.message = blockedMessage;
+    record.error = { stage: 'research', code: 'research_materials_empty', message: blockedMessage, updated_at: blockedAt };
+    record.last_failure = {
+      stage: 'research',
+      code: 'research_materials_empty',
+      message: blockedMessage,
+      updated_at: blockedAt,
+    };
+    record.updated_at = blockedAt;
+    const blockedRecord = await persistWorkflow(record, rootDir);
+    return createWorkflowSummary(blockedRecord);
+  }
+
+  const creativeInputForAssets = record.creative_context?.input || record.input || {};
+  const hasExplicitAssetIds = Array.isArray(creativeInputForAssets.asset_ids)
+    && creativeInputForAssets.asset_ids.length > 0;
+  const skipDecorativeNewsAssets = creativeInputForAssets.mode === 'text'
+    && requestsTimelyUpdateCoverage(researchInputText)
+    && !hasExplicitAssetIds;
+  stoppedOrFailed = failIfStoppedOrNull(await runStage(record, 'assets', rootDir, async ({ reportStage }) => {
+    if (skipDecorativeNewsAssets) {
+      return {
+        success: true,
+        skipped: true,
+        message: '资讯主题跳过泛化图库素材，后续使用来源卡和文字信息表达。',
+        asset_context: record.asset_context,
+      };
+    }
+    return ensureSuccess(
       await prepareSourceAssetContext(record, mediaRoot, getNow(services), services, reportStage),
       '图片素材准备失败。',
-    )
-  ), services, taskContext));
+    );
+  }, services, taskContext));
   if (stoppedOrFailed) {
     return stoppedOrFailed;
   }
@@ -1636,6 +1792,8 @@ async function runCreativeWorkflow(workflowId, options = {}) {
     creative_context: record.creative_context,
     generateAudio: mediaOptions.generateAudio,
     generateCaptions: mediaOptions.generateCaptions,
+    // 草稿也执行静态布局巡检，避免来源卡和主体内容在导出前才发现遮挡。
+    runLayoutQa: options.runLayoutQa !== false && options.run_layout_qa !== false,
   };
 
   const projectStageResult = await runStage(record, 'project', rootDir, async () => {
@@ -1677,9 +1835,15 @@ async function runCreativeWorkflow(workflowId, options = {}) {
   await markHtmlVideoLiteFinalStages(record, doneAt, projectStageResult);
   record.success = true;
   record.status = 'done';
-  record.message = '创作任务已完成。';
+  const readyForEdit = projectStageResult.hyperframes_freeform?.project?.ready_for_edit === true
+    || projectStageResult.hyperframes_freeform?.ready_for_edit === true
+    || projectStageResult.project?.ready_for_edit === true;
+  record.message = readyForEdit
+    ? '可编辑工程已生成，请完成二次编辑后再导出视频。'
+    : '创作任务已完成。';
   record.result = { hyperframes_freeform: projectStageResult.hyperframes_freeform };
   record.error = null;
+  record.last_failure = null;
   record.updated_at = doneAt;
   await syncProjectStageSummariesFromProjectDir(record, extractHtmlVideoProjectPathFromWorkflow(record));
   const persisted = await persistWorkflow(record, rootDir);
@@ -1793,7 +1957,8 @@ async function patchCreativeWorkflowTaskSummaryUnlocked(workflowId, patch = {}, 
     const progress = Number(patch.current_progress ?? record.current_progress);
     record.current_progress = Number.isFinite(progress) ? Math.max(0, Math.min(100, Math.round(progress))) : 0;
     record.last_event_seq = Number.isFinite(seq) && seq > 0 ? Math.floor(seq) : 0;
-    if (record.task_status === 'running' && record.current_stage) {
+    if (record.status !== 'failed' && record.status !== 'done'
+      && record.task_status === 'running' && record.current_stage) {
       const stageMessage = record.current_stage_message || `正在${STAGE_LABELS[record.current_stage] || '处理当前阶段'}...`;
       updateStage(record, record.current_stage, {
         status: 'running',
@@ -2249,6 +2414,22 @@ async function retryCreativeWorkflow(workflowId, payload = {}, options = {}) {
       plan,
       message: plan.user_message || '当前任务无法自动重试。',
     };
+  }
+
+  if (plan.repair_action === 'restart_workflow') {
+    const record = await readWorkflow(workflowId, rootDir);
+    record.status = 'queued';
+    record.success = true;
+    record.message = '正在重新执行创作流程。';
+    record.error = null;
+    record.updated_at = getNow(services);
+    await persistWorkflow(record, rootDir);
+    return runCreativeWorkflow(workflowId, {
+      ...options,
+      rootDir,
+      mediaRoot,
+      services,
+    });
   }
 
   const loaded = await readWorkflowAndHtmlVideoProject(workflowId, rootDir);

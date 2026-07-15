@@ -29,6 +29,7 @@ const defaultVisualQaService = require('../visualQaService');
 const defaultLayoutQaService = require('./layoutQaService');
 const { computeSceneSpecSpeechHash, audioMatchesSceneSpec } = require('../sceneSpecHash');
 const { applyManifestToProjectAudio } = require('../ttsService');
+const { padProjectTimelineToTarget } = require('./timelineRepair');
 const { createDiagnostic, normalizeDiagnostics, failureFromDiagnostics } = require('./diagnostics');
 const { mapSceneSpecToContentGraph, buildFramesFromGraph } = require('./sceneSpecMapper');
 const { resolveNodeSceneId, validateGraphMatchesSceneSpec } = require('./sceneGraphBinding');
@@ -495,7 +496,7 @@ async function generateContentGraphWithRetry({ model, sceneSpec, creativeContext
       });
       return {
         success: true,
-        contentGraph: mapSceneSpecToContentGraph(sceneSpec),
+        contentGraph: mapSceneSpecToContentGraph(sceneSpec, target),
         diagnostics,
         inputHash: sha256(originalPrompt),
       };
@@ -511,34 +512,57 @@ async function generateContentGraphWithRetry({ model, sceneSpec, creativeContext
     };
   }
 
-  let graphParsed = contentGraphAgent.parseContentGraphResponse(graphAi.text, sceneSpec, { creativeContext });
+  let graphParsed = contentGraphAgent.parseContentGraphResponse(graphAi.text, sceneSpec, { creativeContext, target });
   if (!graphParsed.success) {
-    if (retriedForProviderMissing && sceneSpec) {
+    diagnostics.push(...normalizeDiagnostics(graphParsed.diagnostics, {
+      code: 'content_graph_invalid',
+      stage: 'ai-content-graph',
+      sub_stage: 'content_graph',
+      user_message: graphParsed.message || 'content graph 解析失败。',
+      retryable: true,
+      repair_action: 'retry_content_graph',
+    }));
+    if (!retriedForProviderMissing) {
+      await report(onProgress, {
+        type: 'html_video_graph_retry_started',
+        stage: 'project',
+        sub_stage: 'content_graph',
+        message: 'content graph JSON 无效，正在使用精简场景摘要重试...',
+        data: {},
+      });
+      const retryPrompt = contentGraphAgent.buildRetryPrompt(sceneSpec, creativeContext, target, originalPrompt, 1);
+      const retryAi = ensureGraphAiHasText(await callTextModel(model, retryPrompt, {
+        stream: false,
+        audit: {
+          agent: AGENTS.contentGraph,
+          stage: STAGES.contentGraph,
+          sub_stage: 'content_graph',
+          attempt: 2,
+        },
+      }));
+      if (retryAi.success) {
+        const retryParsed = contentGraphAgent.parseContentGraphResponse(retryAi.text, sceneSpec, { creativeContext, target });
+        if (retryParsed.success) graphParsed = retryParsed;
+      }
+    }
+    if (!graphParsed.success && sceneSpec) {
       await report(onProgress, {
         type: 'html_video_graph_fallback_scene_spec',
         stage: 'project',
         sub_stage: 'content_graph',
-        message: 'content graph 重试仍无效，已使用字幕脚本生成内容图。',
+        message: 'content graph JSON 重试仍无效，已使用字幕脚本生成内容图。',
         data: {},
       });
       return {
         success: true,
-        contentGraph: mapSceneSpecToContentGraph(sceneSpec),
+        contentGraph: mapSceneSpecToContentGraph(sceneSpec, target),
         diagnostics,
         inputHash: sha256(originalPrompt),
       };
     }
-    return {
+    if (!graphParsed.success) return {
       ...graphParsed,
-      diagnostics: normalizeDiagnostics(graphParsed.diagnostics, {
-        code: 'content_graph_invalid',
-        stage: 'ai-content-graph',
-        sub_stage: 'content_graph',
-        user_message: graphParsed.message || 'content graph 解析失败。',
-        details: { errors: graphParsed.errors || [] },
-        retryable: true,
-        repair_action: 'retry_content_graph',
-      }),
+      diagnostics,
       inputHash: sha256(originalPrompt),
     };
   }
@@ -566,7 +590,7 @@ async function generateContentGraphWithRetry({ model, sceneSpec, creativeContext
           inputHash: sha256(originalPrompt),
         };
       }
-      graphParsed = contentGraphAgent.parseContentGraphResponse(graphAi.text, sceneSpec, { creativeContext });
+      graphParsed = contentGraphAgent.parseContentGraphResponse(graphAi.text, sceneSpec, { creativeContext, target });
       if (!graphParsed.success) {
         return {
           ...graphParsed,
@@ -811,7 +835,7 @@ function buildInitialProject({ workflowId, runId, sceneSpec, template, templateI
   const duration = durationFromTarget(target, template);
   const output = objectOrEmpty(template.output);
   const templateSchema = objectOrEmpty(objectOrEmpty(template.inputs).schema);
-  const contentGraph = mapSceneSpecToContentGraph(sceneSpec || {});
+  const contentGraph = mapSceneSpecToContentGraph(sceneSpec || {}, target);
   const mappedFrames = buildFramesFromGraph({
     sceneSpec: sceneSpec || {},
     contentGraph,
@@ -1117,6 +1141,11 @@ async function generateHtmlVideo(options = {}) {
   };
   const frameHtmlConcurrency = normalizeFrameHtmlConcurrency(target, projectOptions);
   const defaultPlaybackSpeed = normalizeDefaultPlaybackSpeed(target);
+  const autoExport = options.autoExport !== false
+    && target.auto_export !== false
+    && target.autoExport !== false
+    && projectOptions.auto_export !== false
+    && projectOptions.autoExport !== false;
   const reuseContentGraphRequested = options.reuseContentGraph === true || projectOptions?.reuseContentGraph === true;
   const regenerateFrameHtmlRequested = options.regenerateFrameHtml === true || projectOptions?.regenerateFrameHtml === true;
   const registry = resolveRegistry(templateRegistry);
@@ -1225,6 +1254,22 @@ async function generateHtmlVideo(options = {}) {
     ]);
   }
   const templateRenderTarget = resolveTemplateRenderTarget(renderTarget, template);
+  // 模板选定后立即固化画布，避免中途失败时 UI 仍读取默认横屏 1920×1080。
+  const selectedResolution = objectOrEmpty(templateRenderTarget.resolution);
+  if (selectedResolution.width && selectedResolution.height) {
+    await projectStore.writeProjectJson(projectDir, current => {
+      current.output = {
+        ...objectOrEmpty(current.output),
+        resolution: {
+          width: Number(selectedResolution.width),
+          height: Number(selectedResolution.height),
+        },
+        ...(templateRenderTarget.fps ? { fps: Number(templateRenderTarget.fps) } : {}),
+        ...(templateRenderTarget.duration_sec ? { duration: Number(templateRenderTarget.duration_sec) } : {}),
+      };
+      return current;
+    });
+  }
   const currentSceneSpecHash = computeSceneSpecCheckpointHash(sceneSpec || {});
   const trustedTargetDurationSec = firstPositiveNumber(
     templateRenderTarget.duration_sec,
@@ -1462,6 +1507,7 @@ async function generateHtmlVideo(options = {}) {
     if (!frameHtmlResult.ok) return frameHtmlResult.failure;
     project = frameHtmlResult.project;
     contentGraph = frameHtmlResult.contentGraph;
+    const frameLayoutQaReports = Array.isArray(project.layout_qa_reports) ? project.layout_qa_reports : [];
     try {
       project = await buildRawHtmlFrameProject({
         projectDir,
@@ -1473,6 +1519,25 @@ async function generateHtmlVideo(options = {}) {
         template,
         mediaOptions,
       });
+      // 旁白短于目标时，把差额放到最后一帧，确保 HTML 动画收束不会被工程时间轴截断。
+      const paddedTimeline = padProjectTimelineToTarget({
+        project,
+        targetDurationSec: templateRenderTarget.duration_sec,
+      });
+      project = paddedTimeline.project;
+      if (paddedTimeline.padded_sec > 0) {
+        diagnostics.push(createDiagnostic({
+          code: 'timeline_tail_padded',
+          stage: 'project',
+          sub_stage: 'timeline',
+          severity: 'info',
+          user_message: `旁白时长不足目标，已将 ${paddedTimeline.padded_sec.toFixed(2)} 秒留白放入最后一帧。`,
+          details: { padded_sec: paddedTimeline.padded_sec },
+        }));
+      }
+      contentGraph = project.content_graph || contentGraph;
+      await projectStore.saveContentGraph(projectDir, contentGraph);
+      project.layout_qa_reports = frameLayoutQaReports;
       project.generation_checkpoint = objectOrEmpty(project.generation_checkpoint);
       project.generation_checkpoint.agent_pipeline = [
         { agent: AGENTS.contentGraph, stage: STAGES.contentGraph, artifact: 'content-graph.json' },
@@ -1678,7 +1743,7 @@ async function generateHtmlVideo(options = {}) {
       });
     } catch (error) {
       const diagnosticCode = error?.code === 'ENOENT' ? 'sfx_library_missing' : (error?.code || 'sfx_planning_failed');
-      const reason = error?.message || '自动音效编排失败，已跳过音效增强。';
+      const reason = sfxEventService.sanitizeSfxErrorMessage(error?.message);
       sfxEventService.markSfxSkipped(project, reason);
       await sfxEventService.persistProjectSfxMirror(projectDir, project).catch(() => {});
       diagnostics.push(createDiagnostic({
@@ -1699,6 +1764,35 @@ async function generateHtmlVideo(options = {}) {
     }
   }
   project = await projectStore.saveProject(projectDir, project);
+  if (!autoExport) {
+    project = await attachAssetUsageReport({ project, projectDir, creativeContext });
+    await report(onProgress, {
+      type: 'html_video_project_ready_for_edit',
+      stage: 'project',
+      sub_stage: 'ready_for_edit',
+      message: '可编辑工程已生成，请完成二次编辑后再导出视频。',
+      data: { project_dir: projectDir },
+    });
+    return {
+      success: true,
+      message: '可编辑工程已生成，等待二次编辑后导出。',
+      ready_for_edit: true,
+      render_mode: 'html-video',
+      template_id: template.id,
+      template_reason: selection.reason,
+      template_inputs: templateInputs,
+      project,
+      project_dir: projectDir,
+      html_video_project_path: projectDir,
+      output_path: '',
+      files: ['project.json', 'content-graph.json'],
+      audio_manifest: project.audio?.tts_manifest_path || null,
+      scene_spec: sceneSpec,
+      visual_report: null,
+      html_video_diagnostics: diagnostics,
+      diagnostics,
+    };
+  }
   const rendered = await projectOrchestrator.renderHtmlVideoProject({
     rootDir,
     workflowId,

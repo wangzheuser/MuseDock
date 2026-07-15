@@ -253,7 +253,42 @@ const fallbackHtml = fallbackBuilder.buildFallbackFrameHtml({
   target: { resolution: { width: 1920, height: 1080 } },
 });
 assert.doesNotMatch(fallbackHtml, /fallbackEnter\{from\{opacity:0/);
-assert.match(fallbackHtml, /fallbackEnter\{from\{opacity:\.72/);
+assert.match(fallbackHtml, /data-render-mode="structured-fallback"/);
+assert.match(fallbackHtml, /重点速览/);
+assert.doesNotMatch(fallbackHtml, /基础 HTML 兜底|AI 生成失败|连续失败/);
+assert.match(fallbackHtml, /data-text-key="headline"/);
+assert.match(fallbackHtml, /data-text-key="subtitle"/);
+assert.match(fallbackHtml, /data-text-key="body"/);
+
+const richFallbackHtml = fallbackBuilder.buildFallbackFrameHtml({
+  scene: {
+    id: 'scene_02',
+    visual_text: {
+      headline: '发布与三档定位',
+      keywords: ['GPT-5.6', '三档分层', '每美元性能'],
+      cards: ['Sol：旗舰档', 'Terra：均衡档', 'Luna：轻量档', '统一任务实测'],
+    },
+    narration_text: '这句完整旁白不应在主画面重复出现。',
+  },
+  node: { id: 'scene_02', text: '发布与三档定位' },
+  target: { resolution: { width: 1080, height: 1920 } },
+});
+assert.match(richFallbackHtml, /layout-2/);
+assert.match(richFallbackHtml, /Sol：旗舰档/);
+assert.match(richFallbackHtml, /Terra：均衡档/);
+assert.match(richFallbackHtml, /Luna：轻量档/);
+assert.doesNotMatch(richFallbackHtml, /这句完整旁白不应在主画面重复出现/);
+assert.match(richFallbackHtml, /padding:112px 86px 420px/);
+
+const shortPrompt = agent.buildShortFrameHtmlPrompt({
+  frameId: 'scene_01',
+  node: { id: 'scene_01' },
+  sceneSpec: { scenes: [{ id: 'scene_01', visual_text: { headline: '短提示词' } }] },
+  target: { resolution: { width: 1080, height: 1920 } },
+});
+assert.match(shortPrompt, /不得超过 9000 字符/);
+assert.match(shortPrompt, /禁止 SVG、canvas/);
+assert.match(shortPrompt, /<\/body><\/html>/);
 
 const retryPromptWithKeywords = agent.buildRetryPrompt({
   node: { id: 'scene_01' },
@@ -716,6 +751,34 @@ assert.equal(noHtmlDocument.code, 'html_document_extract_failed');
   });
   assert.equal(requiredAssetResult.success, true);
   assert.equal(requiredAssetCallCount, 2);
+
+  const framePhase = require('../server/services/creative-video/html-video/frameHtmlPhase');
+  const updateHtml = '<!doctype html><html><body><main data-text-key="headline">进入 Microsoft 365</main></body></html>';
+  const attributed = framePhase.ensureUpdateSourceAttributionHtml(updateHtml, {
+    content_role: 'update',
+    source_attribution: 'OpenAI官方产品更新页面',
+    update_time: '2026年7月9日',
+  }, { resolution: { width: 1080, height: 1920 } });
+  assert.match(attributed, /来源：OpenAI官方页面/);
+  assert.match(attributed, /日期：2026-07-09/);
+  assert.match(attributed, /data-role="source-attribution"/);
+  const repositioned = framePhase.normalizeGeneratedFrameHtml(
+    '<!doctype html><html><body><div data-role="source-attribution" style="position:absolute;bottom:460px;font:600 22px/1.35 sans-serif">来源：OpenAI官方页面</div></body></html>',
+    { content_role: 'update', source_attribution: 'OpenAI官方页面', update_time: '2026-07-09' },
+    { resolution: { width: 1080, height: 1920 } },
+  );
+  assert.match(repositioned, /top:500px/);
+  assert.doesNotMatch(repositioned, /bottom:460px/);
+
+  const cleanedMetrics = framePhase.sanitizeAnalysisMetricVisuals(
+    '<style>.x{width:100%;left:50%;transform:translateX(100%)}.bar i{width:76%}</style><div>10×</div><div>TOP 1</div><div>+99%</div><div>MAX</div><div>GPT-5.6</div>',
+    { content_role: 'analysis' },
+  );
+  assert.match(cleanedMetrics, /width:100%;left:50%;transform:translateX\(100%\)/);
+  assert.match(cleanedMetrics, /\.bar i\{width: 100%\}/);
+  assert.doesNotMatch(cleanedMetrics, /10×|TOP 1|\+99%|MAX/);
+  assert.match(cleanedMetrics, /示意/);
+  assert.match(cleanedMetrics, /GPT-5\.6/);
 
   console.log('html-video frame html agent tests passed');
 })().catch(error => {

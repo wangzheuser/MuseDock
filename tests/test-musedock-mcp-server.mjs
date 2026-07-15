@@ -76,6 +76,11 @@ const api = {
   },
   listVideos: async () => ({ success: true, workflows: [] }),
   getVideo: async () => ({ success: true, workflow_id: 'wf_1', status: 'done', result: { render: {} }, workflow: {} }),
+  getRetryPlan: async () => ({ success: true, workflow_id: 'wf_1', plan: { code: 'brief_failed', can_retry: true } }),
+  retryVideo: async (workflowId, payload) => {
+    calls.push({ name: 'retryVideo', workflowId, payload });
+    return { success: true, workflow_id: workflowId, status: 'queued' };
+  },
   listExports: async () => ({
     success: true,
     exports: [{
@@ -115,7 +120,7 @@ const api = {
       preview_frame_id: payload.frame_id,
       preview_draft_id: payload.draft_id,
       preview_path: '/tmp/scene-01-draft-1.mp4',
-      layout_qa: { success: true, checked_count: 5, issues: [] },
+      layout_qa: { success: true, metrics: { samples: [] }, issues: [] },
       message: '单帧预览已更新。',
     };
   },
@@ -172,6 +177,7 @@ try {
       prompt: '完整创作提示词',
       aspect_ratio: '9:16',
       duration_sec: 30,
+      content_mode: 'news',
       fps: 60,
       playback_speed: 1.2,
       template_id: 'news_signal_vertical',
@@ -182,6 +188,11 @@ try {
   assert.deepEqual(calls[0].payload.creativeDefaultsOverride.templateByAspectRatio, { '9:16': 'news_signal_vertical' });
   assert.equal(calls[0].payload.creativeDefaultsOverride.fps, 60);
   assert.equal(calls[0].payload.creativeDefaultsOverride.playbackSpeed, 1.2);
+  assert.equal(calls[0].payload.creativeDefaultsOverride.contentMode, 'news');
+
+  await client.callTool({ name: 'retry_video', arguments: { workflow_id: 'wf_1', expected_plan_code: 'brief_failed' } });
+  const retryCall = calls.find(call => call.name === 'retryVideo');
+  assert.deepEqual(retryCall.payload, { mode: 'repair_and_resume', confirm_plan_code: 'brief_failed' });
 
   const inspected = await client.callTool({ name: 'inspect_video', arguments: { workflow_id: 'wf_1' } });
   assert.equal(inspected.structuredContent.scenes[0].frame_id, 'scene_01');
@@ -237,7 +248,7 @@ try {
   });
   const scenePreviewOperation = await waitForOperation(scenePreviewStarted.structuredContent.operation_id);
   assert.equal(scenePreviewOperation.structuredContent.result.preview_path, '/tmp/scene-01-draft-1.mp4');
-  assert.equal(scenePreviewOperation.structuredContent.result.layout_qa.checked_count, 5);
+  assert.equal(scenePreviewOperation.structuredContent.result.layout_qa.checked_count, 1);
   assert.equal(calls.find(call => call.name === 'createFramePreview').payload.run_layout_qa, true);
 
   const videoPreviewStarted = await client.callTool({

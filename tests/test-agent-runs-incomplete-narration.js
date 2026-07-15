@@ -275,12 +275,12 @@ const agentRuns = require('../server/services/agent/agentRuns');
             scenes: [
               { index: 1, narration_text: 'Claude Code 之父的 CLAUDE.md 只有两条规则：提 PR 自动合并，提 PR 发审批频道。' },
               { index: 2, narration_text: '我第一反应是：我那几千 token 的配置，是不是写重了。' },
-              { index: 3, narration_text: '他的建议很狠：配置堆到几千 token，就删掉重写，用最少规则把模型拉回正轨。' },
-              { index: 4, narration_text: '这和我们的本能相反。我们总想先堆规则，但那往往只是过度工程。' },
-              { index: 5, narration_text: '他们真正的规则长在代码库里，由团队每周共建，而不是一个人闷头写巨长配置。' },
-              { index: 6, narration_text: 'Claude Code 坚持 CLI 也是同一套逻辑：模型变化太快，壳越轻越不容易过时。' },
-              { index: 7, narration_text: '连排查内存泄漏，他也承认队友把问题丢给 Claude Code 后，工具自己写分析脚本更快。' },
-              { index: 8, narration_text: '所以重点不是堆配置，而是保持轻，让更强的模型接管更多判断。' },
+              { index: 3, narration_text: '他的建议是：配置太长就重写，用最少规则把模型拉回正轨。' },
+              { index: 4, narration_text: '我们总想堆规则，但那往往只是过度工程。' },
+              { index: 5, narration_text: '真正的规则由团队在代码库里持续共建。' },
+              { index: 6, narration_text: 'CLI 壳越轻，越不容易被模型变化拖过时。' },
+              { index: 7, narration_text: '排查内存泄漏时，工具自己写分析脚本反而更快。' },
+              { index: 8, narration_text: '重点不是堆配置，而是让更强模型接管判断。' },
             ],
           }),
         };

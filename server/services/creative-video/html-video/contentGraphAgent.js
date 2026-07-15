@@ -48,12 +48,17 @@ function summarizeCreativeContextForPrompt(creativeContext = {}) {
     const text = compactText(value, maxLength);
     if (text) lines.push(`${label}：${text}`);
   });
+  if (Object.keys(objectOrEmpty(researchContext.coverage)).length) {
+    lines.push(`联网覆盖：${compactText(JSON.stringify(researchContext.coverage), 700)}`);
+  }
   const researchSources = Array.isArray(researchContext.sources) ? researchContext.sources.slice(0, 5) : [];
   researchSources.forEach((source, index) => {
     const title = compactText(source?.title || `来源${index + 1}`, 120);
     const url = compactText(source?.url, 200);
     const publishedAt = compactText(source?.published_at, 60);
-    if (url) lines.push(`研究来源 ${index + 1}：${title}；发布时间=${publishedAt || '未知'}；${url}`);
+    const evidence = compactText(source?.evidence, 40);
+    const summary = compactText(source?.summary, 400);
+    if (url) lines.push(`研究来源 ${index + 1}：${title}；发布时间=${publishedAt || '未知'}；证据=${evidence || '摘要'}；${summary}；${url}`);
   });
   const assets = Array.isArray(assetContext.assets) ? assetContext.assets.slice(0, 8) : [];
   if (assets.length) {
@@ -102,12 +107,21 @@ function sceneIdsFromSpec(sceneSpec = {}) {
     .filter(Boolean);
 }
 
+/**
+ * 将创作模式映射为内容图意图，未指定时保持历史 promo 行为。
+ */
+function resolveContentIntent(value = '') {
+  const intent = String(value || '').trim();
+  return ['news', 'analysis', 'discussion'].includes(intent) ? intent : 'promo';
+}
+
 function buildContentGraphPrompt({ sceneSpec = {}, creativeContext = {}, target = {} } = {}) {
   const scenes = Array.isArray(sceneSpec.scenes) ? sceneSpec.scenes : [];
   const expectedSceneIds = sceneIdsFromSpec(sceneSpec);
   const targetDuration = target.duration_sec || target.durationSec || target.duration || sceneSpec.target_duration_sec || '';
   const aspectRatio = target.aspect_ratio || target.aspectRatio || sceneSpec.aspect_ratio || sceneSpec.aspectRatio || '';
   const language = target.language || target.lang || 'zh-CN';
+  const contentIntent = resolveContentIntent(target.content_mode || target.contentMode);
   const isSourceUrl = creativeContext?.input?.mode === 'source_url'
     || creativeContext?.source_context?.kind === 'source_url';
   const sourceUrlGroundingRequirements = isSourceUrl ? [
@@ -134,7 +148,11 @@ function buildContentGraphPrompt({ sceneSpec = {}, creativeContext = {}, target 
     `目标：aspect ratio=${aspectRatio || '未指定'}，duration=${targetDuration || '未指定'}，language=${language}。`,
     '',
     '输出要求：',
-    '- 只输出一个 JSON 对象，必须包含 synopsis、nodes、edges。',
+    '- 只输出一个 JSON 对象，必须包含 intent、synopsis、nodes、edges。',
+    `- intent 必须是 ${contentIntent}。analysis/discussion 不得降级成产品宣传片。`,
+    ...(contentIntent === 'analysis' ? [
+      '- analysis 节点必须保留 scene_spec 中的具体日期、数字、名称、价格、适用范围、案例和明确判断，不要改写成可套用到任何产品的营销词。',
+    ] : []),
     '- 每个 intended frame 对应一个 node，nodes 必须按成片叙事顺序排列。',
     `- nodes.length 必须严格等于 scene_spec.scenes.length：${scenes.length}。`,
     `- nodes 的 id 必须逐一严格等于 scene_spec.scenes 的 id：${expectedSceneIds.join(' -> ') || '（无）'}。`,
@@ -145,12 +163,17 @@ function buildContentGraphPrompt({ sceneSpec = {}, creativeContext = {}, target 
     '- data node 的 data 必须形如 {"title":"string","unit":"optional shared unit","items":[{"label":"string","value":123}]}。',
     '- 数据帧必须使用可比较的同一单位，数值要合理；不能把不同口径的数据强行放进同一组。',
     '- 必须保留源素材事实，不要编造来源中没有的精确数字、机构、时间、版本、功能或结论。',
+    '- coverage.status=weak 且 first_party=0 时，搜索未命中只能写成“本次检索未获得第一方页面”，禁止改写成“官方未确认”“官方未发布”或“并非官方”。',
+    '- 不确定性说明最多出现在 2 个节点，专门解释证据边界的节点最多 1 个；其余节点必须推进事实、影响、方法或行动价值。',
+    '- 如果 scene_spec 的定位仍属编辑假设，必须保留“先测、对比、建议”等限定词，禁止压缩成“复杂用A、脚本用B”式确定选型。',
+    '- 有效任务成本只能写成“全部调用总成本÷成功交付数量”或“单次平均成本÷成功率”，不得重复乘尝试次数。',
     ...sourceUrlGroundingRequirements,
     '- 不要让对象值变成字符串 [object Object]；对象必须提取有意义的 label/text/value。',
     '- 中文素材默认生成中文可见文本，技术名词和品牌名可保留英文。',
     '',
     'JSON schema 草案：',
     JSON.stringify({
+      intent: contentIntent,
       synopsis: 'string',
       nodes: [
         {
@@ -320,18 +343,32 @@ function normalizeAssetRefs(value, creativeContext = {}) {
     .slice(0, 1);
 }
 
-function normalizeContentGraph(graph, sceneSpec = {}, creativeContext = {}) {
+function normalizeContentGraph(graph, sceneSpec = {}, creativeContext = {}, target = {}) {
   const source = objectOrEmpty(graph);
   const rawNodes = Array.isArray(source.nodes) ? source.nodes : [];
   if (!rawNodes.length) {
     return { success: false, message: 'content graph 缺少 nodes。' };
   }
+  const scenesById = new Map((Array.isArray(sceneSpec?.scenes) ? sceneSpec.scenes : [])
+    .map(scene => [normalizeId(scene?.id, ''), scene]));
+  const editorialKeys = [
+    'viewer_gain', 'viewer_action', 'content_role', 'visual_direction',
+    'evidence_points', 'update_subject', 'update_detail', 'update_time',
+    'timeliness_status', 'source_attribution', 'workflow_impact', 'test_action',
+  ];
   const nodes = rawNodes.map((node, index) => {
     const kind = ['text', 'data', 'entity'].includes(String(node?.kind || '').trim())
       ? String(node.kind).trim()
       : 'text';
     const id = normalizeId(node?.id, `scene_${String(index + 1).padStart(2, '0')}`);
     const duration = Number(node?.durationSec ?? node?.duration_sec ?? node?.duration);
+    const scene = scenesById.get(id);
+    const metadata = { ...objectOrEmpty(node?.metadata) };
+    // The graph model is allowed to focus on layout, but editorial promises
+    // come from scene_spec and must survive even when the model omits them.
+    editorialKeys.forEach(key => {
+      if (scene?.[key] != null && scene[key] !== '') metadata[key] = scene[key];
+    });
     const normalized = {
       id,
       kind,
@@ -339,7 +376,7 @@ function normalizeContentGraph(graph, sceneSpec = {}, creativeContext = {}) {
       durationSec: Number.isFinite(duration) && duration > 0
         ? duration
         : contentGraph.DEFAULT_FRAME_DURATION_SEC,
-      metadata: objectOrEmpty(node?.metadata),
+      metadata,
     };
     if (kind === 'data') {
       normalized.data = normalizeData(node?.data || node);
@@ -365,7 +402,7 @@ function normalizeContentGraph(graph, sceneSpec = {}, creativeContext = {}) {
 
   const normalizedGraph = {
     schemaVersion: 1,
-    intent: compactText(source.intent, 60) || 'promo',
+    intent: resolveContentIntent(target.content_mode || target.contentMode || source.intent),
     synopsis: compactText(source.synopsis || sceneSpec.title || '', 300),
     nodes,
     edges,
@@ -380,7 +417,7 @@ function normalizeContentGraph(graph, sceneSpec = {}, creativeContext = {}) {
 function parseContentGraphResponse(text, sceneSpec = {}, options = {}) {
   try {
     const parsed = tolerantParseJson(text);
-    const normalized = normalizeContentGraph(parsed, sceneSpec, options.creativeContext);
+    const normalized = normalizeContentGraph(parsed, sceneSpec, options.creativeContext, options.target);
     return normalized.success ? normalized : {
       ...normalized,
       diagnostics: [contentGraphDiagnostic(normalized.message || 'content graph 校验失败。', { errors: normalized.errors || [] })],
@@ -420,4 +457,5 @@ module.exports = {
   parseContentGraphResponse,
   normalizeContentGraph,
   summarizeCreativeContextForPrompt,
+  resolveContentIntent,
 };

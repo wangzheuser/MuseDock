@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import {
   ASPECT_RATIOS,
+  CONTENT_MODE_OPTIONS,
   CREATIVE_FPS_OPTIONS,
   DEFAULT_TTS_VOICE,
   getTemplateDisplayName,
@@ -134,6 +135,7 @@ function CreativeRunSettingsPanel({
     [templates, currentAspectRatio],
   );
   const summaryItems = [
+    { label: '类型', value: CONTENT_MODE_OPTIONS.find(option => option.value === defaults.contentMode)?.label || '解读' },
     { label: '画幅', value: currentAspectRatio },
     { label: '时长', value: `${defaults.targetDurationSec || 60}s` },
     { label: '帧率', value: `${defaults.fps || 30} FPS` },
@@ -197,6 +199,21 @@ function CreativeRunSettingsPanel({
       {open ? (
         <div className="grid gap-3 border-t border-[#edf0f5] px-3 py-3">
           <div className="grid grid-cols-2 gap-3 max-[720px]:grid-cols-1">
+            <label className="grid gap-1.5">
+              <span className="text-xs font-semibold text-[#5f6876]">内容类型</span>
+              <select
+                value={defaults.contentMode}
+                disabled={isBusy}
+                onChange={event => updateDefaults({ contentMode: event.target.value })}
+                className={FIELD_CLASS}
+              >
+                {CONTENT_MODE_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <span className="text-[11px] leading-relaxed text-[#7b8492]">解读模式默认分析话题价值，不强制判断消息真假。</span>
+            </label>
+
             <label className="grid gap-1.5">
               <span className="text-xs font-semibold text-[#5f6876]">画幅</span>
               <select

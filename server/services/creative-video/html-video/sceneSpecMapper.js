@@ -70,6 +70,18 @@ function buildNode(scene, sourceScene = scene) {
     },
   };
 
+  // Editorial fields survive into the graph so frame agents can turn each
+  // scene's promised viewer gain into visible, specific copy.
+  [
+    'viewer_gain', 'viewer_action', 'content_role', 'visual_direction',
+    'evidence_points', 'update_subject', 'update_detail', 'update_time',
+    'timeliness_status', 'source_attribution', 'workflow_impact', 'test_action',
+  ].forEach((key) => {
+    if (sourceScene[key] != null && sourceScene[key] !== '') {
+      base.metadata[key] = clone(sourceScene[key]);
+    }
+  });
+
   if (base.kind === 'data') {
     return {
       ...base,
@@ -87,16 +99,21 @@ function buildNode(scene, sourceScene = scene) {
   };
 }
 
-function mapSceneSpecToContentGraph(rawSceneSpec) {
+/**
+ * 将场景脚本映射为内容图，并在明确提供创作模式时保留该意图。
+ */
+function mapSceneSpecToContentGraph(rawSceneSpec, options = {}) {
   const sortedRaw = {
     ...(rawSceneSpec || {}),
     scenes: [...((rawSceneSpec && rawSceneSpec.scenes) || [])].sort(sceneSort),
   };
   const sceneSpec = normalizeSceneSpec(sortedRaw);
   const scenes = [...(sceneSpec.scenes || [])].sort(sceneSort);
+  const requestedIntent = String(options.content_mode || options.contentMode || '').trim();
+  const intent = ['news', 'analysis', 'discussion'].includes(requestedIntent) ? requestedIntent : 'promo';
   return {
     schemaVersion: 1,
-    intent: 'promo',
+    intent,
     synopsis: sceneSpec.title,
     nodes: scenes.map((scene, index) => buildNode(scene, sortedRaw.scenes[index] || scene)),
     edges: scenes.slice(0, -1).map((scene, index) => ({

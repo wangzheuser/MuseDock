@@ -46,6 +46,25 @@ async function run() {
   assert.equal(result.run.result.video_brief.target_duration_sec, 120);
   assert.match(result.run.result.comments_text, /真实用户痛点/);
   assert.equal(result.run.steps.find(step => step.id === 'comments').status, 'done');
+
+  let briefModelCalls = 0;
+  const briefResult = await agentRuns.generateDouyinRunHyperframesFreeformBrief(awemeId, result.run_id, {
+    rootDir,
+    skillContext: {
+      loadHyperframesSkillContext: async () => ({ success: true, prompt_context: '测试技能上下文' }),
+    },
+    aiTextModel: {
+      callTextModel: async () => {
+        briefModelCalls += 1;
+        return briefModelCalls === 1
+          ? { success: true, text: '{"title":"不完整"' }
+          : { success: true, text: JSON.stringify({ title: '重试成功', summary: '精简策划', storyboard: { scenes: [] } }) };
+      },
+    },
+  });
+  assert.equal(briefResult.success, true);
+  assert.equal(briefModelCalls, 2);
+  assert.equal(briefResult.hyperframes_freeform.brief.data.title, '重试成功');
   console.log('agent runs hyperframes freeform source tests passed');
 }
 

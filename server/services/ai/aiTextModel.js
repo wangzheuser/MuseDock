@@ -131,16 +131,37 @@ function getProviderError(rawResponse) {
   return '';
 }
 
+/**
+ * 清理第三方错误详情，避免把密钥或整页网关 HTML 暴露到任务状态与检查点。
+ */
 function sanitizeErrorDetail(detail, apiKey) {
   const text = normalizeString(detail);
   if (!text) return '';
+  const redacted = apiKey ? text.split(apiKey).join('[已隐藏]') : text;
+  if (/<!doctype\s+html|<html\b|<head\b|<body\b/i.test(redacted)) {
+    const gatewayCode = redacted.match(/\b(5\d{2})\s*:\s*[^<\r\n]+/i)?.[1]
+      || redacted.match(/\b(?:error\s*)?(5\d{2})\b/i)?.[1]
+      || '';
+    if (gatewayCode) return `第三方模型网关响应异常（HTTP ${gatewayCode}）。`;
+  }
+  return redacted.slice(0, 500);
+}
+
+/**
+ * 仅从成功响应字段中移除密钥，不裁剪或改写模型正文。
+ */
+function redactApiKey(value, apiKey) {
+  const text = String(value ?? '');
   return apiKey ? text.split(apiKey).join('[已隐藏]') : text;
 }
 
+/**
+ * 清理原始响应里的密钥，同时保留 choices.message.content 等正常生成内容。
+ */
 function sanitizeRawResponse(value, apiKey) {
   if (!apiKey || value == null) return value;
   if (typeof value === 'string') {
-    return sanitizeErrorDetail(value, apiKey);
+    return redactApiKey(value, apiKey);
   }
   if (Array.isArray(value)) {
     return value.map(item => sanitizeRawResponse(item, apiKey));
@@ -228,7 +249,7 @@ function wait(ms) {
 }
 
 function shouldRetryStatus(status) {
-  return [502, 503, 504].includes(Number(status));
+  return [408, 429, 502, 503, 504, 524].includes(Number(status));
 }
 
 function buildChatCompletionsBody({ modelId, messages, temperature, stream, tools, tool_choice, response_format }) {

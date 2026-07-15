@@ -57,12 +57,22 @@ async function createProjectDir({ rootDir, workflowId, runId } = {}) {
   return projectDir;
 }
 
+/**
+ * 通过同目录唯一临时文件原子写入 JSON，避免并行预览互相删除临时文件。
+ */
 async function saveJsonAtomic(filePath, value) {
   const dir = path.dirname(filePath);
-  const tempPath = path.join(dir, `${path.basename(filePath)}.tmp`);
+  const tempPath = path.join(
+    dir,
+    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString('hex')}.tmp`,
+  );
   await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-  await fs.rename(tempPath, filePath);
+  try {
+    await fs.writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+    await fs.rename(tempPath, filePath);
+  } finally {
+    await fs.rm(tempPath, { force: true }).catch(() => {});
+  }
 }
 
 async function saveProject(projectDir, project) {

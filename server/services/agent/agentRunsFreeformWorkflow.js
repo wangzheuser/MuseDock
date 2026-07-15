@@ -854,6 +854,22 @@
       },
       sceneTts: sceneTtsValue,
     });
+    const maxAudioDurationSec = targetDurationSec * 1.1;
+    if (timedPlan.status === 'timed' && Number(timedPlan.duration) > maxAudioDurationSec) {
+      return failHyperframesFreeformSection(
+        awemeId,
+        runId,
+        'audio',
+        `实际配音时长 ${Number(timedPlan.duration).toFixed(1)} 秒，超过目标 ${targetDurationSec} 秒；请压缩旁白或调整语速后再生成。`,
+        options,
+        {
+          operation_id: operationId,
+          audio_duration_sec: Number(timedPlan.duration),
+          target_duration_sec: targetDurationSec,
+          code: 'audio_duration_over_target',
+        },
+      );
+    }
     const audio = createFreeformAudioValue({
 
       sceneTtsValue,
@@ -1068,9 +1084,10 @@
 
         fetchImpl: options.fetchImpl,
 
-        maxRetries: options.maxRetries,
+        // Brief 超时必须有明确上限；失败后由工作流提供重试入口，不在后台重复等待。
+        maxRetries: 0,
 
-        requestTimeoutMs: 300000,
+        requestTimeoutMs: 90000,
 
         streamChunkTimeoutMs: 120000,
 
@@ -1138,7 +1155,10 @@
 
     try {
 
-      parsed = freeformAgent.parseFreeformBriefResponse(modelResult.text || modelResult.raw_output || '');
+      parsed = freeformAgent.parseFreeformBriefResponse(
+        modelResult.text || modelResult.raw_output || '',
+        options.briefOptions || {},
+      );
 
     } catch (error) {
 
@@ -1161,6 +1181,81 @@
         elapsedMeta(),
 
       );
+
+    }
+
+    if (!parsed.success) {
+
+      const rawText = String(modelResult.text || modelResult.raw_output || '');
+
+      logEvent(logger, 'warn', {
+
+        ...baseLog,
+
+        stage: 'parse_retry_started',
+
+        raw_text_preview: rawText.slice(0, 500),
+
+        raw_text_length: rawText.length,
+
+        ...elapsedMeta(),
+
+      });
+
+      try {
+
+        const retryResult = await modelService.callTextModel({
+
+          messages: [
+
+            ...messages,
+
+            {
+
+              role: 'user',
+
+              content: `上次输出未通过解析或内容价值检查：${parsed.message || '格式无效'}。请重新从头输出完整、精简、可被 JSON.parse 直接解析且严格满足原输出要求的 JSON 对象；不要输出 Markdown 或解释。`,
+
+            },
+
+          ],
+
+          temperature: 0.1,
+
+          stream: false,
+
+          fallbackToNonStreamOnGatewayTimeout: true,
+
+          configPath: options.configPath,
+
+          textConfig: options.textConfig,
+
+          fetchImpl: options.fetchImpl,
+
+          maxRetries: 0,
+
+          requestTimeoutMs: 90000,
+
+          logger,
+
+        });
+
+        if (retryResult.success) {
+
+          modelResult = retryResult;
+
+          parsed = freeformAgent.parseFreeformBriefResponse(
+            retryResult.text || retryResult.raw_output || '',
+            options.briefOptions || {},
+          );
+
+        }
+
+      } catch (error) {
+
+        logEvent(logger, 'warn', { ...baseLog, stage: 'parse_retry_failed', message: error.message || '重试失败', ...elapsedMeta() });
+
+      }
 
     }
 
@@ -1468,6 +1563,8 @@
 
       const latestExport = Array.isArray(result.project?.exports) ? result.project.exports.at(-1) : null;
 
+      const readyForEdit = result.ready_for_edit === true;
+
       const outputUrl = latestExport?.id
 
         ? buildHtmlVideoExportFileUrl(workflowId, latestExport.id)
@@ -1496,6 +1593,8 @@
 
           render_mode: renderMode,
 
+          ready_for_edit: readyForEdit,
+
           html_video_diagnostics: result.html_video_diagnostics || result.diagnostics || [],
 
           files: mapFreeformProjectFilesToDir((result.files || []).map(name => ({ name })), projectDir),
@@ -1522,7 +1621,7 @@
 
           ...current.render,
 
-          status: 'rendered',
+          status: readyForEdit ? 'pending' : 'rendered',
 
           output_path: result.output_path,
 
@@ -1530,7 +1629,7 @@
 
           render_mode: renderMode,
 
-          render_versions: [{
+          render_versions: readyForEdit ? (current.render?.render_versions || []) : [{
 
             id: `${runId}-html-video-lite`,
 
@@ -1546,7 +1645,7 @@
 
           }],
 
-          message: '渲染完成。',
+          message: readyForEdit ? '等待二次编辑后导出。' : '渲染完成。',
 
         },
 
@@ -1554,13 +1653,13 @@
 
           ...current.visual_inspect,
 
-          status: 'passed',
+          status: readyForEdit ? 'pending' : 'passed',
 
           report: result.visual_report,
 
           issues: result.visual_report?.issues || [],
 
-          message: '视觉质检通过。',
+          message: readyForEdit ? '导出后执行视觉质检。' : '视觉质检通过。',
 
         },
 

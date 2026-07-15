@@ -62,6 +62,117 @@ function isFrameProviderMissingText(result = {}) {
   return isProviderMissingText(result.message);
 }
 
+/**
+ * 判断失败是否适合用精简提示词重试并在连续失败后启用基础帧兜底。
+ */
+function shouldRetryInvalidFrameOutput(result = {}) {
+  if (isFrameProviderMissingText(result)) return true;
+  return ['html_document_extract_failed', 'html_validation_failed']
+    .includes(firstExplicitDiagnosticCode(result.diagnostics));
+}
+
+/**
+ * 判断帧模型调用是否为可恢复的网关/网络故障。
+ * 这类故障不应阻断整条可编辑工程，重试一次后使用基础帧继续生成。
+ */
+function isTransientFrameProviderFailure(result = {}) {
+  const text = [
+    result?.message,
+    result?.error,
+    ...(Array.isArray(result?.diagnostics)
+      ? result.diagnostics.map(item => item?.message || item?.user_message || item?.code)
+      : []),
+  ].filter(Boolean).join(' ');
+  return /HTTP\s*5(?:02|03|04|24)|(?:gateway|upstream|network|socket|connect|timed?\s*out|timeout|连接|网关|上游|超时)/i.test(text);
+}
+
+function escapeHtmlAttribute(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * 为资讯场景补齐可见来源和日期，避免事实只存在于旁白或 scene-spec 元数据中。
+ */
+function ensureUpdateSourceAttributionHtml(html, scene = {}, target = {}) {
+  const source = String(scene.source_attribution || scene.sourceAttribution || '').trim();
+  const date = String(scene.update_time || scene.updateTime || '').trim();
+  const original = String(html || '');
+  if (scene.content_role !== 'update' || (!source && !date) || !original.trim()) return original;
+  const visibleText = original
+    .replace(/<!--[^>]*-->/g, ' ')
+    .replace(/<(style|script|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, '');
+  const normalized = visibleText;
+  const sourceLabel = source.split(/[《(（\[]/, 1)[0].replace(/(?:官方)?(?:产品更新页面|产品页面|产品页|更新页面)/g, '官方页面').trim() || source;
+  const hasSource = !source || normalized.includes(sourceLabel.replace(/\s+/g, ''));
+  const hasDate = !date || normalized.includes(date.replace(/\s+/g, ''));
+  if (hasSource && hasDate) return original;
+  const resolution = frameHtmlAgent.resolveResolution(target);
+  const dateParts = date.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  const dateLabel = dateParts
+    ? `${dateParts[1]}-${String(dateParts[2]).padStart(2, '0')}-${String(dateParts[3]).padStart(2, '0')}`
+    : date;
+  const label = [sourceLabel ? `来源：${sourceLabel}` : '', dateLabel ? `日期：${dateLabel}` : ''].filter(Boolean).join('｜');
+  const overlay = `<div data-role="source-attribution" data-text-key="source" style="position:absolute;left:72px;right:72px;top:${resolution.height >= 1500 ? 500 : 180}px;z-index:30;color:rgba(226,232,240,.86);font:600 16px/1.35 -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif;letter-spacing:.02em;text-shadow:0 2px 8px rgba(0,0,0,.45);pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtmlAttribute(label)}</div>`;
+  return /<\/body>/i.test(original)
+    ? original.replace(/<\/body>/i, `${overlay}</body>`)
+    : `${original}${overlay}`;
+}
+
+/**
+ * 清理分析场景中未被证据支持的装饰性指标，防止观众误读为实测数据。
+ */
+function sanitizeAnalysisMetricVisuals(html, scene = {}) {
+  const original = String(html || '');
+  const role = String(scene.content_role || '').trim();
+  if (!['analysis', 'action'].includes(role) || !original.trim()) return original;
+  const protectedBlocks = [];
+  const protectedHtml = original.replace(/<(style|script|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, block => {
+    const token = `___MUSEDOCK_PROTECTED_${protectedBlocks.length}___`;
+    const normalizedBlock = /<style\b/i.test(block)
+      ? block.replace(/((?:\.bar|\.progress)[^{}]*\{[^}]*?width:)\s*\d+(?:\.\d+)?%/gi, '$1 100%')
+      : block;
+    protectedBlocks.push(normalizedBlock);
+    return token;
+  });
+  const cleaned = protectedHtml.replace(/>([^<]+)</g, (match, text) => {
+    const nextText = String(text)
+      .replace(/\+?\d+(?:\.\d+)?\s*(?:×|x|%|倍)/g, '示意')
+      .replace(/\bTOP\s*\d+\b/g, '示意')
+      .replace(/\bMAX\b/g, '示意');
+    return `>${nextText}<`;
+  });
+  const equalized = cleaned.replace(/((?:\.bar|\.progress)[^{}]*\{[^}]*?width:)\s*\d+(?:\.\d+)?%/gi, '$1 100%');
+  const restored = equalized.replace(/___MUSEDOCK_PROTECTED_(\d+)___/g, (_, index) => protectedBlocks[Number(index)] || '');
+  return restored;
+}
+
+function normalizeGeneratedFrameHtml(html, scene, target) {
+  const positioned = String(html || '').replace(/(<[^>]*data-role=["']source-attribution["'][^>]*style=")([^"]*)("[^>]*>)/gi, (_, prefix, style, suffix) => {
+    const nextStyle = style
+      .replace(/bottom\s*:\s*[-\d.]+px\s*;?/gi, '')
+      .replace(/top\s*:\s*[-\d.]+px\s*;?/gi, '')
+      .replace(/font:\s*600\s*22px/gi, 'font:600 16px')
+      .concat('top:500px;');
+    return `${prefix}${nextStyle}${suffix}`;
+  }).replace(/(<[^>]*data-role=["']measurement-disclaimer["'][^>]*style=")([^"]*)("[^>]*>)/gi, (_, prefix, style, suffix) => {
+    const nextStyle = style
+      .replace(/bottom\s*:\s*[-\d.]+px\s*;?/gi, '')
+      .replace(/top\s*:\s*[-\d.]+px\s*;?/gi, '')
+      .replace(/font:\s*600\s*22px/gi, 'font:600 18px')
+      .concat('top:1800px;');
+    return `${prefix}${nextStyle}${suffix}`;
+  });
+  const sanitized = sanitizeAnalysisMetricVisuals(positioned, scene);
+  return ensureUpdateSourceAttributionHtml(sanitized, scene, target);
+}
+
 function frameFallbackDiagnostic(frameId, details = {}) {
   return createDiagnostic({
     code: 'fallback_frame_html_used',
@@ -168,6 +279,7 @@ async function runFrameHtmlPhase(ctx) {
   let visualStyleReferenceHtml = '';
   const frameResults = [];
   const frameJobs = [];
+  const unresolvedLayoutIssues = [];
   let completedFrameHtmlCount = 0;
   const concurrency = Math.min(5, Math.max(1, Math.round(Number(frameHtmlConcurrency) || FRAME_HTML_CONCURRENCY)));
   const frameHtmlRunsInParallel = concurrency > 1;
@@ -216,7 +328,7 @@ async function runFrameHtmlPhase(ctx) {
       visualStyleReferenceHtml: styleReferenceHtml,
       previousFrameHtml: '',
     });
-    if (!htmlResult.success && isFrameProviderMissingText(htmlResult)) {
+    if (!htmlResult.success && (shouldRetryInvalidFrameOutput(htmlResult) || isTransientFrameProviderFailure(htmlResult))) {
       const previousFailedHtml = htmlResult.failed_html;
       const previousDiagnostics = Array.isArray(htmlResult.diagnostics) ? htmlResult.diagnostics : [];
       htmlResult = await frameHtmlAgent.generateFrameHtml({
@@ -247,7 +359,7 @@ async function runFrameHtmlPhase(ctx) {
         visualStyleReferenceHtml: styleReferenceHtml,
         previousFrameHtml: '',
       });
-      if (!htmlResult.success && isFrameProviderMissingText(htmlResult)) {
+      if (!htmlResult.success) {
         const failedHtmlPath = await writeFailedFrameHtml(projectDir, sceneId, htmlResult.failed_html || previousFailedHtml);
         const warning = frameFallbackDiagnostic(node.id || sceneId, {
           ...(failedHtmlPath ? { failed_html_path: failedHtmlPath } : {}),
@@ -268,6 +380,10 @@ async function runFrameHtmlPhase(ctx) {
           fallbackDiagnostic: warning,
         };
       }
+    }
+    // 先规范来源和指标，再做布局 QA，避免后置注入绕过遮挡检查。
+    if (htmlResult.success && htmlResult.html) {
+      htmlResult.html = normalizeGeneratedFrameHtml(htmlResult.html, scene, templateRenderTarget);
     }
     if (
       htmlResult.success
@@ -335,6 +451,10 @@ async function runFrameHtmlPhase(ctx) {
           }
         }
         if (unresolved.length) {
+          unresolvedLayoutIssues.push(...unresolved.map(issue => ({
+            ...issue,
+            frame_id: node.id || sceneId,
+          })));
           diagnostics.push(createDiagnostic({
             code: 'frame_layout_qa_unresolved',
             stage: 'ai-frame-html',
@@ -360,6 +480,9 @@ async function runFrameHtmlPhase(ctx) {
         });
       }
     }
+    if (htmlResult.success && htmlResult.html) {
+      htmlResult.html = normalizeGeneratedFrameHtml(htmlResult.html, scene, templateRenderTarget);
+    }
     return { ...job, htmlResult };
   };
 
@@ -378,10 +501,26 @@ async function runFrameHtmlPhase(ctx) {
     });
     if (reuse.reuse) {
       const durationSec = trustedSceneDuration(scene || {}, node);
+      const normalizedReuseHtml = normalizeGeneratedFrameHtml(reuse.html, scene, templateRenderTarget);
+      let htmlPath = reuse.html_path;
+      if (normalizedReuseHtml !== reuse.html) {
+        const captions = mediaOptions.generateCaptions !== false && scene
+          ? normalizeCaptions(scene, durationSec)
+          : [];
+        const rewritten = await projectStore.writeRawFrameHtml({
+          projectDir,
+          sceneId,
+          order: index + 1,
+          html: normalizedReuseHtml,
+          captions,
+          durationSec,
+        });
+        htmlPath = rewritten.html_path;
+      }
       nodes[index] = {
         ...node,
         durationSec,
-        html_path: reuse.html_path,
+        html_path: htmlPath,
       };
       contentGraph = {
         ...contentGraph,
@@ -392,7 +531,7 @@ async function runFrameHtmlPhase(ctx) {
         markCheckpointStage(current, 'frame_html', { status: 'partial' });
         return current;
       });
-      if (!visualStyleReferenceHtml) visualStyleReferenceHtml = reuse.html;
+      if (!visualStyleReferenceHtml) visualStyleReferenceHtml = normalizedReuseHtml;
       completedFrameHtmlCount += 1;
       await report(onProgress, {
         type: 'html_video_frame_html_done',
@@ -589,6 +728,18 @@ async function runFrameHtmlPhase(ctx) {
   }
   project = await projectStore.writeProjectJson(projectDir, current => {
     current.content_graph = contentGraph;
+    if (unresolvedLayoutIssues.length) {
+      current.layout_qa_reports = Array.isArray(current.layout_qa_reports) ? current.layout_qa_reports : [];
+      current.layout_qa_reports.push({
+        id: `layout_qa_${String(current.layout_qa_reports.length + 1).padStart(4, '0')}`,
+        created_at: new Date().toISOString(),
+        frame_id: null,
+        success: false,
+        issues: unresolvedLayoutIssues,
+        checked_count: nodes.length,
+        skipped_count: 0,
+      });
+    }
     markCheckpointStage(current, 'frame_html', { status: 'done' });
     return current;
   });
@@ -598,7 +749,11 @@ async function runFrameHtmlPhase(ctx) {
 
 module.exports = {
   runFrameHtmlPhase,
+  isTransientFrameProviderFailure,
   isProviderMissingText,
+  ensureUpdateSourceAttributionHtml,
+  sanitizeAnalysisMetricVisuals,
+  normalizeGeneratedFrameHtml,
   FRAME_HTML_CONCURRENCY,
   FRAME_HTML_MODEL_OPTIONS,
 };

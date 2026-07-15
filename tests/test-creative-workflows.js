@@ -155,6 +155,8 @@ async function testCreatesAndRunsTextWorkflow() {
   assert.equal(calls[3].options.projectOptions.creative_context.asset_context.status, 'empty');
   assert.equal(calls[3].options.useHtmlVideoLiteWorkflow, true);
   assert.equal(calls[3].options.workflowId, WORKFLOW_ID);
+  assert.equal(calls[3].options.projectOptions.content_mode, 'analysis');
+  assert.equal(calls[3].options.projectOptions.auto_export, false);
   assert.equal(calls[0].options.rootDir, mediaRoot);
 
   const mediaPaths = mediaPipeline.getMediaPaths(created.aweme_id, mediaRoot);
@@ -193,6 +195,21 @@ async function testPersistsActualSubmittedPromptSnapshot() {
   const persisted = readJson(getWorkflowPath(WORKFLOW_ID, rootDir));
   assert.equal(persisted.prompt_snapshot.submitted_prompt, submittedPrompt);
   assert.equal(persisted.prompt_snapshot.origin, 'guided_edited');
+}
+
+async function testParsesExplicitPromptCanvasAndDuration() {
+  const { rootDir, mediaRoot } = createTempDirs();
+  const { services } = createFakeServices({
+    services: { idFactory: () => '202606121200000099' },
+  });
+  const created = await createCreativeWorkflow({
+    input: '制作一条30秒、9:16的中文 AI 资讯解读',
+    useResearch: false,
+  }, { rootDir, mediaRoot, services });
+  assert.equal(created.success, true);
+  const persisted = readJson(getWorkflowPath(created.workflow_id, rootDir));
+  assert.equal(persisted.target.duration_sec, 30);
+  assert.equal(persisted.target.aspect_ratio, '9:16');
 }
 
 async function testUsesConciseGuidedResearchQuery() {
@@ -2460,6 +2477,7 @@ async function run() {
   await testRunWorkflowPersistsResearchModelCalls();
   await testCreatesAndRunsTextWorkflow();
   await testPersistsActualSubmittedPromptSnapshot();
+  await testParsesExplicitPromptCanvasAndDuration();
   await testUsesConciseGuidedResearchQuery();
   await testCreatesAndRunsSourceUrlWorkflow();
   await testSourceUrlWorkflowRunsSourceImageAnalysisWhenEnabled();

@@ -2,6 +2,12 @@ export const ASPECT_RATIOS = ['9:16', '16:9', '1:1', '4:5'];
 
 export const CREATIVE_FPS_OPTIONS = [30, 60];
 
+export const CONTENT_MODE_OPTIONS = [
+  { value: 'news', label: '资讯' },
+  { value: 'analysis', label: '解读' },
+  { value: 'discussion', label: '讨论' },
+];
+
 export const DEFAULT_TTS_VOICE = 'mimo_default';
 
 export const FALLBACK_TTS_VOICES = [
@@ -29,6 +35,7 @@ export const DEFAULT_CREATIVE_DEFAULTS = {
     '4:5': '',
   },
   lockTemplate: false,
+  contentMode: 'analysis',
   useResearch: true,
   generateAudio: true,
   autoSfxEnabled: true,
@@ -90,6 +97,9 @@ export function normalizeCreativeDefaults(defaults = {}) {
       ...(source.templateByAspectRatio || {}),
     },
     fps: CREATIVE_FPS_OPTIONS.includes(fps) ? fps : DEFAULT_CREATIVE_DEFAULTS.fps,
+    contentMode: CONTENT_MODE_OPTIONS.some(option => option.value === source.contentMode)
+      ? source.contentMode
+      : DEFAULT_CREATIVE_DEFAULTS.contentMode,
     playbackSpeed,
     ttsVoice: String(source.ttsVoice || DEFAULT_TTS_VOICE).trim() || DEFAULT_TTS_VOICE,
   };

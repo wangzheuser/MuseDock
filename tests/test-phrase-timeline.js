@@ -35,6 +35,20 @@ function run() {
     '规则是什么',
   ]);
 
+  const productNamePhrases = phraseTimeline.splitChineseCaptionIntoPhrases(
+    '热点检索改写用Luna或Terra，Codex或能在ChatGPT操作无接口软件。'
+  );
+  assert.equal(productNamePhrases.join(''), '热点检索改写用Luna或TerraCodex或能在ChatGPT操作无接口软件');
+  assert.equal(productNamePhrases.some(text => /^(?:rra|T操作)/.test(text)), false);
+  assert.ok(productNamePhrases.some(text => text.includes('Terra')));
+  assert.ok(productNamePhrases.some(text => text.includes('ChatGPT')));
+
+  const noOrphanPhrases = phraseTimeline.splitChineseCaptionIntoPhrases(
+    'Luna定位和价格仅为媒体说法',
+  );
+  assert.equal(noOrphanPhrases.at(-1), '说法');
+  assert.equal(noOrphanPhrases.some(text => [...text].length === 1), false);
+
   const blocks = phraseTimeline.buildPhraseBlocksFromCaptions([
     {
       index: 3,

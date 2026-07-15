@@ -5,13 +5,17 @@ const creativeWorkflowTasks = require('./services/creative/creativeWorkflowTasks
 const PORT = Number(process.env.MUSEDOCK_PORT) || 3000;
 // 默认只监听本机；需要局域网访问时显式设置 MUSEDOCK_HOST=0.0.0.0。
 const HOST = process.env.MUSEDOCK_HOST || '127.0.0.1';
+const LONG_REQUEST_TIMEOUT_MS = Math.max(
+  300000,
+  Number(process.env.MUSEDOCK_HTTP_REQUEST_TIMEOUT_MS) || 20 * 60 * 1000,
+);
 
 async function runStartupRecovery() {
   await creativeWorkflowTasks.recoverOrphanedWorkflows();
   await creativeWorkflows.recoverStaleWorkflowsOnStartup();
 }
 
-app.listen(PORT, HOST, () => {
+const server = app.listen(PORT, HOST, () => {
   console.log(`\n====================================`);
   console.log(`  MuseDock server started`);
   console.log(`  Open: http://localhost:${PORT}`);
@@ -26,3 +30,7 @@ app.listen(PORT, HOST, () => {
     console.error('[startup] 清理卡死的创作任务失败:', err.message);
   });
 });
+
+// 全片预览和导出可能超过 Node 默认的五分钟请求窗口。
+server.requestTimeout = LONG_REQUEST_TIMEOUT_MS;
+server.timeout = LONG_REQUEST_TIMEOUT_MS;

@@ -5,15 +5,34 @@ function roundTime(value) {
   return Math.round(Number(value || 0) * 1000) / 1000;
 }
 
+/**
+ * 按显示长度切分短语，同时保留完整英文产品名、型号和数字单位。
+ */
 function splitLongPhrase(text, maxChars = 14) {
   const clean = String(text || '').replace(/\s+/g, ' ').trim();
   if (!clean) return [];
   if ([...clean].length <= maxChars) return [clean];
 
-  const chars = [...clean];
+  const tokens = clean.match(/[A-Za-z0-9][A-Za-z0-9._+#/\-]*|./gu) || [];
   const result = [];
-  for (let index = 0; index < chars.length; index += maxChars) {
-    result.push(chars.slice(index, index + maxChars).join('').trim());
+  let current = '';
+  for (const token of tokens) {
+    const next = current + token;
+    if (current && [...next].length > maxChars) {
+      result.push(current.trim());
+      current = token;
+      continue;
+    }
+    current = next;
+  }
+  if (current.trim()) result.push(current.trim());
+  if (result.length > 1 && [...result.at(-1)].length === 1) {
+    const previousChars = [...result.at(-2)];
+    if (previousChars.length > 1) {
+      // 避免把“说法”等双字词拆成上一行末字加单字孤行。
+      result[result.length - 2] = previousChars.slice(0, -1).join('');
+      result[result.length - 1] = `${previousChars.at(-1)}${result.at(-1)}`;
+    }
   }
   return result.filter(Boolean);
 }

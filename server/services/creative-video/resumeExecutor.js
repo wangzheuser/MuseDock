@@ -48,6 +48,37 @@ function frameIds(project) {
     .filter(Boolean);
 }
 
+/**
+ * 计算合成前必须补渲染的场景，避免恢复单帧后拿不完整的渲染检查点直接合成。
+ */
+async function frameIdsRequiredForCompose(projectDir, project, changedFrameIds = []) {
+  const changed = new Set(arrayOrEmpty(changedFrameIds).map(safeString).filter(Boolean));
+  const renderFrames = objectOrEmpty(project.generation_checkpoint?.stages?.render?.frames);
+  const required = [];
+  for (const frameId of frameIds(project)) {
+    if (changed.has(frameId)) {
+      required.push(frameId);
+      continue;
+    }
+    const checkpoint = objectOrEmpty(renderFrames[frameId]);
+    const relativePath = safeString(checkpoint.mp4_path);
+    if (checkpoint.status !== 'done' || !relativePath) {
+      required.push(frameId);
+      continue;
+    }
+    try {
+      const outputPath = path.isAbsolute(relativePath)
+        ? relativePath
+        : projectStore.resolveProjectPath(projectDir, relativePath);
+      const stat = await fs.stat(outputPath);
+      if (!stat.isFile()) required.push(frameId);
+    } catch {
+      required.push(frameId);
+    }
+  }
+  return required;
+}
+
 function failedFrameIds(project, stageId) {
   const frames = objectOrEmpty(project.generation_checkpoint?.stages?.[stageId]?.frames);
   return Object.entries(frames)
@@ -75,6 +106,27 @@ function configuredAction(services, name) {
 
 function hasCompletedRenderOutput(result = {}) {
   return Boolean(safeString(result.output_path || result.outputPath || result.output_url || result.outputUrl));
+}
+
+/**
+ * 判断恢复流程是否应停在可编辑工程，保持默认不自动导出的创作语义。
+ */
+function shouldStopAtEditableProject(workflow = {}) {
+  return workflow?.target?.auto_export === false;
+}
+
+/**
+ * 返回已修复的可编辑工程，不触发渲染、合成或正式导出。
+ */
+function editableProjectResult(projectDir, project, diagnostics = []) {
+  return {
+    success: true,
+    project,
+    project_dir: projectDir,
+    html_video_project_path: projectDir,
+    diagnostics: normalizeDiagnostics(diagnostics),
+    message: '可编辑视频工程已修复，未自动导出最终视频。',
+  };
 }
 
 async function emit(taskContext, event) {
@@ -255,12 +307,17 @@ async function retryFrameHtml(context) {
       };
     }
   }
+  if (shouldStopAtEditableProject(workflow)) {
+    return editableProjectResult(projectDir, nextProject);
+  }
+  // 单帧修复发生在首次渲染前时，其余场景仍是 pending；合成前必须一并补齐。
+  const renderFrameIds = await frameIdsRequiredForCompose(projectDir, nextProject, ids);
   return renderComposeInspect({
     workflowId,
     rootDir,
     projectDir,
     project: nextProject,
-    frameIds: ids,
+    frameIds: renderFrameIds,
     materialize: true,
     services,
     taskContext,
@@ -278,6 +335,9 @@ async function retryContentGraph(context, actionName) {
     taskContext: context.taskContext,
   });
   if (!actionResult.success) return actionResult;
+  if (shouldStopAtEditableProject(context.workflow)) {
+    return editableProjectResult(context.projectDir, actionResult.project, actionResult.diagnostics);
+  }
   return renderComposeInspect({
     workflowId: context.workflowId,
     rootDir: context.rootDir,
@@ -304,9 +364,16 @@ async function fallbackSceneSpecGraph(context) {
   }
   const project = {
     ...context.project,
-    content_graph: mapSceneSpecToContentGraph(sceneSpec),
+    // Preserve the original editorial intent when rebuilding a graph after a
+    // failed render; otherwise analysis clips silently become promo clips.
+    content_graph: mapSceneSpecToContentGraph(sceneSpec, {
+      contentMode: context.project?.content_graph?.intent,
+    }),
   };
   const saved = await projectStore.saveProject(context.projectDir, project);
+  if (shouldStopAtEditableProject(context.workflow)) {
+    return editableProjectResult(context.projectDir, saved);
+  }
   return renderComposeInspect({
     workflowId: context.workflowId,
     rootDir: context.rootDir,
@@ -328,6 +395,9 @@ async function repairTimeline(context) {
   });
   if (!repaired.ok) return actionFailure(repaired.analysis?.message || '时间轴修复失败。', repaired.diagnostics);
   const saved = await projectStore.saveProject(context.projectDir, repaired.project);
+  if (shouldStopAtEditableProject(context.workflow)) {
+    return editableProjectResult(context.projectDir, saved, repaired.diagnostics);
+  }
   return renderComposeInspect({
     workflowId: context.workflowId,
     rootDir: context.rootDir,
@@ -369,6 +439,9 @@ async function repairScriptAndTimeline(context) {
   });
   if (!repaired.ok) return actionFailure(repaired.analysis?.message || '脚本与时间轴修复失败。', repaired.diagnostics);
   const saved = await projectStore.saveProject(context.projectDir, repaired.project);
+  if (shouldStopAtEditableProject(context.workflow)) {
+    return editableProjectResult(context.projectDir, saved, repaired.diagnostics);
+  }
   return renderComposeInspect({
     workflowId: context.workflowId,
     rootDir: context.rootDir,
@@ -442,6 +515,9 @@ async function restartProject(context) {
     },
   });
   if (!actionResult.success) return actionResult;
+  if (shouldStopAtEditableProject(context.workflow)) {
+    return editableProjectResult(context.projectDir, actionResult.project, actionResult.diagnostics);
+  }
   return renderComposeInspect({
     workflowId: context.workflowId,
     rootDir: context.rootDir,

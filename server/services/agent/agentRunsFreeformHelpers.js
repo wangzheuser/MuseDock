@@ -3,6 +3,7 @@ const path = require('path');
 const mediaPipeline = require('../mediaPipeline');
 const narrationBudget = require('../storyboard/storyboardNarrationBudget');
 const narrationQuality = require('../creative-video/narrationQuality');
+const FREEFORM_CHARS_PER_SECOND = 3.8;
 
 // ponytail: 两个纯小助手与 agentRuns 各持一份，避免为它们改全局调用点
 function firstPositiveNumber(...values) {
@@ -121,12 +122,16 @@ function replaceFreeformBriefScenes(brief = {}, scenes = [], narrationBudgetRepo
 
 function fitFreeformNarrationToBudget(brief = {}, scenes = [], targetDurationSec = 60) {
   const plan = freeformStoryboardPlanForBudget(brief, scenes, targetDurationSec);
-  const budget = narrationBudget.buildNarrationBudget(plan);
+  const budget = narrationBudget.buildNarrationBudget(plan, {
+    charsPerSecond: FREEFORM_CHARS_PER_SECOND,
+    totalTolerance: 1.05,
+    sceneTolerance: 1.1,
+  });
   if (budget.status !== 'too_long') {
     return { scenes, brief: replaceFreeformBriefScenes(brief, scenes, budget), budget, changed: false };
   }
   const target = firstPositiveNumber(targetDurationSec, 60);
-  const maxChars = Math.floor(target * narrationBudget.DEFAULT_CHARS_PER_SECOND);
+  const maxChars = Math.floor(target * FREEFORM_CHARS_PER_SECOND);
   const totalChars = scenes.reduce((sum, scene) => (
     sum + narrationBudget.countNarrationChars(scene?.narration_text || '')
   ), 0);
@@ -144,7 +149,11 @@ function fitFreeformNarrationToBudget(brief = {}, scenes = [], targetDurationSec
       target_duration_sec: retimedPlan.scenes[index]?.target_duration_sec || scene.target_duration_sec,
     }));
     const nextPlan = freeformStoryboardPlanForBudget(brief, nextScenes, target);
-    const nextBudget = narrationBudget.buildNarrationBudget(nextPlan);
+    const nextBudget = narrationBudget.buildNarrationBudget(nextPlan, {
+      charsPerSecond: FREEFORM_CHARS_PER_SECOND,
+      totalTolerance: 1.05,
+      sceneTolerance: 1.1,
+    });
     return {
       scenes: nextScenes,
       brief: replaceFreeformBriefScenes(brief, nextScenes, nextBudget),
@@ -199,6 +208,8 @@ function buildFreeformNarrationCompressionMessages({ scenes = [], budget = {}, t
         '2. 每段 narration_text 必须是完整中文口播，不能出现半句、残词、文件名截断或只有铺垫没有落点。',
         '3. 不要只按字符截断；必须改写压缩，保留主要信息和观点。',
         '4. 不要写镜头说明、音效、停顿或语速指令。',
+        '5. 必须保留“媒体称、负责人表示、先测、建议、可能”等归因和限定词，禁止把测试建议压缩成确定选型或把二手信息压缩成官方事实。',
+        '6. 成本公式只能写“总调用成本÷成功交付数量”或“单次平均成本÷成功率”，不得重复乘尝试次数。',
       ].join('\n'),
     },
   ];
@@ -239,6 +250,7 @@ function buildFreeformNarrationRepairMessages({ scenes = [], issues = [], transc
         '2. 不要删除信息，不要写镜头说明，不要写语气/停顿指令。',
         '3. 修复后的 narration_text 必须是完整、可直接配音的中文口播。',
         '4. 优先根据 transcript 补齐语义落点；如果原句是对照铺垫，必须补出“今天/现在/未来”的后半句。',
+        '5. 修复时不得删除“媒体称、先测、建议、可能”等事实边界词，也不得把编辑假设改成确定结论。',
       ].join('\n'),
     },
   ];
@@ -272,20 +284,76 @@ function applyFreeformNarrationRepairs(scenes = [], repairs = []) {
   };
 }
 
+/**
+ * 当模型网关不可用时按既有分镜预算裁到完整语句，保证配音流程仍可继续。
+ */
+function compressFreeformNarrationDeterministically(scenes = [], budget = {}, targetDurationSec = 60) {
+  const limits = new Map((Array.isArray(budget?.scenes) ? budget.scenes : [])
+    .map(scene => [Number(scene?.index), Number(scene?.max_recommended_chars || 0)]));
+  const nextScenes = scenes.map((scene, index) => {
+    const sceneIndex = Number(scene?.index || index + 1);
+    const maxChars = limits.get(sceneIndex)
+      || Math.max(8, Math.floor(Number(targetDurationSec || 60) * FREEFORM_CHARS_PER_SECOND / Math.max(1, scenes.length)));
+    return {
+      ...scene,
+      narration_text: narrationQuality.trimNarrationToCompleteBoundary(scene?.narration_text || '', maxChars),
+    };
+  });
+  const validation = narrationQuality.validateNarrationScenes(nextScenes);
+  if (!validation.ok) return { success: false, message: validation.message, issues: validation.issues };
+  const nextPlan = freeformStoryboardPlanForBudget({}, nextScenes, targetDurationSec);
+  const nextBudget = narrationBudget.buildNarrationBudget(nextPlan, {
+    charsPerSecond: FREEFORM_CHARS_PER_SECOND,
+    totalTolerance: 1.05,
+    sceneTolerance: 1.1,
+  });
+  if (nextBudget.status === 'too_long') {
+    return {
+      success: false,
+      message: `本地压缩后的旁白仍超过目标时长：预计 ${nextBudget.estimated_total_duration_sec} 秒，目标 ${nextBudget.target_duration_sec} 秒。`,
+      budget: nextBudget,
+    };
+  }
+  return { success: true, scenes: nextScenes, budget: nextBudget, fallback_used: true };
+}
+
 async function compressFreeformNarrationWithModel({ modelService, freeformAgent, scenes, budget, transcriptText, targetDurationSec } = {}) {
   const messages = buildFreeformNarrationCompressionMessages({ scenes, budget, transcriptText, targetDurationSec });
   const response = await modelService.callTextModel({ messages });
   if (!response || response.success === false) {
-    return { success: false, message: response?.message || '旁白压缩失败。' };
+    const fallback = compressFreeformNarrationDeterministically(scenes, budget, targetDurationSec);
+    return fallback.success ? fallback : { ...fallback, message: response?.message || fallback.message || '旁白压缩失败。' };
   }
   const parsed = freeformAgent.parseFreeformBriefResponse(response.text || response.content || '');
-  if (!parsed.success) return parsed;
+  if (!parsed.success) {
+    const fallback = compressFreeformNarrationDeterministically(scenes, budget, targetDurationSec);
+    return fallback.success ? fallback : parsed;
+  }
   const applied = applyFreeformNarrationRepairs(scenes, extractRepairScenes(parsed.brief));
   if (!applied.changed) return { success: false, message: '旁白压缩结果缺少可用 scenes。' };
-  const validation = narrationQuality.validateNarrationScenes(applied.scenes);
-  if (!validation.ok) return { success: false, message: validation.message, issues: validation.issues };
-  const nextPlan = freeformStoryboardPlanForBudget({}, applied.scenes, targetDurationSec);
-  const nextBudget = narrationBudget.buildNarrationBudget(nextPlan);
+  let nextScenes = applied.scenes;
+  let validation = narrationQuality.validateNarrationScenes(nextScenes);
+  if (!validation.ok) {
+    // 压缩模型偶尔会留下条件句或残句，直接复用旁白修复流程，避免整条任务失败。
+    const repair = await repairFreeformNarrationWithModel({
+      modelService,
+      freeformAgent,
+      scenes: nextScenes,
+      issues: validation.issues,
+      transcriptText,
+      targetDurationSec,
+    });
+    if (!repair.success) return repair;
+    nextScenes = repair.scenes;
+    validation = narrationQuality.validateNarrationScenes(nextScenes);
+    if (!validation.ok) return { success: false, message: validation.message, issues: validation.issues };
+  }
+  const nextPlan = freeformStoryboardPlanForBudget({}, nextScenes, targetDurationSec);
+  const nextBudget = narrationBudget.buildNarrationBudget(nextPlan, {
+    charsPerSecond: FREEFORM_CHARS_PER_SECOND,
+    totalTolerance: 1.05,
+    sceneTolerance: 1.1,
+  });
   if (nextBudget.status === 'too_long') {
     return {
       success: false,
@@ -293,7 +361,7 @@ async function compressFreeformNarrationWithModel({ modelService, freeformAgent,
       budget: nextBudget,
     };
   }
-  return { success: true, scenes: applied.scenes, budget: nextBudget };
+  return { success: true, scenes: nextScenes, budget: nextBudget };
 }
 
 async function repairFreeformNarrationWithModel({ modelService, freeformAgent, scenes, issues, transcriptText, targetDurationSec } = {}) {
@@ -321,6 +389,7 @@ module.exports = {
   buildFreeformNarrationRepairMessages,
   extractRepairScenes,
   applyFreeformNarrationRepairs,
+  compressFreeformNarrationDeterministically,
   compressFreeformNarrationWithModel,
   repairFreeformNarrationWithModel,
   pathExists,

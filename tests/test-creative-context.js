@@ -27,6 +27,7 @@ function testNormalizesTextInput() {
       aweme_id: '',
       douyin_url: '',
       source_url: '',
+      reference_urls: [],
       source_hint: '',
       ignored_url_count: 0,
       use_research: false,
@@ -219,6 +220,9 @@ function testNormalizesSourceUrls() {
   const chineseEnumerationComma = normalizeCreativeInput({
     input: 'https://a.com/1、https://b.com/2',
   });
+  const longBriefWithReference = normalizeCreativeInput({
+    input: `请围绕 GPT 模型更新做一期自媒体解读，重点分析社区为什么关注、不同观点、用户影响以及接下来值得观察的信号，不需要判断真假。参考资料：https://example.com/gpt`,
+  });
 
   assert.equal(wechat.success, true);
   assert.equal(wechat.data.mode, 'source_url');
@@ -233,15 +237,12 @@ function testNormalizesSourceUrls() {
   assert.equal(github.data.source_hint, '');
 
   assert.equal(multiple.success, true);
-  assert.equal(multiple.data.mode, 'source_url');
-  assert.equal(multiple.data.source_url, 'https://example.com/a');
-  assert.equal(multiple.data.source_hint, '先看 再看 https://example.com/b');
-  assert.equal(multiple.data.ignored_url_count, 1);
+  assert.equal(multiple.data.mode, 'text');
+  assert.deepEqual(multiple.data.reference_urls, ['https://example.com/a', 'https://example.com/b']);
 
   assert.equal(many.success, true);
-  assert.equal(many.data.mode, 'source_url');
-  assert.equal(many.data.source_url, 'https://a.com/1');
-  assert.equal(many.data.ignored_url_count, 3);
+  assert.equal(many.data.mode, 'text');
+  assert.equal(many.data.reference_urls.length, 4);
 
   assert.equal(externalVideoUrl.success, true);
   assert.equal(externalVideoUrl.data.mode, 'source_url');
@@ -252,10 +253,11 @@ function testNormalizesSourceUrls() {
   assert.equal(punctuated.data.source_hint, '请分析');
 
   assert.equal(chineseEnumerationComma.success, true);
-  assert.equal(chineseEnumerationComma.data.mode, 'source_url');
-  assert.equal(chineseEnumerationComma.data.source_url, 'https://a.com/1');
-  assert.equal(chineseEnumerationComma.data.source_hint, 'https://b.com/2');
-  assert.equal(chineseEnumerationComma.data.ignored_url_count, 1);
+  assert.equal(chineseEnumerationComma.data.mode, 'text');
+  assert.deepEqual(chineseEnumerationComma.data.reference_urls, ['https://a.com/1', 'https://b.com/2']);
+
+  assert.equal(longBriefWithReference.data.mode, 'text');
+  assert.deepEqual(longBriefWithReference.data.reference_urls, ['https://example.com/gpt']);
 }
 
 function testCountsAllIgnoredSourceUrlsWithoutFixedCap() {
@@ -268,10 +270,8 @@ function testCountsAllIgnoredSourceUrlsWithoutFixedCap() {
   });
 
   assert.equal(result.success, true);
-  assert.equal(result.data.mode, 'source_url');
-  assert.equal(result.data.source_url, 'https://example.com/1');
-  assert.equal(result.data.ignored_url_count, 24);
-  assert.match(result.data.source_hint, /https:\/\/example\.com\/25/);
+  assert.equal(result.data.mode, 'text');
+  assert.equal(result.data.reference_urls.length, 25);
 }
 
 function testCountsLargeSourceUrlListWithoutRepeatedExtraction() {
@@ -292,10 +292,8 @@ function testCountsLargeSourceUrlListWithoutRepeatedExtraction() {
     });
 
     assert.equal(result.success, true);
-    assert.equal(result.data.mode, 'source_url');
-    assert.equal(result.data.source_url, 'https://example.com/1');
-    assert.equal(result.data.ignored_url_count, 999);
-    assert.match(result.data.source_hint, /https:\/\/example\.com\/1000/);
+    assert.equal(result.data.mode, 'text');
+    assert.equal(result.data.reference_urls.length, 1000);
     assert.ok(
       extractCallCount <= 4,
       `expected URL extraction to stay single-pass, got ${extractCallCount} calls`
@@ -332,10 +330,8 @@ function testCountsUrlsSeparatedByChineseBookTitleAndParentheses() {
   });
 
   assert.equal(result.success, true);
-  assert.equal(result.data.mode, 'source_url');
-  assert.equal(result.data.source_url, 'https://example.com/a');
-  assert.match(result.data.source_hint, /https:\/\/example\.com\/b/);
-  assert.equal(result.data.ignored_url_count, 1);
+  assert.equal(result.data.mode, 'text');
+  assert.deepEqual(result.data.reference_urls, ['https://example.com/a', 'https://example.com/b']);
 }
 
 function testRejectsAssetsForPhaseOne() {
@@ -466,6 +462,7 @@ function testBuildsStableInputSchemaFromMissingOrPartialInput() {
     aweme_id: '',
     douyin_url: '',
     source_url: '',
+    reference_urls: [],
     source_hint: '',
     ignored_url_count: 0,
     use_research: false,
@@ -480,6 +477,7 @@ function testBuildsStableInputSchemaFromMissingOrPartialInput() {
     aweme_id: '',
     douyin_url: '',
     source_url: '',
+    reference_urls: [],
     source_hint: '',
     ignored_url_count: 0,
     use_research: false,

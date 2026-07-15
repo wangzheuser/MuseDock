@@ -10,6 +10,7 @@ const DEFAULT_AI_CONFIG_PATH = aiModelConfig.DEFAULT_CONFIG_PATH
 
 const ALLOWED_ASPECT_RATIOS = ['9:16', '16:9', '1:1', '4:5'];
 const ALLOWED_CREATIVE_FPS = [30, 60];
+const ALLOWED_CONTENT_MODES = ['news', 'analysis', 'discussion'];
 
 const DEFAULT_CONFIG = {
   version: 1,
@@ -25,6 +26,7 @@ const DEFAULT_CONFIG = {
       '4:5': '',
     },
     lockTemplate: false,
+    contentMode: 'analysis',
     useResearch: true,
     generateAudio: true,
     autoSfxEnabled: true,
@@ -98,6 +100,9 @@ function normalizeCreativeDefaults(input = {}) {
     playbackSpeed: normalizePlaybackSpeed(source.playbackSpeed),
     templateByAspectRatio,
     lockTemplate: source.lockTemplate === true,
+    contentMode: ALLOWED_CONTENT_MODES.includes(source.contentMode)
+      ? source.contentMode
+      : DEFAULT_CONFIG.creativeDefaults.contentMode,
     useResearch: typeof source.useResearch === 'boolean'
       ? source.useResearch
       : DEFAULT_CONFIG.creativeDefaults.useResearch,

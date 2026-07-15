@@ -31,6 +31,8 @@ assert.ok(orphanRecoveryIndex < staleRecoveryIndex, 'orphaned task recovery shou
 assert.match(serverIndex, /runStartupRecovery\(\)\.catch/, 'server startup should call the startup recovery wrapper');
 assert.match(serverIndex, /\[startup\] 清理卡死的创作任务失败:/, 'startup recovery failures should use a Chinese log message');
 assert.match(serverIndex, /MUSEDOCK_HOST\s*\|\|\s*['"]127\.0\.0\.1['"]/, 'server should listen on localhost by default');
+assert.match(serverIndex, /MUSEDOCK_HTTP_REQUEST_TIMEOUT_MS/, 'server should allow configuring long preview and export request timeout');
+assert.match(serverIndex, /server\.requestTimeout\s*=\s*LONG_REQUEST_TIMEOUT_MS/, 'server should not drop long preview requests after five minutes');
 assert.match(serverApp, /isLocalCorsOrigin/, 'server should restrict browser CORS origins');
 assert.match(serverApp, /localhost.*127\.0\.0\.1.*::1/s, 'server should allow local frontend origins');
 assert.match(testRunner, /--allow-empty/, 'test runner should require explicit opt-in for empty filters');

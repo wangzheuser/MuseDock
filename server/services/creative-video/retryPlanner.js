@@ -238,7 +238,14 @@ function sceneSpecFromWorkflow(workflow = {}, project = {}) {
 
 function retryContentGraphAlreadyFailed(workflow = {}) {
   return arrayOrEmpty(workflow.retry?.attempts)
-    .some(attempt => attempt?.repair_action === 'retry_content_graph' && attempt?.status === 'failed');
+    .some(attempt => (
+      attempt?.repair_action === 'retry_content_graph'
+      && attempt?.status === 'failed'
+      // 恢复动作缺失属于执行器配置故障，不代表内容图重试本身失败。
+      && !/恢复动作\s+retryContentGraph\s+未配置/.test(safeString(attempt?.message))
+      // 新版执行器会在单次动作内修复无效 JSON；旧失败记录不应直接触发降级。
+      && !/content graph JSON 无效|AI 返回的 content graph JSON 无效/i.test(safeString(attempt?.message))
+    ));
 }
 
 function contentGraphRawResponse(diagnostics = []) {
@@ -254,7 +261,8 @@ function failedRenderFrameIds(project = {}, preferredFrameId = '') {
   if (preferredFrameId) return [preferredFrameId];
   const frames = objectOrEmpty(project.generation_checkpoint?.stages?.render?.frames);
   return Object.entries(frames)
-    .filter(([, frame]) => frame?.status === 'failed')
+    // 渲染中途失败时，failed 和尚未执行的 pending 都必须在合成前补齐。
+    .filter(([, frame]) => frame?.status !== 'done' || !safeString(frame?.mp4_path))
     .map(([frameId]) => frameId);
 }
 
@@ -288,6 +296,18 @@ function retryPlan(classification, repairAction, retryFrom, patch = {}) {
 function createCreativeWorkflowRetryPlan(input = {}) {
   const workflow = objectOrEmpty(input.workflow);
   const project = objectOrEmpty(input.project);
+  const failedWorkflowStage = safeString(workflow.last_failure?.stage);
+  if (['source', 'research', 'assets', 'agent_run', 'brief', 'audio'].includes(failedWorkflowStage)) {
+    return retryPlan({
+      code: `${failedWorkflowStage}_failed`,
+      sub_stage: failedWorkflowStage,
+      message: safeString(workflow.last_failure?.message),
+    }, 'restart_workflow', failedWorkflowStage, {
+      reuse: [],
+      discard: [failedWorkflowStage],
+      user_message: `将在保留同一任务 ID 的前提下重新执行创作流程，修复“${failedWorkflowStage}”阶段失败。`,
+    });
+  }
   const classification = classifyCreativeWorkflowFailure(input);
   const code = classification.code;
   const subStage = classification.sub_stage;
@@ -347,7 +367,9 @@ function createCreativeWorkflowRetryPlan(input = {}) {
       reuse: ['source', 'research', 'brief', 'audio', 'content_graph'],
       discard: classification.frame_id ? [`frames:${classification.frame_id}`, 'render_outputs'] : ['frame_html', 'render_outputs'],
       executor_options: classification.frame_id ? { frame_id: classification.frame_id } : {},
-      user_message: '将复用已完成内容，只重新生成失败帧并重新导出。',
+      user_message: workflow?.target?.auto_export === false
+        ? '将复用已完成内容，只修复失败帧并保留为可编辑工程，不自动导出最终视频。'
+        : '将复用已完成内容，只重新生成失败帧并重新导出。',
     });
   }
 
@@ -368,13 +390,16 @@ function createCreativeWorkflowRetryPlan(input = {}) {
     });
   }
 
-  if (code.startsWith('render_failed') || subStage === 'render') {
-    const frameIds = failedRenderFrameIds(project, classification.frame_id);
+  if (code.startsWith('render_failed') || code === 'render_checkpoint_missing' || subStage === 'render') {
+    const frameIds = failedRenderFrameIds(
+      project,
+      code === 'render_checkpoint_missing' ? '' : classification.frame_id,
+    );
     return retryPlan(classification, 'rerender_frames', 'render', {
       reuse: ['source', 'research', 'brief', 'audio', 'content_graph', 'frame_html'],
       discard: frameIds.map(frameId => `render:${frameId}`),
       executor_options: { frame_ids: frameIds },
-      user_message: '将只重渲染失败镜头，并重新合成成片。',
+      user_message: '将补齐失败或缺失的渲染镜头，并重新合成成片。',
     });
   }
 

@@ -151,20 +151,24 @@ function playbackSpeedOrDefault(value) {
  * @param {object} defaults 当前页面选择的创作默认值。
  * @returns {object} creativeDefaultsOverride 请求体。
  */
-function buildCreativeDefaultsOverride(defaults = {}) {
+function buildCreativeDefaultsOverride(defaults = {}, touchedFields = null) {
   const normalized = normalizeCreativeDefaults(defaults);
+  const includeField = field => !touchedFields || touchedFields.has(field);
   return {
-    aspectRatio: normalized.aspectRatio,
-    targetDurationSec: numberInRangeOrFallback(
-      normalized.targetDurationSec,
-      DEFAULT_CREATIVE_DEFAULTS.targetDurationSec,
-      15,
-      180,
-    ),
+    ...(includeField('aspectRatio') ? { aspectRatio: normalized.aspectRatio } : {}),
+    ...(includeField('targetDurationSec') ? {
+      targetDurationSec: numberInRangeOrFallback(
+        normalized.targetDurationSec,
+        DEFAULT_CREATIVE_DEFAULTS.targetDurationSec,
+        15,
+        180,
+      ),
+    } : {}),
     fps: normalized.fps === 60 ? 60 : 30,
     playbackSpeed: playbackSpeedOrDefault(normalized.playbackSpeed),
     templateByAspectRatio: normalized.templateByAspectRatio,
     lockTemplate: normalized.lockTemplate === true,
+    contentMode: normalized.contentMode,
     useResearch: normalized.useResearch !== false,
     generateAudio: normalized.generateAudio !== false,
     autoSfxEnabled: normalized.autoSfxEnabled !== false,
@@ -324,6 +328,7 @@ export function OneClickCreativePage() {
   const [useResearch, setUseResearch] = useState(true);
   const [useResearchTouched, setUseResearchTouched] = useState(false);
   const [creativeDefaults, setCreativeDefaults] = useState(DEFAULT_CREATIVE_DEFAULTS);
+  const creativeDefaultsTouchedFieldsRef = useRef(new Set());
   const [templates, setTemplates] = useState([]);
   const [ttsVoices, setTtsVoices] = useState([]);
   const [activeModels, setActiveModels] = useState({});
@@ -394,6 +399,7 @@ export function OneClickCreativePage() {
   const updateCreativeDefaults = useCallback((patch) => {
     creativeDefaultsTouchedRef.current = true;
     const patchValue = patch && typeof patch === 'object' ? patch : {};
+    Object.keys(patchValue).forEach(key => creativeDefaultsTouchedFieldsRef.current.add(key));
     setCreativeDefaults(prev => {
       const next = {
         ...prev,
@@ -828,6 +834,7 @@ export function OneClickCreativePage() {
     setInput('');
     setMode('quick');
     setCreativeDefaults(savedCreativeDefaultsRef.current);
+    creativeDefaultsTouchedFieldsRef.current.clear();
     setUseResearch(savedCreativeDefaultsRef.current.useResearch !== false);
     creativeDefaultsTouchedRef.current = false;
     useResearchTouchedRef.current = false;
@@ -1047,7 +1054,7 @@ export function OneClickCreativePage() {
         creativeDefaultsOverride: buildCreativeDefaultsOverride({
           ...creativeDefaults,
           useResearch,
-        }),
+        }, creativeDefaultsTouchedFieldsRef.current),
       };
       const json = await api.createCreativeWorkflow(requestPayload);
       const nextWorkflow = getWorkflowPayload(json);

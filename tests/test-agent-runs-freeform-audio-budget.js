@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 
 const agentRuns = require('../server/services/agent/agentRuns');
+const { compressFreeformNarrationDeterministically } = require('../server/services/agent/agentRunsFreeformHelpers');
 const narrationBudget = require('../server/services/storyboard/storyboardNarrationBudget');
 
 (async () => {
@@ -139,6 +140,101 @@ const narrationBudget = require('../server/services/storyboard/storyboardNarrati
 
   assert.equal(semanticResult.success, true);
   assert.equal(semanticCaptured[1].narration_text, '如果你正在启动新项目，pnpm 通常是目前最均衡的选择。');
+
+  const repairRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-runs-compression-repair-'));
+  const repairAwemeId = '20260714085712983907';
+  const repairRunId = 'compression-repair';
+  const repairRunDir = path.join(repairRoot, repairAwemeId, 'agent_runs');
+  fs.mkdirSync(repairRunDir, { recursive: true });
+  fs.writeFileSync(path.join(repairRunDir, `${repairRunId}.json`), JSON.stringify({
+    success: true,
+    run_id: repairRunId,
+    template: 'hyperframes_freeform',
+    aweme_id: repairAwemeId,
+    status: 'ready',
+    result: { video_brief: { target_duration_sec: 10 } },
+    hyperframes_freeform: {
+      status: 'ready',
+      brief: {
+        status: 'ready',
+        data: {
+          title: '压缩残句自动修复测试',
+          target_duration_sec: 10,
+          storyboard: {
+            scenes: [
+              { index: 1, narration_text: '这是第一段明显超出十秒预算的旁白，需要压缩后再进入配音流程。' },
+              { index: 2, narration_text: '这是第二段同样过长的旁白，用于确保总字数必然触发模型压缩。' },
+            ],
+          },
+        },
+      },
+    },
+  }, null, 2));
+
+  let repairModelCalls = 0;
+  let repairedScenes = null;
+  const repairResult = await agentRuns.synthesizeDouyinRunHyperframesFreeformAudio(repairAwemeId, repairRunId, {
+    rootDir: repairRoot,
+    aiTextModel: {
+      callTextModel: async () => {
+        repairModelCalls += 1;
+        if (repairModelCalls === 1) {
+          return {
+            success: true,
+            text: JSON.stringify({
+              scenes: [
+                { index: 1, narration_text: '如果创作者要比较。' },
+                { index: 2, narration_text: '统一记录成本。' },
+              ],
+            }),
+          };
+        }
+        return {
+          success: true,
+          text: JSON.stringify({
+            scenes: [{ index: 1, narration_text: '如果要比较，先统一提示词。' }],
+          }),
+        };
+      },
+    },
+    sceneTtsService: {
+      synthesizeSceneTts: async ({ scenes }) => {
+        repairedScenes = scenes;
+        return {
+          success: true,
+          message: 'ok',
+          scene_tts: {
+            status: 'done',
+            duration: 4,
+            scenes: scenes.map(scene => ({
+              index: scene.index,
+              duration: 2,
+              speech_duration_sec: 2,
+              narration_text: scene.narration_text,
+              captions: [{ start: 0, end: 2, text: scene.narration_text }],
+            })),
+          },
+        };
+      },
+    },
+  });
+
+  assert.equal(repairResult.success, true);
+  assert.equal(repairModelCalls, 2);
+  assert.equal(repairedScenes[0].narration_text, '如果要比较，先统一提示词。');
+
+  const fallback = compressFreeformNarrationDeterministically([
+    { index: 1, narration_text: '7月9日，OpenAI 官方发布 GPT-5.6，强调性能和高难任务。' },
+    { index: 2, narration_text: '同一选题，同一提示词，同一评分表，再比较返工次数。' },
+  ], {
+    scenes: [
+      { index: 1, max_recommended_chars: 22 },
+      { index: 2, max_recommended_chars: 18 },
+    ],
+  }, 12);
+  assert.equal(fallback.success, true);
+  assert.equal(fallback.fallback_used, true);
+  assert.ok(fallback.scenes.every(scene => /[。！？!?]$/.test(scene.narration_text)));
 
   console.log('agent runs freeform audio budget tests passed');
 })().catch(error => {

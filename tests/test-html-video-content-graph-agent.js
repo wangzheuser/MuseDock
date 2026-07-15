@@ -35,6 +35,7 @@ const creativeContext = {
   research_context: {
     summary: '联网核验确认专业版当前价格为 20 元。',
     updated_at: '2026-07-13T08:00:00.000Z',
+    coverage: { status: 'weak', source_types: { first_party: 0 } },
     sources: [{ title: '官方价格页', url: 'https://example.com/pricing', published_at: '2026-07-13' }],
   },
   brief: { summary: '用两帧解释价格对比。' },
@@ -46,7 +47,7 @@ const creativeContext = {
 const prompt = agent.buildContentGraphPrompt({
   sceneSpec,
   creativeContext,
-  target: { aspect_ratio: '16:9', duration_sec: 8, language: 'zh-CN' },
+  target: { aspect_ratio: '16:9', duration_sec: 8, language: 'zh-CN', content_mode: 'analysis' },
 });
 
 assert.match(prompt, /原始标题/);
@@ -54,6 +55,11 @@ assert.match(prompt, /原始正文里提到基础版 12 元/);
 assert.match(prompt, /来源摘要：用户关心价格差异/);
 assert.match(prompt, /联网核验确认专业版当前价格为 20 元/);
 assert.match(prompt, /研究来源 1：官方价格页/);
+assert.match(prompt, /联网覆盖/);
+assert.match(prompt, /弱覆盖不能推出|禁止改写成“官方未确认”/);
+assert.match(prompt, /不确定性说明最多出现在 2 个节点/);
+assert.match(prompt, /全部调用总成本÷成功交付数量/);
+assert.match(prompt, /必须保留“先测、对比、建议”等限定词/);
 assert.match(prompt, /https:\/\/example\.com\/pricing/);
 assert.match(prompt, /用两帧解释价格对比/);
 assert.match(prompt, /评论问有没有更便宜的版本/);
@@ -78,6 +84,8 @@ assert.match(prompt, /每个 intended frame 对应一个 node/);
 assert.match(prompt, /nodes\.length 必须严格等于 scene_spec\.scenes\.length：2/);
 assert.match(prompt, /scene_01 -> scene_02/);
 assert.match(prompt, /禁止新增、删除、合并、拆分或重排序/);
+assert.match(prompt, /intent 必须是 analysis/);
+assert.match(prompt, /不得降级成产品宣传片/);
 
 const retryPromptAttempt1 = agent.buildRetryPrompt(sceneSpec, creativeContext, { duration_sec: 8 }, prompt, 1);
 assert.match(retryPromptAttempt1, /scene_01/);
@@ -167,6 +175,14 @@ assert.equal(normalized.graph.nodes[1].data.title, '价格');
 assert.equal(normalized.graph.nodes[1].data.items[0].label, '基础版');
 assert.equal(normalized.graph.nodes[1].data.items[0].value, 12);
 assert.equal(JSON.stringify(normalized.graph).includes('[object Object]'), false);
+
+const analysisGraph = agent.normalizeContentGraph({
+  intent: 'promo',
+  synopsis: '具体解读',
+  nodes: [{ id: 'scene_01', kind: 'text', label: '价格', durationSec: 2, text: '价格相差五倍' }],
+  edges: [],
+}, sceneSpec, {}, { content_mode: 'analysis' });
+assert.equal(analysisGraph.graph.intent, 'analysis');
 
 const assetFiltered = agent.normalizeContentGraph({
   synopsis: '素材过滤',

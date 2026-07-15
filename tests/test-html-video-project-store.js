@@ -63,6 +63,19 @@ const assetStore = require('../server/services/creative-video/html-video/assetSt
     /ENOENT/
   );
 
+  const concurrentTitles = Array.from({ length: 8 }, (_, index) => `并行预览 ${index + 1}`);
+  await Promise.all(concurrentTitles.map(title => store.saveProject(projectDir, {
+    ...project,
+    template_inputs: { ...project.template_inputs, title },
+  })));
+  assert.ok(concurrentTitles.includes((await store.loadProject(projectDir)).template_inputs.title));
+  assert.deepEqual(
+    (await fs.readdir(projectDir)).filter(name => /^\.project\.json\..+\.tmp$/.test(name)),
+    [],
+  );
+
+  await store.saveProject(projectDir, project);
+
   const updated = await store.writeProjectJson(projectDir, current => {
     schema.markCheckpointStage(current, 'content_graph', { status: 'done', path: 'content-graph.json' });
     return current;

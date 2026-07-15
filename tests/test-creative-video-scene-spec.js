@@ -17,6 +17,9 @@ const raw = {
         keywords: ['重点'],
         cards: ['观众可见卡片'],
       },
+      viewer_gain: '知道一个可执行判断',
+      viewer_action: '去检查自己的账号额度',
+      evidence_points: ['7 月 13 日报道'],
     },
     {
       id: 'scene_02',
@@ -35,6 +38,8 @@ assert.equal(normalized.scenes[0].start, 0);
 assert.equal(normalized.scenes[0].duration, 8.35);
 assert.equal(normalized.scenes[1].start, 8.35);
 assert.equal(normalized.scenes[0].kind, 'text');
+assert.equal(normalized.scenes[0].viewer_gain, '知道一个可执行判断');
+assert.deepEqual(normalized.scenes[0].evidence_points, ['7 月 13 日报道']);
 assert.equal(sceneSpec.validateSceneSpec(normalized).success, true);
 
 const aliasedDurations = sceneSpec.validateSceneSpec({

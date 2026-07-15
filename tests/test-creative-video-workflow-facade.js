@@ -119,6 +119,10 @@ const { computeSceneSpecSpeechHash } = require('../server/services/creative-vide
         duration: 1,
         headline: `第 ${index + 1} 帧`,
         narration_text: `第 ${index + 1} 段旁白`,
+        viewer_gain: index === 0 ? '知道本段新增认知' : '',
+        viewer_action: index === 0 ? '用同一提示词跑三次' : '',
+        evidence_points: index === 0 ? ['2026年7月14日'] : [],
+        source_attribution: index === 0 ? '媒体报道' : '',
         captions: [{ id: `cap_${index + 1}`, start: 0, end: 1, text: `第 ${index + 1} 段字幕` }],
       })),
     },
@@ -143,6 +147,12 @@ const { computeSceneSpecSpeechHash } = require('../server/services/creative-vide
           duration: scene.index === 1 ? 1.4 : scene.duration,
           captions: scene.index === 1
             ? [{ start: 0, end: 1.4, duration: 1.4, text: '第 1 段 TTS 字幕' }]
+            : [],
+          phrase_captions: scene.index === 1
+            ? [
+              { start: 0, end: 0.7, duration: 0.7, text: '第 1 段' },
+              { start: 0.7, end: 1.4, duration: 0.7, text: 'TTS 字幕' },
+            ]
             : [],
         })),
       },
@@ -177,8 +187,15 @@ const { computeSceneSpecSpeechHash } = require('../server/services/creative-vide
   assert.equal(htmlVideoSceneSpec.scenes.length, 10);
   assert.deepEqual(htmlVideoSceneSpec.scenes.map(scene => scene.id), voicedStoryboard.storyboard.scenes.map(scene => scene.id));
   assert.equal(htmlVideoSceneSpec.scenes[0].narration_text, '第 1 段旁白');
-  assert.deepEqual(htmlVideoSceneSpec.scenes[0].captions, [{ id: 'cap_01', start: 0, end: 1.4, text: '第 1 段 TTS 字幕' }]);
+  assert.deepEqual(htmlVideoSceneSpec.scenes[0].captions, [
+    { id: 'cap_01', start: 0, end: 0.7, text: '第 1 段' },
+    { id: 'cap_02', start: 0.7, end: 1.4, text: 'TTS 字幕' },
+  ]);
   assert.equal(htmlVideoSceneSpec.scenes[0].visual_text.headline, '第 1 帧');
+  assert.equal(htmlVideoSceneSpec.scenes[0].viewer_gain, '知道本段新增认知');
+  assert.equal(htmlVideoSceneSpec.scenes[0].viewer_action, '用同一提示词跑三次');
+  assert.deepEqual(htmlVideoSceneSpec.scenes[0].evidence_points, ['2026年7月14日']);
+  assert.equal(htmlVideoSceneSpec.scenes[0].source_attribution, '媒体报道');
   assert.equal(typeof htmlVideoServices.ttsService.synthesizeSceneNarration, 'function');
   assert.equal(htmlVideoCreativeContext.audio.source, 'scene_spec');
   assert.equal(htmlVideoCreativeContext.audio.scene_spec_hash, computeSceneSpecSpeechHash(htmlVideoSceneSpec));

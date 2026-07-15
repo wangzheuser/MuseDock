@@ -55,7 +55,9 @@ function splitLongText(text, maxLength = MAX_CAPTION_TEXT_LENGTH) {
   const value = String(text || '').trim();
   if (value.length <= maxLength) return value ? [value] : [];
 
-  const phrases = value.match(/[^，。！？；：,.!?;:]+[，。！？；：,.!?;:]?/g) || [value];
+  const decimalDot = '\uE000';
+  const protectedValue = value.replace(/(\d)\.(?=\d)/g, `$1${decimalDot}`);
+  const phrases = protectedValue.match(/[^，。！？；：,.!?;:]+[，。！？；：,.!?;:]?/g) || [protectedValue];
   const chunks = [];
   let current = '';
 
@@ -88,7 +90,7 @@ function splitLongText(text, maxLength = MAX_CAPTION_TEXT_LENGTH) {
   }
 
   if (current) chunks.push(current);
-  return chunks;
+  return chunks.map(chunk => chunk.replaceAll(decimalDot, '.'));
 }
 
 function splitNormalizedCaption(caption) {
@@ -198,7 +200,7 @@ function renderCaptionLayer(captions = [], options = {}) {
     '.hv-caption-layer{position:absolute;left:50%;bottom:72px;transform:translateX(-50%);width:max-content;max-width:84%;z-index:9999;pointer-events:none;text-align:center;font:600 34px/1.28 "Noto Sans SC","Microsoft YaHei",Arial,sans-serif;letter-spacing:0;}',
     '.hv-caption-item{display:none;padding:14px 22px;border-radius:8px;background:rgba(0,0,0,.68);color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.55);white-space:normal;overflow-wrap:anywhere;}',
     '.hv-caption-item[data-hv-active="true"]{display:block;}',
-    '@media (orientation:portrait){.hv-caption-layer{bottom:280px;max-width:78%;}}',
+    '@media (orientation:portrait){.hv-caption-layer{bottom:200px;max-width:78%;}}',
     '</style>',
     `<div class="${htmlEscape(className)}" data-hv-layer="captions" data-hv-managed="true" data-role="subtitle-caption">`,
     items,

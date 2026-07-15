@@ -6,6 +6,8 @@ function safeString(value) {
 }
 
 function normalizeSource(source = {}, now = '') {
+  const discoveryChannel = safeString(source.discovery_channel);
+  const sourceType = safeString(source.source_type);
   return {
     title: safeString(source.title),
     url: safeString(source.url),
@@ -13,6 +15,8 @@ function normalizeSource(source = {}, now = '') {
     retrieved_at: safeString(source.retrieved_at) || safeString(now),
     summary: safeString(source.summary),
     evidence: safeString(source.evidence),
+    ...(discoveryChannel ? { discovery_channel: discoveryChannel } : {}),
+    ...(sourceType ? { source_type: sourceType } : {}),
   };
 }
 
@@ -52,13 +56,17 @@ async function createResearchContext({
       ? result.sources.map(source => normalizeSource(source, updatedAt))
       : [];
     const summary = safeString(result && result.summary);
+    const coverage = result?.coverage && typeof result.coverage === 'object' && !Array.isArray(result.coverage)
+      ? result.coverage
+      : {};
 
     if (!summary && sources.length === 0) {
       return {
-        status: 'failed',
+        status: 'empty',
         query: normalizedQuery,
         sources: [],
-        summary: '联网研究没有返回可用资料，请检查联网研究服务或关闭联网获取最新资料后重试。',
+        summary: '当前检索没有返回可用素材。',
+        coverage,
         updated_at: updatedAt,
       };
     }
@@ -68,6 +76,7 @@ async function createResearchContext({
       query: normalizedQuery,
       sources,
       summary,
+      coverage,
       updated_at: updatedAt,
     };
   } catch (error) {

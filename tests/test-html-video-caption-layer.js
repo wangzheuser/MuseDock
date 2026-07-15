@@ -92,6 +92,21 @@ const captionLayerCount = html => (html.match(/data-hv-layer="captions"/g) || []
 }
 
 {
+  const split = normalizeCaptionsForFrame({
+    id: 'scene_decimal',
+    duration_sec: 10,
+    captions: [{
+      id: 'cap_01',
+      start: 0,
+      end: 10,
+      text: '摘要称Sol每百万输入5美元、输出30美元；Terra完整价格是2.5美元，不能把小数拆开。',
+    }],
+  });
+  assert.equal(split.map(item => item.text).join(''), '摘要称Sol每百万输入5美元、输出30美元；Terra完整价格是2.5美元，不能把小数拆开。');
+  assert.equal(split.some(item => item.text.endsWith('2.') || item.text.startsWith('5美元')), false);
+}
+
+{
   const html = '<html><body><main>画面</main></body></html>';
   const next = ensureCaptionLayer(html, captions);
   assert.match(next, /data-hv-layer="captions"/);
@@ -304,7 +319,7 @@ const captionLayerCount = html => (html.match(/data-hv-layer="captions"/g) || []
   const layer = renderCaptionLayer(captions);
   assert.match(layer, /bottom:72px/);
   assert.match(layer, /@media \(orientation:portrait\)/);
-  assert.match(layer, /bottom:280px/);
+  assert.match(layer, /bottom:200px/);
   assert.match(layer, /max-width:78%/);
 }
 

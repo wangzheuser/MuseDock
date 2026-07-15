@@ -229,6 +229,16 @@ function patchSfxEvent({ project, eventId, patch = {} } = {}) {
   return { success: true, message: event.enabled === false ? '已停用音效。' : '音效设置已更新。', event, project };
 }
 
+/**
+ * 压缩第三方服务错误，避免把整页 HTML 写入工程状态。
+ */
+function sanitizeSfxErrorMessage(message) {
+  const text = String(message || '').trim();
+  if (/<!doctype|<html\b/i.test(text)) return '第三方音效编排服务响应异常。';
+  const compact = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  return compact.slice(0, 300) || '自动音效编排失败，已跳过音效增强。';
+}
+
 function markSfxSkipped(project, message = '自动音效编排失败，已跳过音效增强。') {
   project.audio = objectOrEmpty(project.audio);
   const prior = objectOrEmpty(project.audio.sfx);
@@ -236,7 +246,7 @@ function markSfxSkipped(project, message = '自动音效编排失败，已跳过
     ...prior,
     enabled: false,
     status: 'skipped',
-    message,
+    message: sanitizeSfxErrorMessage(message),
     events: Array.isArray(prior.events) ? prior.events : [],
   };
   return project.audio.sfx;
@@ -397,6 +407,7 @@ module.exports = {
   disableSfxEvent,
   patchSfxEvent,
   markSfxSkipped,
+  sanitizeSfxErrorMessage,
   writeSfxEventsFileAsync,
   persistProjectSfxMirror,
   applyPlannedSfxEvents,

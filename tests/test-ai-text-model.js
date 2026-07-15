@@ -78,6 +78,22 @@ async function run() {
   assert.ok(requestedOptions.signal, 'text model requests should include an AbortSignal');
   assert.strictEqual(typeof requestedOptions.signal.aborted, 'boolean');
 
+  const htmlDocument = '<!doctype html><html><head><style>h1{font-weight:500}</style></head><body><h1>完整画面</h1></body></html>';
+  const htmlContent = await aiTextModel.callTextModel({
+    messages: [{ role: 'user', content: '生成 HTML' }],
+    configPath,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{ message: { content: htmlDocument } }],
+      }),
+    }),
+  });
+  assert.strictEqual(htmlContent.success, true);
+  assert.strictEqual(htmlContent.text, htmlDocument);
+  assert.strictEqual(htmlContent.raw_response.choices[0].message.content, htmlDocument);
+
   const usageResult = await aiTextModel.callTextModel({
     messages: [{ role: 'user', content: 'usage' }],
     configPath,
@@ -220,6 +236,20 @@ async function run() {
   assert.strictEqual(plainTextFailed.success, false);
   assert.match(plainTextFailed.message, /possible cybersecurity risk/);
   assert.doesNotMatch(plainTextFailed.message, /sk-test/);
+
+  const htmlGatewayFailed = await aiTextModel.callTextModel({
+    messages: [{ role: 'user', content: 'html gateway fail' }],
+    configPath,
+    maxRetries: 0,
+    fetchImpl: async () => new Response(
+      '<!DOCTYPE html><html><head><title>Gateway | 524: A timeout occurred</title></head></html>',
+      { status: 524, headers: { 'content-type': 'text/html' } },
+    ),
+  });
+  assert.strictEqual(htmlGatewayFailed.success, false);
+  assert.match(htmlGatewayFailed.message, /第三方模型网关响应异常（HTTP 524）/);
+  assert.doesNotMatch(htmlGatewayFailed.message, /<!DOCTYPE|<html/i);
+  assert.doesNotMatch(JSON.stringify(htmlGatewayFailed.raw_response), /<!DOCTYPE|<html/i);
 
   let retryCalls = 0;
   const retried = await aiTextModel.callTextModel({

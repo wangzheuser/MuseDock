@@ -91,6 +91,10 @@ async function run() {
   assert.equal(missing.success, false);
   assert.equal(missing.code, 'SFX_EVENT_NOT_FOUND');
 
+  const sfxSkipped = { audio: {} };
+  sfxEvents.markSfxSkipped(sfxSkipped, '<!DOCTYPE html><html><body>524 timeout</body></html>');
+  assert.equal(sfxSkipped.audio.sfx.message, '第三方音效编排服务响应异常。');
+
   updated.project.audio.sfx.library_version = 3;
   await sfxEvents.persistProjectSfxMirror(projectDir, updated.project);
   const mirror = JSON.parse(fs.readFileSync(path.join(projectDir, 'audio', 'sfx-events.json'), 'utf8'));

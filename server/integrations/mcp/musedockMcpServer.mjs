@@ -184,7 +184,7 @@ function summarizeLayoutQa(value) {
   if (!isObject(value)) return null;
   return {
     success: value.success !== false,
-    checked_count: Number(value.checked_count || 0),
+    checked_count: Number(value.checked_count ?? (value.metrics ? 1 : 0)),
     skipped_count: Number(value.skipped_count || 0),
     environment_skipped: value.environment_skipped === true,
     issues: (Array.isArray(value.issues) ? value.issues : []).slice(0, 50).map(issue => ({
@@ -408,6 +408,7 @@ function buildCreativeOverride(args) {
   const map = [
     ['aspect_ratio', 'aspectRatio'],
     ['duration_sec', 'targetDurationSec'],
+    ['content_mode', 'contentMode'],
     ['fps', 'fps'],
     ['playback_speed', 'playbackSpeed'],
     ['use_research', 'useResearch'],
@@ -509,6 +510,7 @@ export function createMuseDockMcpServer(options = {}) {
   const creativeSettingsSchema = z.object({
     aspectRatio: z.enum(['9:16', '16:9', '1:1', '4:5']).optional(),
     targetDurationSec: z.number().min(15).max(180).optional(),
+    contentMode: z.enum(['news', 'analysis', 'discussion']).optional(),
     fps: z.union([z.literal(30), z.literal(60)]).optional(),
     playbackSpeed: z.number().min(0.1).max(2).multipleOf(0.1).optional(),
     useResearch: z.boolean().optional(),
@@ -561,6 +563,7 @@ export function createMuseDockMcpServer(options = {}) {
       prompt_origin: z.enum(['manual', 'guided', 'guided_edited']).optional(),
       aspect_ratio: z.enum(['9:16', '16:9', '1:1', '4:5']).optional(),
       duration_sec: z.number().min(15).max(180).optional(),
+      content_mode: z.enum(['news', 'analysis', 'discussion']).optional(),
       fps: z.union([z.literal(30), z.literal(60)]).optional(),
       playback_speed: z.number().min(0.1).max(2).multipleOf(0.1).optional(),
       template_id: z.string().trim().max(100).optional(),
@@ -625,7 +628,7 @@ export function createMuseDockMcpServer(options = {}) {
     try {
       exportsResponse = await api.listExports(workflow_id);
     } catch (error) {
-      if (!['HTML_VIDEO_PROJECT_NOT_FOUND', 'PROJECT_NOT_FOUND'].includes(error?.code)) throw error;
+      if (error?.status !== 404 && !['HTML_VIDEO_PROJECT_NOT_FOUND', 'PROJECT_NOT_FOUND'].includes(error?.code)) throw error;
     }
     const exportsList = Array.isArray(exportsResponse?.exports) ? exportsResponse.exports : [];
     const latestExport = latestItem(exportsList.filter(item => item?.kind !== 'preview'));
@@ -643,9 +646,16 @@ export function createMuseDockMcpServer(options = {}) {
       output_path: String(render.output_path || workflow.render_output_path || ''),
       output_url: render.output_url ? new URL(render.output_url, api.baseUrl).toString() : '',
       latest_export: summarizeExport(latestExport, api, workflow_id),
-      error: workflow.error || workflow.last_failure || null,
+      error: String(response.status || workflow.status || '') === 'failed'
+        ? (workflow.error || workflow.last_failure || null)
+        : null,
     };
-    return successResult(result, result.status === 'done' ? '视频生成完成。' : `视频任务状态：${result.status || '未知'}。`);
+    const draftReady = result.status === 'done' && !latestExport;
+    if (draftReady) result.message = '可编辑工程已生成，等待二次编辑后导出。';
+    return successResult(
+      result,
+      draftReady ? result.message : (result.status === 'done' ? '视频生成完成。' : `视频任务状态：${result.status || '未知'}。`),
+    );
   });
 
   registerTool(server, 'get_retry_plan', {
@@ -664,8 +674,8 @@ export function createMuseDockMcpServer(options = {}) {
     }).strict(),
     annotations: writeAnnotations,
   }, async args => successResult(await api.retryVideo(args.workflow_id, {
-    expected_plan_code: args.expected_plan_code,
-    confirm: true,
+    mode: 'repair_and_resume',
+    confirm_plan_code: args.expected_plan_code,
   }), '恢复重试任务已启动。'));
 
   registerTool(server, 'inspect_video', {

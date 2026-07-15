@@ -326,6 +326,10 @@ function buildFrameHtmlPrompt({
     '  - 不允许只把可见文案写进 canvas 或伪元素',
     '  - 字幕可由系统注入，但 HTML 不得阻挡底部字幕层',
     '- 画面文字必须是提炼后的短文案：subtitle 放一句不超过 20 字的支撑短句；body 优先使用 scene_spec visual_text.keywords/cards 里的关键词、数据点或要点短语。',
+    '- analysis 场景必须把 node.metadata.viewer_gain、evidence_points 或 viewer_action 至少转成 1 条具体画面短文案；不能只展示抽象关键词，旁白字幕之外要让观众看见“得到什么/怎么测”。',
+    '- content_role=update 的场景必须在可见画面中同时写出 source_attribution 与 update_time；不能只写“同日”或把来源留在 metadata/旁白里。',
+    '- content_role=analysis 的场景禁止编造跑分、百分比、倍数或排名；没有证据的指标只能写“示意”“编辑判断·待实测”等明确标签。',
+    '- analysis 场景不得用不等长进度条、排名徽章或高低柱图暗示模型胜负；没有实测结果时使用等长占位条并标注“待实测”。',
     '- 禁止把 narration_text 或 captions 的原句、近似原句搬进画面任何位置；旁白全文由系统注入底部字幕层，画面再复述就是内容重复。',
     '- 不要让每一帧都使用相同主布局；相邻帧必须有清晰不同的主视觉、层级或构图。',
     '- 不要只改底部 caption；主画面、数据、标题或视觉结构必须服务当前 frame content。',
@@ -666,6 +670,9 @@ function buildShortFrameHtmlPrompt({
   const assetSummary = frameAssetReferenceSummary(node, creativeContext);
   return [
     '你是 html-video 单帧 HTML 生成器。只返回完整 HTML document，不要解释。',
+    '完整性优先于复杂度：输出总长度不得超过 9000 字符，必须以 <!doctype html> 开始并以 </body></html> 结束。',
+    '只使用紧凑 CSS、flex/grid、渐变和基础几何图形；禁止 SVG、canvas、大段 JS、base64、HTML 注释和重复样式。',
+    '最多 1 个主标题、1 个副标题、3 个信息卡和 4 个关键词；style 内容控制在 4500 字符以内。',
     `当前帧：${sceneId}`,
     `scene title：${title || sceneId}`,
     `当前 scene narration：${narration || '无'}`,
@@ -717,6 +724,9 @@ function buildRetryPrompt(args = {}) {
   const assetSummary = frameAssetReferenceSummary(args.node || {}, args.creativeContext || {});
   return [
     '上一次没有得到可用 HTML。只返回一个完整 HTML document，不要解释。',
+    '这次必须优先保证文档闭合：输出总长度不得超过 9000 字符，以 <!doctype html> 开始并以 </body></html> 结束。',
+    '只使用紧凑 CSS、flex/grid、渐变和基础几何图形；禁止 SVG、canvas、大段 JS、base64、HTML 注释和重复样式。',
+    '最多 1 个主标题、1 个副标题、3 个信息卡和 4 个关键词；style 内容控制在 4500 字符以内。',
     `当前帧 id：${args.node?.id || ''}`,
     `目标尺寸：${resolution.width}x${resolution.height}`,
     validationMessage ? `上一次失败原因：${validationMessage}` : '',

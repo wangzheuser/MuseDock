@@ -7,6 +7,7 @@ const workflow = require('../server/services/creative-video/html-video/htmlVideo
 const projectOrchestrator = require('../server/services/creative-video/html-video/projectOrchestrator');
 const projectStore = require('../server/services/creative-video/html-video/projectStore');
 const { createTemplateRegistry } = require('../server/services/creative-video/html-video/templateRegistry');
+const { padProjectTimelineToTarget } = require('../server/services/creative-video/html-video/timelineRepair');
 const {
   computeSceneSpecSpeechHash,
   audioMatchesSceneSpec,
@@ -193,7 +194,7 @@ async function readProjectJson(projectDir) {
       ],
     },
     creativeContext: { input: { raw_text: '审计模板字段' } },
-    target: { html_video_generation_mode: 'template_inputs', generateAudio: false },
+    target: { html_video_generation_mode: 'template_inputs', generateAudio: false, auto_export: false },
     templateRegistry,
     services: {
       aiTextModel: {
@@ -227,7 +228,11 @@ async function readProjectJson(projectDir) {
     },
   });
   assert.equal(auditedTemplateInputsResult.success, true);
+  assert.equal(auditedTemplateInputsResult.ready_for_edit, true);
+  assert.equal(auditedTemplateInputsResult.output_path, '');
   const auditedTemplateInputsProject = await readProjectJson(auditedTemplateInputsResult.html_video_project_path);
+  assert.deepEqual(auditedTemplateInputsProject.exports, []);
+  assert.equal(auditedTemplateInputsProject.generation_checkpoint.stages.render.status, 'pending');
   const auditedTemplateInputCalls = auditedTemplateInputsProject.generation_checkpoint.model_calls;
   assert.ok(auditedTemplateInputCalls.some(call => call.agent === 'TemplateSelectorAgent' && call.stage === 'template_selection'));
   assert.ok(auditedTemplateInputCalls.some(call => call.agent === 'TemplateInputAgent' && call.stage === 'template_inputs'));
@@ -509,6 +514,9 @@ async function readProjectJson(projectDir) {
   assert.equal(layoutRepairPrompts.length, 1);
   assert.match(layoutRepairPrompts[0], /标题覆盖正文/);
   assert.equal(layoutQaFailureResult.html_video_diagnostics.some(item => item.code === 'frame_layout_qa_unresolved' && item.severity === 'warning'), true);
+  const layoutQaFailureProject = JSON.parse(await fs.readFile(path.join(layoutQaFailureResult.project_dir, 'project.json'), 'utf8'));
+  assert.equal(layoutQaFailureProject.layout_qa_reports.at(-1).success, false);
+  assert.equal(layoutQaFailureProject.layout_qa_reports.at(-1).issues[0].frame_id, 'scene_01');
   assert.equal(layoutQaRenderCalled, false);
 
   // 线上事故场景：skipValidation=true 关闭阻断式校验，但帧生成阶段的布局自检 + 自动修复仍要生效。
@@ -812,10 +820,9 @@ async function readProjectJson(projectDir) {
       environmentDoctor: async () => ({ ok: true, diagnostics: [] }),
     },
   });
-  assert.equal(failedHtmlResult.success, false);
-  const failedHtmlDiagnostic = failedHtmlResult.html_video_diagnostics.find(item => item.code === 'html_validation_failed');
+  assert.equal(failedHtmlResult.success, true);
+  const failedHtmlDiagnostic = failedHtmlResult.html_video_diagnostics.find(item => item.code === 'fallback_frame_html_used');
   assert.ok(failedHtmlDiagnostic?.details?.failed_html_path);
-  assert.equal(failedHtmlDiagnostic.details.validation_code, 'frame_html_invalid');
   const failedHtmlPath = path.join(failedHtmlResult.project_dir, failedHtmlDiagnostic.details.failed_html_path);
   const failedHtmlContent = await fs.readFile(failedHtmlPath, 'utf8');
   assert.match(failedHtmlContent, /\.stage/);
@@ -2398,6 +2405,56 @@ async function readProjectJson(projectDir) {
   assert.equal(edited.project.template_inputs.headline, '最终版标题');
   const savedProject = JSON.parse(await fs.readFile(path.join(result.html_video_project_path, 'project.json'), 'utf8'));
   assert.equal(savedProject.template_inputs.headline, '最终版标题');
+
+  let invalidGraphCalls = 0;
+  const recoveredInvalidGraph = await workflow.generateContentGraphWithRetry({
+    model: {
+      callTextModel: async () => {
+        invalidGraphCalls += 1;
+        if (invalidGraphCalls === 1) return { success: true, text: '{"nodes":[{"id":"scene_01"' };
+        return {
+          success: true,
+          text: JSON.stringify({
+            synopsis: '精简重试成功',
+            nodes: [{ id: 'scene_01', kind: 'text', label: '第一段', durationSec: 3, text: '第一段正文' }],
+            edges: [],
+          }),
+        };
+      },
+    },
+    sceneSpec: { scenes: [{ id: 'scene_01', narration_text: '第一段正文', duration_sec: 3 }] },
+    creativeContext: {},
+    target: { content_mode: 'analysis' },
+  });
+  assert.equal(recoveredInvalidGraph.success, true);
+  assert.equal(invalidGraphCalls, 2);
+  assert.equal(recoveredInvalidGraph.contentGraph.nodes[0].id, 'scene_01');
+
+  const padded = padProjectTimelineToTarget({
+    project: {
+      output: { duration: 28 },
+      frames: [
+        { id: 'scene_01', scene_id: 'scene_01', duration_sec: 7 },
+        { id: 'scene_02', scene_id: 'scene_02', duration_sec: 21 },
+      ],
+      timeline: { tracks: [{ id: 'main', items: [
+        { frame_id: 'scene_01', start_sec: 0, duration_sec: 7 },
+        { frame_id: 'scene_02', start_sec: 7, duration_sec: 21 },
+      ] }] },
+      content_graph: { nodes: [
+        { id: 'scene_01', durationSec: 7 },
+        { id: 'scene_02', durationSec: 21 },
+      ] },
+    },
+    targetDurationSec: 30,
+  });
+  assert.equal(padded.project.output.duration, 30);
+  assert.equal(padded.project.output.duration_mode, 'tail_padded');
+  assert.equal(padded.project.output.tail_padding_sec, 2);
+  assert.equal(padded.project.timeline.tail_padding_sec, 2);
+  assert.equal(padded.project.frames[1].duration_sec, 23);
+  assert.equal(padded.project.timeline.tracks[0].items[1].duration_sec, 23);
+  assert.equal(padded.project.content_graph.nodes[1].durationSec, 23);
 
   console.log('html-video workflow tests passed');
 })();

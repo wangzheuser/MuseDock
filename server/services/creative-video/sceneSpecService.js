@@ -110,7 +110,7 @@ function normalizeScene(scene, index) {
     scene && scene.actual_duration_sec,
     scene && scene.actualDurationSec,
   );
-  return {
+  const normalized = {
     id: text(scene && scene.id) || `scene_${String(index + 1).padStart(2, '0')}`,
     order: index + 1,
     start: roundTime(scene && scene.start),
@@ -120,6 +120,22 @@ function normalizeScene(scene, index) {
     captions: normalizeCaptions(scene && scene.captions),
     visual_text: normalizeVisualText(scene && scene.visual_text),
   };
+
+  // Keep editorial intent alongside the render fields.  These values are
+  // consumed by the content-graph prompt and must not disappear during the
+  // scene-spec normalization pass.
+  const optionalTextFields = [
+    'viewer_gain', 'viewer_action', 'content_role', 'visual_direction',
+    'update_subject', 'update_detail', 'update_time', 'timeliness_status',
+    'source_attribution', 'workflow_impact', 'test_action',
+  ];
+  optionalTextFields.forEach((key) => {
+    const value = text(scene && scene[key]);
+    if (value) normalized[key] = value;
+  });
+  const evidencePoints = list(scene && scene.evidence_points);
+  if (evidencePoints.length) normalized.evidence_points = evidencePoints;
+  return normalized;
 }
 
 function retimeScenes(sceneSpec) {

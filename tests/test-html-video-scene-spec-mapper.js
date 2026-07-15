@@ -90,6 +90,7 @@ assert.throws(() => {
 
 assert.equal(contentGraph.schemaVersion, 1);
 assert.equal(contentGraph.intent, 'promo');
+assert.equal(mapper.mapSceneSpecToContentGraph(sceneSpec, { content_mode: 'analysis' }).intent, 'analysis');
 assert.equal(contentGraph.synopsis, sceneSpec.title);
 assert.deepEqual(contentGraph.nodes.map(node => node.id), ['scene_01', 'scene_02']);
 assert.equal(contentGraph.nodes[0].kind, 'text');

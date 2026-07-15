@@ -131,7 +131,7 @@ function isDecorativeText(candidate) {
     candidate.container?.role,
     candidate.container?.selector,
   ].filter(Boolean).join(' ').toLowerCase();
-  return /section|scene|counter|number|decorative|ornament|background|watermark|brand|footer|kicker|eyebrow|label|badge|chip|meta|signal|engine|date|time|stamp|dim|tick/.test(name);
+  return /counter|number|decorative|ornament|background|watermark|brand|footer|kicker|eyebrow|label|badge|chip|meta|signal|engine|date|time|stamp|dim|tick/.test(name);
 }
 
 /**

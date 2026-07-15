@@ -135,6 +135,12 @@ async function inspectFixture(fileName, frame, extraOptions = {}) {
     'data-layout-ignore 元素应跳过布局检查',
   );
 
+  const sectionContentOverflow = await inspectFixture('section-content-overflow.html', { id: 'scene_12', duration_sec: 1 });
+  assert.equal(sectionContentOverflow.success, false, 'section 内的正式结论被裁切时必须阻断');
+  assert.ok(sectionContentOverflow.issues.some(issue => (
+    issue.code === 'text_out_of_container' && issue.details?.text === '可感知收益成立，再调整'
+  )));
+
   const importFailure = await inspectFrameHtmlLayout({
     htmlPath: path.join(fixtureDir, 'overlay-valuation-fixed.html'),
     frame: { id: 'scene_import_failure', duration_sec: 1 },

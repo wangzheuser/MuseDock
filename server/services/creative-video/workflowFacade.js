@@ -135,10 +135,12 @@ function createSceneSpecFromVoicedStoryboard(creativeContext = {}, target = {}) 
     const visualText = scene?.visual_text && typeof scene.visual_text === 'object' && !Array.isArray(scene.visual_text)
       ? scene.visual_text
       : {};
-    const captions = Array.isArray(audioScene?.captions) && audioScene.captions.length
-      ? audioScene.captions
-      : (Array.isArray(scene?.captions) ? scene.captions : []);
-    return {
+    const captions = Array.isArray(audioScene?.phrase_captions) && audioScene.phrase_captions.length
+      ? audioScene.phrase_captions
+      : (Array.isArray(audioScene?.captions) && audioScene.captions.length
+        ? audioScene.captions
+        : (Array.isArray(scene?.captions) ? scene.captions : []));
+    const normalized = {
       id,
       order,
       duration: firstPositiveNumber(
@@ -170,6 +172,17 @@ function createSceneSpecFromVoicedStoryboard(creativeContext = {}, target = {}) 
           : (Array.isArray(scene?.cards) ? scene.cards : []),
       },
     };
+    // Audio reuse must not erase the editorial contract produced by the brief.
+    // This path intentionally skips a second scene-spec model call, so copy
+    // the audience value and source attribution fields deterministically.
+    [
+      'viewer_gain', 'viewer_action', 'content_role', 'visual_direction',
+      'evidence_points', 'update_subject', 'update_detail', 'update_time',
+      'timeliness_status', 'source_attribution', 'workflow_impact', 'test_action',
+    ].forEach(key => {
+      if (scene?.[key] != null && scene[key] !== '') normalized[key] = scene[key];
+    });
+    return normalized;
   });
   const validation = sceneSpecService.validateSceneSpec({
     version: 1,

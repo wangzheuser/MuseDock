@@ -70,6 +70,7 @@ function createNormalizedData(overrides = {}) {
     aweme_id: '',
     douyin_url: '',
     source_url: '',
+    reference_urls: [],
     source_hint: '',
     ignored_url_count: 0,
     use_research: false,
@@ -292,14 +293,19 @@ function normalizeCreativeInput(payload = {}) {
     });
   }
 
-  const sourceUrls = sourceFetch.extractUrls(input, 3);
-  if (sourceUrls.length > 0) {
+  const sourceUrls = sourceFetch.extractUrls(input, Number.MAX_SAFE_INTEGER);
+  const uniqueSourceUrls = [...new Set(sourceUrls)];
+  const sourceHint = uniqueSourceUrls.length === 1
+    ? removeUrlFromText(input, uniqueSourceUrls[0])
+    : input;
+  // 长创作需求里的链接是参考资料，不能把整段需求降级成单网页抓取任务。
+  if (uniqueSourceUrls.length === 1 && sourceHint.length <= 48) {
     const sourceUrl = sourceUrls[0];
-    const sourceHint = removeUrlFromText(input, sourceUrl);
     return createSuccessResponse({
       mode: 'source_url',
       raw_text: input,
       source_url: sourceUrl,
+      reference_urls: [sourceUrl],
       source_hint: sourceHint,
       ignored_url_count: countRemainingSourceUrls(sourceHint),
       use_research: useResearch,
@@ -311,6 +317,7 @@ function normalizeCreativeInput(payload = {}) {
   return createSuccessResponse({
     mode: 'text',
     raw_text: input,
+    reference_urls: uniqueSourceUrls,
     use_research: useResearch,
     skip_validation: skipValidation,
     asset_ids: assetIds,

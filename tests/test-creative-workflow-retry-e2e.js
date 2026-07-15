@@ -7,6 +7,7 @@ const workflows = require('../server/services/creative/creativeWorkflows');
 const workflowTasks = require('../server/services/creative/creativeWorkflowTasks');
 const { createCreativeTaskRegistry } = require('../server/services/creative/creativeTaskRegistry');
 const { createCreativeWorkflowRetryPlan } = require('../server/services/creative-video/retryPlanner');
+const { executeCreativeWorkflowRetryPlan } = require('../server/services/creative-video/resumeExecutor');
 const { parseContentGraphResponse } = require('../server/services/creative-video/html-video/contentGraphAgent');
 const projectStore = require('../server/services/creative-video/html-video/projectStore');
 const {
@@ -142,7 +143,6 @@ async function createFrameHtmlFailureFixture(rootDir, workflowId = '202606250000
   await fs.mkdir(path.join(projectDir, 'frames'), { recursive: true });
   await fs.writeFile(path.join(projectDir, 'frames', '01-scene_01.html'), '<html><body>old</body></html>', 'utf8');
   await fs.writeFile(path.join(projectDir, 'frames', '02-scene_02.html'), '<html><body>kept</body></html>', 'utf8');
-  await fs.writeFile(path.join(projectDir, 'frames', 'scene_02.mp4'), 'mp4:scene_02', 'utf8');
   markCheckpointFrame(project, 'frame_html', 'scene_01', {
     status: 'failed',
     html_path: 'frames/01-scene_01.html',
@@ -155,9 +155,9 @@ async function createFrameHtmlFailureFixture(rootDir, workflowId = '202606250000
     diagnostic_code: '',
   });
   markCheckpointFrame(project, 'render', 'scene_02', {
-    status: 'done',
-    mp4_path: 'frames/scene_02.mp4',
-    output_hash: 'kept-scene-02-mp4',
+    status: 'pending',
+    mp4_path: '',
+    output_hash: '',
     diagnostic_code: '',
   });
   markCheckpointStage(project, 'render', { status: 'partial' });
@@ -448,10 +448,34 @@ function plannerProject(overrides = {}) {
     assert.equal(calls.audio, 0);
     assert.equal(calls.content_graph, 0);
     assert.deepEqual(calls.retryFrameHtmlIds, ['scene_01']);
-    assert.deepEqual(calls.renderFrameIds, ['scene_01']);
+    assert.deepEqual(calls.renderFrameIds, ['scene_01', 'scene_02']);
     assert.equal(calls.compose, 1);
     assert.equal(calls.visualInspect, 1);
     assert.equal(calls.visualInspectArgs.projectDir, projectDir);
+  }
+
+  {
+    const rootDir = await tempRoot();
+    const { workflowId, projectDir } = await createFrameHtmlFailureFixture(rootDir, '202606250000001011');
+    const workflow = await readJson(workflows.getWorkflowPath(workflowId, rootDir));
+    workflow.target = { auto_export: false };
+    const project = await projectStore.loadProject(projectDir);
+    const plan = createCreativeWorkflowRetryPlan({ workflow, project });
+    const calls = {};
+    const result = await executeCreativeWorkflowRetryPlan({
+      workflowId,
+      workflow,
+      projectDir,
+      plan,
+      rootDir,
+      services: fakeHtmlVideoServices(calls),
+    });
+    assert.equal(result.success, true);
+    assert.match(result.message, /未自动导出最终视频/);
+    assert.equal(calls.retryFrameHtml, 1);
+    assert.equal(calls.renderFrame || 0, 0);
+    assert.equal(calls.compose || 0, 0);
+    assert.equal(result.output_path, undefined);
   }
 
   {

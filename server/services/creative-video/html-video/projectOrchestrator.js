@@ -686,6 +686,9 @@ async function createProject({
   };
 }
 
+/**
+ * 物化需要模板展开的帧；工程未变化时保持预览只读，避免并行预览争抢 project.json。
+ */
 async function materializeProject({
   rootDir,
   workflowId,
@@ -697,13 +700,17 @@ async function materializeProject({
 } = {}) {
   const materializer = services.materializer || defaultMaterializer;
   const resolvedProjectDir = await ensureProjectDir({ rootDir, workflowId, runId, projectDir });
+  const sourceProject = normalizeProject(project);
+  const sourceSnapshot = JSON.stringify(sourceProject);
   const materialized = await materializer.materializeProject({
     projectDir: resolvedProjectDir,
-    project: normalizeProject(project),
+    project: sourceProject,
     templateRegistry,
   });
   const nextProject = normalizeProject(materialized.project);
-  await saveProject(resolvedProjectDir, nextProject);
+  if (JSON.stringify(nextProject) !== sourceSnapshot) {
+    await saveProject(resolvedProjectDir, nextProject);
+  }
   return {
     success: true,
     project: nextProject,
@@ -1325,6 +1332,33 @@ async function composeHtmlVideoProject({
       code: 'quality_probe_unavailable',
       message: '当前渲染器未提供最终视频技术质检。',
       issues: [],
+    };
+  }
+
+  // AI 帧失败后的基础卡片只保证工程可编辑，不等于可直接发布。
+  const fallbackFrameIds = Object.entries(
+    objectOrEmpty(nextProject?.generation_checkpoint?.stages?.frame_html?.frames),
+  ).filter(([, frame]) => frame?.diagnostic_code === 'fallback_frame_html_used')
+    .map(([frameId]) => frameId);
+  if (fallbackFrameIds.length > 0) {
+    qualityReport = {
+      ...qualityReport,
+      pass: false,
+      publish_ready: false,
+      message: `技术文件已生成，但 ${fallbackFrameIds.length} 帧使用基础 HTML 兜底，需二次编辑后发布。`,
+      issues: [
+        ...(Array.isArray(qualityReport.issues) ? qualityReport.issues : []),
+        {
+          code: 'fallback_frame_html_used',
+          severity: 'warning',
+          message: `以下帧需要替换或确认来源卡：${fallbackFrameIds.join('、')}`,
+          frame_ids: fallbackFrameIds,
+        },
+      ],
+      metrics: {
+        ...(qualityReport.metrics || {}),
+        fallback_frame_count: fallbackFrameIds.length,
+      },
     };
   }
 

@@ -995,7 +995,6 @@ async function main() {
               repair_action: 'retry_frame_html',
               details: {
                 validation_code: 'frame_html_invalid',
-                retry_provider_missing_text: true,
                 failed_html: failedHtml,
               },
             }],

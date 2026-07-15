@@ -45,6 +45,7 @@ async function run() {
             published_at: '2026-06-12T08:00:00.000Z',
             summary: '新模型发布。',
             evidence: '官方发布说明',
+            discovery_channel: 'primary',
             extra: 'ignored',
           },
           {
@@ -53,6 +54,7 @@ async function run() {
             retrieved_at: '2026-06-12T10:30:00.000Z',
           },
         ],
+        coverage: { status: 'ready', domain_count: 2 },
       };
     },
   });
@@ -68,6 +70,7 @@ async function run() {
       retrieved_at: now,
       summary: '新模型发布。',
       evidence: '官方发布说明',
+      discovery_channel: 'primary',
     },
     {
       title: '行业观察',
@@ -78,6 +81,7 @@ async function run() {
       evidence: '',
     },
   ]);
+  assert.deepEqual(ready.coverage, { status: 'ready', domain_count: 2 });
   assert.equal(ready.updated_at, now);
 
   const emptyResult = await createResearchContext({
@@ -86,10 +90,10 @@ async function run() {
     now,
     provider: async () => ({ summary: '', sources: [] }),
   });
-  assert.equal(emptyResult.status, 'failed');
+  assert.equal(emptyResult.status, 'empty');
   assert.equal(emptyResult.query, query);
   assert.deepEqual(emptyResult.sources, []);
-  assert.match(emptyResult.summary, /没有返回可用资料/);
+  assert.match(emptyResult.summary, /没有返回可用素材/);
   assert.equal(emptyResult.updated_at, now);
 
   const failed = await createResearchContext({

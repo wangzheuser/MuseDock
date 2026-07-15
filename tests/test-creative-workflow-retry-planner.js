@@ -43,6 +43,16 @@ function project(overrides = {}) {
 }
 
 (async () => {
+  const briefPlan = createCreativeWorkflowRetryPlan({
+    workflow: workflow({
+      last_failure: { stage: 'brief', message: '导演简报不是有效 JSON。' },
+    }),
+    project: {},
+  });
+  assert.equal(briefPlan.can_retry, true);
+  assert.equal(briefPlan.repair_action, 'restart_workflow');
+  assert.equal(briefPlan.retry_from, 'brief');
+
   const frameDiagnostic = createDiagnostic({
     code: 'provider_missing_text',
     stage: 'ai-frame-html',
@@ -114,6 +124,7 @@ function project(overrides = {}) {
   const workflowErrorFramePlan = createCreativeWorkflowRetryPlan({
     workflow: workflow({
       error: { code: 'provider_missing_text' },
+      target: { auto_export: false },
     }),
     project: project(),
   });
@@ -121,6 +132,7 @@ function project(overrides = {}) {
   assert.equal(workflowErrorFramePlan.repair_action, 'retry_frame_html');
   assert.equal(workflowErrorFramePlan.retry_from, 'frame_html');
   assert.equal(workflowErrorFramePlan.code, 'provider_missing_text');
+  assert.match(workflowErrorFramePlan.user_message, /不自动导出最终视频/);
 
   const metaFailurePlan = createCreativeWorkflowRetryPlan({
     workflow: workflow({
@@ -221,6 +233,38 @@ function project(overrides = {}) {
   assert.equal(fallbackPlan.can_retry, true);
   assert.equal(fallbackPlan.repair_action, 'fallback_scene_spec_graph');
 
+  const actionConfigRecoveredPlan = createCreativeWorkflowRetryPlan({
+    workflow: workflow({
+      last_failure: contentGraphFailure,
+      retry: {
+        version: 1,
+        attempts: [{
+          repair_action: 'retry_content_graph',
+          status: 'failed',
+          message: '恢复动作 retryContentGraph 未配置，无法自动重试。',
+        }],
+      },
+    }),
+    project: project(),
+  });
+  assert.equal(actionConfigRecoveredPlan.repair_action, 'retry_content_graph');
+
+  const invalidJsonRecoveryPlan = createCreativeWorkflowRetryPlan({
+    workflow: workflow({
+      last_failure: contentGraphFailure,
+      retry: {
+        version: 1,
+        attempts: [{
+          repair_action: 'retry_content_graph',
+          status: 'failed',
+          message: 'AI 返回的 content graph JSON 无效：Unterminated string',
+        }],
+      },
+    }),
+    project: project(),
+  });
+  assert.equal(invalidJsonRecoveryPlan.repair_action, 'retry_content_graph');
+
   const trailingCommaPlan = createCreativeWorkflowRetryPlan({
     workflow: workflow({
       last_failure: {
@@ -279,6 +323,19 @@ function project(overrides = {}) {
   });
   assert.equal(renderPlan.repair_action, 'rerender_frames');
   assert.deepEqual(renderPlan.executor_options.frame_ids, ['scene_04']);
+
+  const missingRenderProject = project();
+  markCheckpointFrame(missingRenderProject, 'render', 'scene_01', { status: 'done', mp4_path: 'frames/scene_01.mp4' });
+  markCheckpointFrame(missingRenderProject, 'render', 'scene_02', { status: 'pending', mp4_path: '' });
+  markCheckpointFrame(missingRenderProject, 'render', 'scene_03', { status: 'pending', mp4_path: '' });
+  const missingRenderPlan = createCreativeWorkflowRetryPlan({
+    workflow: workflow({
+      last_failure: { code: 'render_checkpoint_missing', sub_stage: 'compose' },
+    }),
+    project: missingRenderProject,
+  });
+  assert.equal(missingRenderPlan.repair_action, 'rerender_frames');
+  assert.deepEqual(missingRenderPlan.executor_options.frame_ids, ['scene_02', 'scene_03']);
 
   const unknownRenderPlan = createCreativeWorkflowRetryPlan({
     workflow: workflow({

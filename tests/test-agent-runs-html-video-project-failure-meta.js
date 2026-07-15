@@ -124,6 +124,40 @@ const agentRuns = require('../server/services/agent/agentRuns');
   assert.equal(successResult.hyperframes_freeform.project.asset_usage_report.used_asset_ids[0], 'article_01');
   assert.equal(successPersisted.hyperframes_freeform.project.asset_usage_report.used_asset_ids[0], 'article_01');
 
+  const draftRunId = 'run-html-video-ready-for-edit';
+  const draftProjectDir = path.join(rootDir, awemeId, 'agent_runs', `${draftRunId}-html-video`);
+  fs.writeFileSync(path.join(runDir, `${draftRunId}.json`), JSON.stringify({
+    success: true,
+    run_id: draftRunId,
+    template: 'hyperframes_freeform',
+    aweme_id: awemeId,
+    status: 'ready',
+    hyperframes_freeform: {
+      status: 'ready',
+      brief: { status: 'ready', data: { title: '待编辑工程', storyboard: { scenes: [{ index: 1, narration_text: '测试旁白。' }] } } },
+    },
+  }, null, 2));
+  const draftResult = await agentRuns.generateDouyinRunHyperframesFreeformProject(awemeId, draftRunId, {
+    rootDir,
+    creativeVideoWorkflowFacade: {
+      generateCreativeVideoProject: async () => ({
+        success: true,
+        ready_for_edit: true,
+        message: '可编辑工程已生成，等待二次编辑后导出。',
+        render_mode: 'html-video',
+        project_dir: draftProjectDir,
+        html_video_project_path: draftProjectDir,
+        project: { exports: [] },
+        files: [],
+      }),
+    },
+  });
+  assert.equal(draftResult.success, true);
+  assert.equal(draftResult.hyperframes_freeform.project.ready_for_edit, true);
+  assert.equal(draftResult.hyperframes_freeform.render.status, 'pending');
+  assert.equal(draftResult.hyperframes_freeform.render.output_url, '');
+  assert.equal(draftResult.hyperframes_freeform.visual_inspect.status, 'pending');
+
   const legacyRunId = 'run-legacy-freeform-disabled';
   fs.writeFileSync(path.join(runDir, `${legacyRunId}.json`), JSON.stringify({
     success: true,

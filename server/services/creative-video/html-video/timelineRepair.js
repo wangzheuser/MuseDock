@@ -268,8 +268,50 @@ function repairProjectTimeline({
   };
 }
 
+/**
+ * 将不足目标时长的工程尾帧延长，保留原旁白和字幕时间轴。
+ *
+ * 资讯类短视频经常出现旁白比目标时长短的情况，尾部留白应落在最后一帧，
+ * 而不是让独立 content graph、工程时间轴和 HTML 动画各自使用不同的时长。
+ */
+function padProjectTimelineToTarget({ project, targetDurationSec } = {}) {
+  const nextProject = clone(objectOrEmpty(project));
+  const frames = arrayOrEmpty(nextProject.frames);
+  const target = Number(targetDurationSec);
+  const current = timelineDurationSec(nextProject);
+  const gap = Number.isFinite(target) && Number.isFinite(current) ? target - current : 0;
+  // 仅补齐短尾差额；目标明显长于旁白时，保持真实内容时长，避免制造长时间静帧。
+  if (!frames.length || !Number.isFinite(target) || target <= 0 || !Number.isFinite(current) || gap <= 0 || gap > 10) {
+    return { ok: true, project: nextProject, padded_sec: 0 };
+  }
+
+  const lastIndex = frames.length - 1;
+  const previous = frameDuration(frames[lastIndex]);
+  const padded = roundDuration(previous + (target - current));
+  setDuration(frames[lastIndex], padded);
+  const durations = frames.map(frame => frameDuration(frame));
+  syncTimeline(nextProject, frames, durations);
+  syncContentGraph(nextProject, frames, durations);
+  nextProject.output = {
+    ...objectOrEmpty(nextProject.output),
+    duration: roundDuration(target),
+    duration_mode: 'tail_padded',
+    tail_padding_sec: roundDuration(gap),
+  };
+  nextProject.timeline = {
+    ...objectOrEmpty(nextProject.timeline),
+    tail_padding_sec: roundDuration(gap),
+  };
+  return {
+    ok: true,
+    project: nextProject,
+    padded_sec: roundDuration(gap),
+  };
+}
+
 module.exports = {
   analyzeTimelineMismatch,
   compressNarrationForTarget,
   repairProjectTimeline,
+  padProjectTimelineToTarget,
 };

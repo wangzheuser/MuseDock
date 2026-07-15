@@ -26,7 +26,7 @@ function isIncompleteNarration(text) {
 function isConditionalFragment(text) {
   const value = compactText(text);
   return /^(如果|当|假如|若|要是).{2,18}[。！？!?]$/.test(value)
-    && !/(就|则|建议|推荐|优先|选择|可以|应该|最好|通常|直接|记住|关键|结论|够用)/.test(value);
+    && !/(就|则|先|建议|推荐|优先|选择|可以|应该|最好|通常|直接|记住|关键|结论|够用)/.test(value);
 }
 
 function isFinalRetrospectiveFragment(text) {
