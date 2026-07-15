@@ -11,6 +11,21 @@ tags:
   - signal
   - launch
   - agent
+best_for:
+  - 产品功能发布
+  - 工具能力介绍
+  - 版本更新
+  - 行动号召
+not_for:
+  - 人物情绪故事
+  - 连续数据分析
+  - 多步骤教程
+scene_roles:
+  - hook
+  - feature
+  - benefit
+  - cta
+visual_family: bold-product-signal
 engine: hyperframes
 engine_version: "1.0.0"
 source_entry: source/index.html
@@ -20,6 +35,7 @@ output:
     height: 1080
   fps: 30
   duration: 5
+  duration_range_sec: [2, 90]
 inputs:
   schema:
     card_title:
@@ -64,8 +80,9 @@ inputs:
       footer_text: 创意视频 · Bold Signal
       duration_sec: 5
 preview:
-  poster: preview.png
+  poster: preview/poster.jpg
   title: 信号卡片预览
+  sample_time_sec: 1.2
 license:
   name: Apache-2.0
   commercial_use: true

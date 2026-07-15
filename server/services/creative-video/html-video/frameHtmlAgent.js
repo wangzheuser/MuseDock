@@ -75,6 +75,11 @@ function frameSceneSpecSummary(sceneSpec = {}, node = {}, frameId = '', index = 
   };
 }
 
+/**
+ * 提取模板视觉与内容适配信息，约束逐帧 HTML 延续同一视觉系统。
+ * @param {object} template 模板声明。
+ * @returns {string} 可写入提示词的模板摘要。
+ */
 function templateStyleReference(template = {}) {
   if (!template || typeof template !== 'object') return '（无模板，仅自由生成完整 HTML）';
   const examples = template.inputs?.examples || template.examples || [];
@@ -84,6 +89,11 @@ function templateStyleReference(template = {}) {
     description: template.description,
     category: template.category,
     tags: template.tags,
+    best_for: template.best_for,
+    not_for: template.not_for,
+    scene_roles: template.scene_roles,
+    visual_family: template.visual_family,
+    evidence_policy: template.evidence_policy,
     example_inputs: examples,
   }, null, 2);
 }

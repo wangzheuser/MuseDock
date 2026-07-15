@@ -70,6 +70,13 @@ function normalizeTemplateManifest(rawManifest, options = {}) {
   const templateDir = options.templateDir ? path.resolve(options.templateDir) : undefined;
   const license = asObject(raw.license);
   const inputs = asObject(raw.inputs);
+  const preview = asObject(raw.preview);
+  const posterValidation = preview.poster
+    ? validateSourceEntry(preview.poster)
+    : { ok: true, source_entry: '' };
+  if (!posterValidation.ok) {
+    throw new Error(`preview.poster 不合法：${posterValidation.reason}`);
+  }
 
   return {
     ...raw,
@@ -88,7 +95,10 @@ function normalizeTemplateManifest(rawManifest, options = {}) {
       attribution_required: license.attribution_required === true,
     },
     assets_attribution: asArray(raw.assets_attribution),
-    preview: asObject(raw.preview),
+    preview: {
+      ...preview,
+      ...(posterValidation.source_entry ? { poster: posterValidation.source_entry } : {}),
+    },
     __dir: templateDir,
   };
 }

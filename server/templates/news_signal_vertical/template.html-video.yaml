@@ -8,6 +8,22 @@ tags:
   - 科技
   - 数据
   - 新闻
+best_for:
+  - 科技财经变化
+  - 有来源的关键数字
+  - 时间线与风险条款
+  - 战略影响解释
+not_for:
+  - 没有数字依据的传闻
+  - 人物情绪故事
+  - 产品界面演示
+scene_roles:
+  - update
+  - evidence
+  - risk
+  - explain
+visual_family: dark-finance-signal
+evidence_policy: metric 仅在输入材料明确提供数字时展示，禁止为了版式虚构指标。
 engine: hyperframes
 engine_version: "1.0.0"
 source_entry: source/index.html
@@ -17,6 +33,7 @@ output:
     height: 1920
   fps: 30
   duration: 6
+  duration_range_sec: [2, 90]
 inputs:
   schema:
     headline:
@@ -65,7 +82,9 @@ inputs:
       footer_text: Anysphere 并购要点速览
       duration_sec: 6
 preview:
+  poster: preview/poster.jpg
   title: 竖屏财经信号预览
+  sample_time_sec: 1.2
 license:
   name: Apache-2.0
   commercial_use: true

@@ -35,14 +35,29 @@ function isHtmlSourceEntry(sourceEntry) {
   return /\.html?$/i.test(String(sourceEntry || '').trim());
 }
 
-function resolveSourceEntryPath(manifest) {
-  if (!manifest || !manifest.__dir || !manifest.source_entry) return '';
-  const sourcePath = path.resolve(manifest.__dir, manifest.source_entry);
+/**
+ * 解析模板目录内的受控文件路径，阻止路径逃逸。
+ * @param {object} manifest 模板声明。
+ * @param {string} relativeEntry 模板目录内的相对路径。
+ * @returns {string} 合法绝对路径，无法解析时返回空字符串。
+ */
+function resolveTemplateFilePath(manifest, relativeEntry) {
+  if (!manifest || !manifest.__dir || !relativeEntry) return '';
+  const sourcePath = path.resolve(manifest.__dir, relativeEntry);
   const relative = path.relative(manifest.__dir, sourcePath);
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
     return '';
   }
   return sourcePath;
+}
+
+/**
+ * 解析模板 HTML 入口文件。
+ * @param {object} manifest 模板声明。
+ * @returns {string} HTML 入口绝对路径。
+ */
+function resolveSourceEntryPath(manifest) {
+  return resolveTemplateFilePath(manifest, manifest?.source_entry);
 }
 
 function resolveRootDirs(rootDir) {
@@ -232,6 +247,11 @@ function validateTemplateCompatibility(manifest, options = {}) {
   };
 }
 
+/**
+ * 压缩模板声明供模型选择，保留影响适配判断的语义元数据。
+ * @param {object} manifest 完整模板声明。
+ * @returns {object} 不含源码的紧凑模板索引项。
+ */
 function toCompactTemplate(manifest) {
   const output = manifest.output || {};
   const durationSec = output.duration_sec ?? output.duration;
@@ -241,6 +261,11 @@ function toCompactTemplate(manifest) {
     description: manifest.description || '',
     category: manifest.category || '',
     tags: Array.isArray(manifest.tags) ? manifest.tags : [],
+    best_for: Array.isArray(manifest.best_for) ? manifest.best_for : [],
+    not_for: Array.isArray(manifest.not_for) ? manifest.not_for : [],
+    scene_roles: Array.isArray(manifest.scene_roles) ? manifest.scene_roles : [],
+    visual_family: manifest.visual_family || '',
+    evidence_policy: manifest.evidence_policy || '',
     engine: manifest.engine,
     mapped_engine: mappedEngine(manifest.engine),
     source_entry: manifest.source_entry,
@@ -318,5 +343,6 @@ module.exports = {
   mappedEngine,
   getManifestAspect,
   getManifestAspects,
+  resolveTemplateFilePath,
   resolveSourceEntryPath,
 };

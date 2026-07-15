@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Maximize2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 import {
@@ -336,6 +337,7 @@ const secondaryButtonClass = 'min-h-7 rounded-md border border-slate-700 bg-slat
 
 export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
   const iframeRef = useRef(null);
+  const expandedPreviewRef = useRef(null);
   const previewSlotRef = useRef(null);
   const playbackTimerRef = useRef(null);
   const iframeLoadTimerRef = useRef(null);
@@ -360,6 +362,8 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
   const [canUndo, setCanUndo] = useState(false);
   const [previewSlotSize, setPreviewSlotSize] = useState({ width: 0, height: 0 });
   const [previewZoom, setPreviewZoom] = useState(1);
+  const [expandedPreviewOpen, setExpandedPreviewOpen] = useState(false);
+  const [expandedPreviewHtml, setExpandedPreviewHtml] = useState('');
 
   const frame = editor.selectedFrame;
   const frameId = frameIdOf(frame);
@@ -675,6 +679,25 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
     setLayerItems([]);
     selectedElementRef.current = null;
     setIframeKey(key => key + 1);
+  }
+
+  /** 使用当前 iframe DOM 快照打开只读大图，保留尚未保存的画布修改。 */
+  function openExpandedPreview() {
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc?.body) {
+      setPreviewError('当前镜头尚未准备完成，暂时无法放大预览。');
+      return;
+    }
+    setExpandedPreviewHtml(serializeDocument(doc));
+    setExpandedPreviewOpen(true);
+  }
+
+  /** 让大图 iframe 按实际画布比例适配弹窗。 */
+  function handleExpandedPreviewLoad() {
+    const doc = expandedPreviewRef.current?.contentDocument;
+    if (!doc?.body) return;
+    installCanvasViewport(doc);
+    doc.defaultView.addEventListener('resize', () => installCanvasViewport(doc));
   }
 
   function reloadHtml() {
@@ -1022,6 +1045,10 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
               <button className={secondaryButtonClass} type="button" disabled={disabled || previewZoom <= 0.75} aria-label="缩小画布" onClick={() => setPreviewZoom(value => Math.max(0.75, Number((value - 0.25).toFixed(2))))}>−</button>
               <button className={secondaryButtonClass} type="button" disabled={disabled} title="恢复适合窗口" onClick={() => setPreviewZoom(1)}>{Math.round(previewZoom * 100)}%</button>
               <button className={secondaryButtonClass} type="button" disabled={disabled || previewZoom >= 1.75} aria-label="放大画布" onClick={() => setPreviewZoom(value => Math.min(1.75, Number((value + 0.25).toFixed(2))))}>＋</button>
+              <button className={`${secondaryButtonClass} inline-flex items-center gap-1.5`} type="button" disabled={disabled || !htmlReady} onClick={openExpandedPreview}>
+                <Maximize2 size={13} aria-hidden="true" />
+                放大预览
+              </button>
               <button className={secondaryButtonClass} type="button" disabled={disabled} onClick={replay}>重新播放</button>
               <button className={secondaryButtonClass} type="button" disabled={disabled} onClick={jumpToEnd}>跳到结尾并编辑</button>
             </div>
@@ -1053,6 +1080,25 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
           disabled={disabled}
           onSelect={handleSelectFrame}
         />
+
+        <Dialog open={expandedPreviewOpen} onOpenChange={setExpandedPreviewOpen}>
+          <DialogContent className="grid h-[min(92vh,900px)] w-[min(96vw,1400px)] max-w-none grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-lg border-slate-700 bg-slate-950 p-0 text-slate-100 shadow-[0_30px_100px_rgba(0,0,0,.65)] sm:max-w-none">
+            <DialogHeader className="border-b border-slate-700 bg-slate-900 px-5 py-4 pr-14 text-left">
+              <DialogTitle className="text-base text-white">当前镜头放大预览</DialogTitle>
+              <DialogDescription className="text-xs text-slate-400">只读显示当前画布及未保存修改，关闭后可继续编辑。</DialogDescription>
+            </DialogHeader>
+            <div className="min-h-0 bg-[#020617] p-3">
+              <iframe
+                ref={expandedPreviewRef}
+                className="block h-full w-full rounded-md border border-slate-700 bg-slate-950"
+                title="html-video 当前镜头放大预览"
+                srcDoc={expandedPreviewHtml}
+                sandbox="allow-scripts allow-same-origin"
+                onLoad={handleExpandedPreviewLoad}
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
       <div className={`grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-3 overflow-hidden pr-1 ${DARK_SCROLLBAR_CLASS}`}>
         <div className={`min-h-0 overflow-y-auto overflow-x-hidden ${DARK_SCROLLBAR_CLASS}`}>

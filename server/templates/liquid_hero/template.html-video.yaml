@@ -1,0 +1,87 @@
+id: liquid_hero
+name: 流体极光主视觉
+description: 极光流体、混合模式大字和梦幻渐变，适合品牌、产品与概念型主视觉。
+category: 品牌产品
+tags:
+  - 横屏
+  - 品牌
+  - 产品
+  - 极光
+  - 渐变
+best_for:
+  - 品牌开场
+  - 产品发布
+  - 概念表达
+  - 片尾行动号召
+not_for:
+  - 严谨数据说明
+  - 多步骤教程
+  - 新闻时间线
+scene_roles:
+  - hook
+  - brand
+  - cta
+visual_family: aurora-hero
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source.html
+output:
+  resolution:
+    width: 1920
+    height: 1080
+  fps: 30
+  duration: 7
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    headline:
+      type: string
+      required: true
+      max_length: 36
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 72
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 仅在素材明确提供时展示的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      description: 当前场景的要点列表。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 40
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+  examples: []
+preview:
+  poster: preview/poster.jpg
+  title: 流体极光主视觉预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []

@@ -1,0 +1,98 @@
+id: portrait_editorial_explainer
+name: 竖版杂志解释
+description: 4:5 米白杂志网格、蓝色批注与分栏摘要，适合知识解释、观点梳理和案例复盘。
+category: 深度解读
+tags:
+  - 4:5
+  - 杂志
+  - 解释
+  - 知识
+  - 案例
+  - editorial
+best_for:
+  - 知识解释
+  - 案例复盘
+  - 观点梳理
+  - 背景分析
+not_for:
+  - 纯产品广告
+  - 电竞风内容
+  - 高密度动态图表
+scene_roles:
+  - context
+  - explain
+  - takeaway
+  - conclusion
+visual_family: magazine-annotation
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source/index.html
+output:
+  resolution:
+    width: 1080
+    height: 1350
+  fps: 30
+  duration: 7
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    headline:
+      type: string
+      required: true
+      max_length: 36
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 72
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 仅在素材明确提供时展示的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      description: 当前场景的要点列表。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 40
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+  examples:
+    - eyebrow: REVIEW / 案例复盘
+      section_no: 02/05
+      headline: 信息不够权威，也可以做出有价值的内容
+      subtitle: 关键是区分事实、信号与推演，让观众知道每句话属于哪一层。
+      bullets:
+        - 事实层：能确认的变化
+        - 信号层：相关负责人的公开表达
+        - 推演层：对创作者可能意味着什么
+      footer_text: ANNOTATED EXPLAINER
+preview:
+  poster: preview/poster.jpg
+  title: 竖版杂志解释预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []

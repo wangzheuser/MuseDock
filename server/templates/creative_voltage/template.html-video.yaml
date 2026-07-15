@@ -1,0 +1,87 @@
+id: creative_voltage
+name: 创意电压
+description: 电蓝分割面板、手写装饰与等宽元数据，适合设计、创作工具和灵感主题。
+category: 创意设计
+tags:
+  - 横屏
+  - 创意
+  - 设计
+  - 电蓝
+  - 手写
+best_for:
+  - 创意工具
+  - 设计理念
+  - 创作者故事
+  - 视觉趋势
+not_for:
+  - 严肃财经数据
+  - 温暖生活叙事
+  - 步骤密集教程
+scene_roles:
+  - hook
+  - feature
+  - transition
+visual_family: split-creative
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source.html
+output:
+  resolution:
+    width: 1920
+    height: 1080
+  fps: 30
+  duration: 6
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    headline:
+      type: string
+      required: true
+      max_length: 36
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 72
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 仅在素材明确提供时展示的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      description: 当前场景的要点列表。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 40
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+  examples: []
+preview:
+  poster: preview/poster.jpg
+  title: 创意电压预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []

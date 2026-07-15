@@ -1,0 +1,98 @@
+id: portrait_product_steps
+name: 竖版产品路径
+description: 4:5 珊瑚色步骤栈、产品状态芯片和行动按钮，适合功能流程、上手指南与转化路径。
+category: 教程流程
+tags:
+  - 4:5
+  - 产品
+  - 步骤
+  - 上手
+  - 流程
+  - guide
+best_for:
+  - 产品上手
+  - 功能流程
+  - 三步指南
+  - 行动建议
+not_for:
+  - 人物独白
+  - 长篇历史背景
+  - 复杂趋势图
+scene_roles:
+  - how_to
+  - process
+  - demo
+  - action
+visual_family: coral-product-steps
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source/index.html
+output:
+  resolution:
+    width: 1080
+    height: 1350
+  fps: 30
+  duration: 7
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    headline:
+      type: string
+      required: true
+      max_length: 36
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 72
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 仅在素材明确提供时展示的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      description: 当前场景的要点列表。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 40
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+  examples:
+    - eyebrow: HOW IT WORKS / 上手
+      section_no: 04/06
+      headline: 从草稿到成片，只保留三次关键决策
+      subtitle: 先看结构，再看单帧，最后确认导出。
+      bullets:
+        - 检查内容是否有收获
+        - 逐帧修正视觉与文案
+        - 确认版本后统一导出
+      footer_text: STEP BY STEP · MUSEDock
+preview:
+  poster: preview/poster.jpg
+  title: 竖版产品路径预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []

@@ -21,7 +21,7 @@
   .footer-bar{position:absolute;bottom:24px;left:40px;right:40px;display:flex;align-items:baseline;justify-content:space-between;z-index:10;opacity:0.5}
 </style>
 </head>
-<body>
+<body data-hv-canvas data-width="1920" data-height="1080">
   <div class="frame">
     <div class="scene"></div>
     <div class="scratch" style="left:14%;height:38%"></div>
@@ -54,13 +54,18 @@
     <div class="grain"></div>
     <div class="vignette"></div>
   </div>
-
-  <script src="./gsap.min.js"></script>
-  <script>
-    window.__timelines = window.__timelines || {};
-    const tl = gsap.timeline({ paused: true });
-    tl.to({}, { duration: 6 });
-    window.__timelines["main"] = tl;
-  </script>
+<script>
+const variables=window.__HV_VARS__||{};
+const bindings={"headline":".main-text h1","eyebrow":".main-text .chip","subtitle":".main-text p","footer_text":".footer-bar span:last-child"};
+for(const [key,selector] of Object.entries(bindings)){
+  const node=document.querySelector(selector);
+  if(!node)continue;
+  node.dataset.hvBind=key;
+  node.dataset.hvElementId=key;
+  if(key==='headline'||key==='subtitle')node.dataset.textKey=key;
+  // 只替换当前模板明确声明的文本节点，避免破坏装饰结构。
+  if(variables[key]!==undefined&&variables[key]!==null&&variables[key]!=='')node.textContent=String(variables[key]);
+}
+</script>
 </body>
 </html>

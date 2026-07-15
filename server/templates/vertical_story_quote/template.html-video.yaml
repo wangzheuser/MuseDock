@@ -1,0 +1,96 @@
+id: vertical_story_quote
+name: 竖屏人物观点
+description: 深梅色舞台、暖金聚光和巨型引号，适合人物观点、讨论、反直觉洞察与情绪段落。
+category: 观点表达
+tags:
+  - 竖屏
+  - 人物
+  - 观点
+  - 讨论
+  - 引语
+  - story
+best_for:
+  - 人物观点
+  - 讨论片段
+  - 反直觉结论
+  - 情绪转折
+not_for:
+  - 多项数据比较
+  - 软件界面演示
+  - 四步以上教程
+scene_roles:
+  - quote
+  - discussion
+  - insight
+  - reflection
+visual_family: theatrical-quote
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source/index.html
+output:
+  resolution:
+    width: 1080
+    height: 1920
+  fps: 30
+  duration: 7
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    headline:
+      type: string
+      required: true
+      max_length: 36
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 72
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 仅在素材明确提供时展示的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      description: 当前场景的要点列表。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 40
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+  examples:
+    - eyebrow: POINT OF VIEW / 观点
+      section_no: 04/07
+      metric: INSIGHT
+      headline: 用户不缺更多消息，缺的是看完之后知道怎么办
+      subtitle: 好的内容不急着替观众下结论，而是交付一个更清晰的观察角度。
+      bullets: []
+      footer_text: CONVERSATION SERIES · MUSEDock
+preview:
+  poster: preview/poster.jpg
+  title: 竖屏人物观点预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []

@@ -6,14 +6,13 @@ import {
   ASPECT_RATIOS,
   CONTENT_MODE_OPTIONS,
   CREATIVE_FPS_OPTIONS,
+  DEFAULT_CREATIVE_DEFAULTS,
   DEFAULT_TTS_VOICE,
   getTemplateDisplayName,
   getTemplateId,
-  hasBlockingCompatibilityReason,
   isTemplateShownForAspect,
   normalizeCreativeDefaults,
   normalizeTtsVoiceOptions,
-  optionLabel,
 } from '@/lib/creativeDefaultsOptions.js';
 import { cn } from '@/lib/utils.js';
 import { Switch } from '../settings/Switch.jsx';
@@ -21,8 +20,9 @@ import {
   CreativeGuidanceDialog,
   creativeGuidanceSettingsSignature,
 } from './CreativeGuidanceDialog.jsx';
+import { TemplatePicker } from './TemplatePicker.jsx';
 
-const FIELD_CLASS = 'h-[34px] w-full rounded-xl border border-[#d9dde5] bg-white px-2.5 text-[13px] text-[#30343b] outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/15 disabled:cursor-not-allowed disabled:opacity-60';
+const FIELD_CLASS = 'h-[38px] w-full rounded-lg border border-[#d9dde5] bg-white px-2.5 text-[13px] text-[#30343b] outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/15 disabled:cursor-not-allowed disabled:opacity-60';
 
 /**
  * 返回当前可用的文本模型是否支持多模态输入。
@@ -61,17 +61,6 @@ function getSelectedTemplateLabel(templates, templateId) {
   const matched = (Array.isArray(templates) ? templates : [])
     .find(template => getTemplateId(template) === id);
   return matched ? getTemplateDisplayName(matched) : id;
-}
-
-/**
- * 根据音色 ID 查找展示名。
- * @param {Array<{id: string, label: string}>} voices 音色列表。
- * @param {string} voiceId 音色 ID。
- * @returns {string} 音色展示名。
- */
-function getVoiceLabel(voices, voiceId) {
-  const id = String(voiceId || DEFAULT_TTS_VOICE).trim() || DEFAULT_TTS_VOICE;
-  return voices.find(voice => voice.id === id)?.label || id;
 }
 
 /**
@@ -134,16 +123,26 @@ function CreativeRunSettingsPanel({
     () => getAspectTemplates(templates, currentAspectRatio),
     [templates, currentAspectRatio],
   );
-  const summaryItems = [
-    { label: '类型', value: CONTENT_MODE_OPTIONS.find(option => option.value === defaults.contentMode)?.label || '解读' },
-    { label: '画幅', value: currentAspectRatio },
-    { label: '时长', value: `${defaults.targetDurationSec || 60}s` },
-    { label: '帧率', value: `${defaults.fps || 30} FPS` },
-    { label: '导出', value: `${playbackSpeedInvalid ? '1.0' : Number(playbackSpeedText).toFixed(1)}x` },
-    { label: '模板', value: getSelectedTemplateLabel(templates, templateId) },
-    { label: '旁白音色', value: getVoiceLabel(voiceOptions, defaults.ttsVoice) },
-    { label: '联网', value: defaults.useResearch !== false ? '开启' : '关闭' },
-  ];
+  const summaryText = [
+    CONTENT_MODE_OPTIONS.find(option => option.value === defaults.contentMode)?.label || '解读',
+    currentAspectRatio,
+    `${defaults.targetDurationSec || DEFAULT_CREATIVE_DEFAULTS.targetDurationSec}秒`,
+  ].join(' · ');
+  const summaryBadges = [
+    templateId ? { label: getSelectedTemplateLabel(templates, templateId), tone: 'template' } : null,
+    defaults.lockTemplate === true ? { label: '模板已锁定' } : null,
+    defaults.fps !== DEFAULT_CREATIVE_DEFAULTS.fps ? { label: `${defaults.fps} FPS` } : null,
+    playbackSpeedInvalid
+      ? { label: '导出倍速待修正', tone: 'warning' }
+      : Number(playbackSpeedText) !== DEFAULT_CREATIVE_DEFAULTS.playbackSpeed
+        ? { label: `导出 ${Number(playbackSpeedText).toFixed(1)}x` }
+        : null,
+    defaults.generateAudio !== false && defaults.ttsVoice !== DEFAULT_TTS_VOICE
+      ? { label: `音色 ${defaults.ttsVoice}` }
+      : null,
+    defaults.useResearch === false ? { label: '联网已关闭', tone: 'warning' } : null,
+    defaults.generateAudio === false ? { label: '旁白已关闭', tone: 'warning' } : null,
+  ].filter(Boolean);
 
   /**
    * 合并本次创作设置草稿。
@@ -171,7 +170,7 @@ function CreativeRunSettingsPanel({
     <div className="rounded-[16px] border border-[#edf0f5] bg-[#f8fafc]">
       <button
         type="button"
-        className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left disabled:cursor-not-allowed disabled:opacity-60"
+        className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-3 py-2.5 text-left disabled:cursor-not-allowed disabled:opacity-60 max-[720px]:grid-cols-[minmax(0,1fr)_auto]"
         disabled={isBusy}
         aria-expanded={open}
         onClick={() => setOpen(value => !value)}
@@ -180,13 +179,21 @@ function CreativeRunSettingsPanel({
           <SlidersHorizontal size={15} />
           本次创作设置
         </span>
-        <span className="flex min-w-0 flex-1 flex-wrap justify-end gap-1.5">
-          {summaryItems.map(item => (
+        <span className="flex min-w-0 items-center justify-end gap-2 overflow-hidden whitespace-nowrap max-[720px]:col-span-2 max-[720px]:col-start-1 max-[720px]:row-start-2 max-[720px]:justify-start max-[720px]:overflow-visible max-[720px]:whitespace-normal">
+          <span className="min-w-0 truncate text-[11px] font-semibold text-[#64748b]">{summaryText}</span>
+          {summaryBadges.map(item => (
             <span
               key={item.label}
-              className="rounded-full border border-[#e2e8f0] bg-white px-2 py-1 text-[11px] font-semibold text-[#64748b]"
+              className={cn(
+                'shrink-0 rounded-full border px-2 py-1 text-[10px] font-semibold',
+                item.tone === 'template'
+                  ? 'border-[#bed0ea] bg-[#edf4ff] text-[#24528b]'
+                  : item.tone === 'warning'
+                    ? 'border-amber-200 bg-amber-50 text-amber-800'
+                    : 'border-[#e2e8f0] bg-white text-[#64748b]',
+              )}
             >
-              {item.label}：{item.value}
+              {item.label}
             </span>
           ))}
         </span>
@@ -198,7 +205,7 @@ function CreativeRunSettingsPanel({
 
       {open ? (
         <div className="grid gap-3 border-t border-[#edf0f5] px-3 py-3">
-          <div className="grid grid-cols-2 gap-3 max-[720px]:grid-cols-1">
+          <div className="grid grid-cols-2 items-start gap-3 max-[720px]:grid-cols-1">
             <label className="grid gap-1.5">
               <span className="text-xs font-semibold text-[#5f6876]">内容类型</span>
               <select
@@ -260,7 +267,7 @@ function CreativeRunSettingsPanel({
 
             <label className="grid gap-1.5">
               <span className="text-xs font-semibold text-[#5f6876]">默认导出倍速</span>
-              <span className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5">
+              <span className="relative block">
                 <input
                   type="number"
                   min="0.1"
@@ -271,38 +278,29 @@ function CreativeRunSettingsPanel({
                   disabled={isBusy}
                   aria-invalid={playbackSpeedInvalid}
                   aria-describedby="creative-playback-speed-help"
-                  className={FIELD_CLASS}
+                  className={cn(FIELD_CLASS, 'pr-7')}
                   onChange={event => updateDefaults({
                     playbackSpeed: event.target.value === '' ? '' : Number(event.target.value),
                   })}
                 />
-                <span className="text-xs font-semibold text-[#5f6876]">x</span>
+                <span className="pointer-events-none absolute inset-y-0 right-2.5 grid place-items-center text-xs font-semibold text-[#5f6876]">x</span>
               </span>
               <span id="creative-playback-speed-help" className={cn('text-[11px] leading-relaxed', playbackSpeedInvalid ? 'font-semibold text-red-600' : 'text-[#7b8492]')}>
                 {playbackSpeedInvalid ? '请输入 0.1 到 2.0 之间、最多一位小数的导出倍速。' : '1.0 为原速，仅影响最终导出。'}
               </span>
             </label>
 
-            <label className="grid gap-1.5">
+            <div className="grid gap-1.5">
               <span className="text-xs font-semibold text-[#5f6876]">当前画幅模板</span>
-              <select
+              <TemplatePicker
+                templates={aspectTemplates}
+                aspectRatio={currentAspectRatio}
                 value={templateId}
                 disabled={isBusy}
-                onChange={event => updateCurrentTemplate(event.target.value)}
-                className={FIELD_CLASS}
-              >
-                <option value="">不指定模板</option>
-                {aspectTemplates.map(template => (
-                  <option
-                    key={`${currentAspectRatio}-${getTemplateId(template)}`}
-                    value={getTemplateId(template)}
-                    disabled={!isTemplateShownForAspect(template, currentAspectRatio) || hasBlockingCompatibilityReason(template)}
-                  >
-                    {optionLabel(template, currentAspectRatio)}
-                  </option>
-                ))}
-              </select>
-            </label>
+                compact
+                onChange={updateCurrentTemplate}
+              />
+            </div>
 
             <label className="grid gap-1.5">
               <span className="text-xs font-semibold text-[#5f6876]">旁白音色</span>

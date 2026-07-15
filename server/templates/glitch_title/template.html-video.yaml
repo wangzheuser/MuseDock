@@ -11,6 +11,20 @@ tags:
   - cyberpunk
   - 电竞
   - 数码
+best_for:
+  - 科技冲突开场
+  - 游戏与电竞话题
+  - 安全与故障事件
+  - 短标题转场
+not_for:
+  - 温和知识解释
+  - 长段正文
+  - 严肃数据报告
+scene_roles:
+  - hook
+  - warning
+  - transition
+visual_family: cyber-glitch
 engine: hyperframes
 engine_version: "1.0.0"
 source_entry: source/index.html
@@ -20,6 +34,7 @@ output:
     height: 1080
   fps: 30
   duration: 6
+  duration_range_sec: [2, 90]
 inputs:
   schema:
     title:
@@ -53,8 +68,9 @@ inputs:
       footer_text: HTML-VIDEO / VFX
       duration_sec: 6
 preview:
-  poster: preview.png
+  poster: preview/poster.jpg
   title: 故障标题预览
+  sample_time_sec: 1.2
 license:
   name: Apache-2.0
   commercial_use: true

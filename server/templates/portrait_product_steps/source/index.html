@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1080,height=1350,initial-scale=1.0">
+<title>竖版产品路径</title>
+<style>:root{--accent:#ff765f}
+*{box-sizing:border-box}html,body{margin:0;overflow:hidden}body{position:relative;font-family:"Noto Sans SC","Microsoft YaHei",Arial,sans-serif}
+header,footer{position:relative;z-index:3;display:flex;justify-content:space-between;font:700 16px/1 "Courier New",monospace;letter-spacing:2px}
+main{position:relative;z-index:2;padding-bottom:32px}.headline{margin:0;overflow-wrap:anywhere}.subtitle{overflow-wrap:anywhere}.metric:empty,.subtitle:empty,.bullets:empty{display:none}.logo,.quote-mark{display:none}
+.reveal{opacity:.28;transform:translateY(26px);animation:reveal .72s cubic-bezier(.16,1,.3,1) forwards}.d1{animation-delay:.18s}.d2{animation-delay:.34s}
+@keyframes reveal{to{opacity:1;transform:none}}@keyframes grow{to{transform:scaleX(1)}}@media(prefers-reduced-motion:reduce){*{animation:none!important}.reveal{opacity:1;transform:none}}
+
+html,body{width:1080px;height:1350px}body{padding:56px 64px 330px}
+main{margin-top:86px}.headline{font-size:70px;line-height:1.07;letter-spacing:-3px;max-width:900px}.subtitle{font-size:27px;line-height:1.52;max-width:850px;margin:28px 0 0}
+.metric{font-size:86px;font-weight:900;line-height:1;margin-bottom:24px}.bullets{display:grid;gap:14px;margin-top:42px}.bullet{font-size:24px;line-height:1.38}
+footer{position:absolute;left:64px;right:64px;bottom:330px;padding-top:18px}
+
+body{background:var(--accent);color:#241811}.decor{position:absolute;right:-35px;top:170px;width:160px;height:40px;border-radius:999px;background:#241811;transform:rotate(90deg)}.headline{font-size:69px}.bullets{gap:12px;margin-top:34px}.bullet{display:grid;grid-template-columns:56px 1fr;align-items:center;gap:15px;min-height:96px;background:#fff8e8;border:3px solid #241811;border-radius:22px;padding:15px 19px;box-shadow:7px 7px 0 #241811}.bullet b{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:#241811;color:#fff8e8;font-size:21px}footer{border-top:3px solid #241811}
+</style>
+</head>
+<body data-hv-canvas data-width="1080" data-height="1350" data-template-family="coral-product-steps">
+<div class="decor" aria-hidden="true"></div><div class="quote-mark" aria-hidden="true" data-layout-ignore>“</div>
+<header><span class="logo">M</span><span data-hv-element-id="eyebrow" data-hv-bind="eyebrow" data-text-key="eyebrow">HOW IT WORKS / 上手</span><span data-hv-element-id="section_no" data-hv-bind="section_no">04/06</span></header>
+<main>
+<div class="metric reveal" data-hv-element-id="metric" data-hv-bind="metric" data-text-key="metric"></div>
+<h1 class="headline reveal d1" data-hv-element-id="headline" data-hv-bind="headline" data-text-key="headline">从草稿到成片，只保留三次关键决策</h1>
+<div class="mock reveal d1"></div>
+<p class="subtitle reveal d2" data-hv-element-id="subtitle" data-hv-bind="subtitle" data-text-key="subtitle">先看结构，再看单帧，最后确认导出。</p>
+<section class="bullets" data-hv-element-id="bullets" data-hv-bind="bullets" data-text-key="body"><div class="bullet reveal" style="animation-delay:0.48s"><b>01</b><span>检查内容是否有收获</span></div><div class="bullet reveal" style="animation-delay:0.59s"><b>02</b><span>逐帧修正视觉与文案</span></div><div class="bullet reveal" style="animation-delay:0.7s"><b>03</b><span>确认版本后统一导出</span></div></section>
+</main>
+<footer><span data-hv-element-id="footer_text" data-hv-bind="footer_text">STEP BY STEP · MUSEDock</span><span>● MUSEDock</span></footer>
+<script>
+const variables=window.__HV_VARS__||{};
+for(const node of document.querySelectorAll('[data-hv-bind]')){
+  const key=node.dataset.hvBind;
+  if(key!=='bullets'&&variables[key]!==undefined&&variables[key]!==null&&variables[key]!=='')node.textContent=String(variables[key]);
+}
+const bulletRoot=document.querySelector('[data-hv-bind="bullets"]');
+if(bulletRoot&&Array.isArray(variables.bullets)&&variables.bullets.length){
+  // 列表内容只通过 textContent 写入，保留模板结构并避免注入 HTML。
+  bulletRoot.replaceChildren(...variables.bullets.slice(0,4).map((text,index)=>{
+    const element=document.createElement('div');
+    element.className='bullet reveal';
+    element.style.animationDelay=(0.48+index*0.11)+'s';
+    const number=document.createElement('b');
+    number.textContent=String(index+1).padStart(2,'0');
+    const content=document.createElement('span');
+    content.textContent=String(text);
+    element.append(number,content);
+    return element;
+  }));
+}
+</script>
+</body>
+</html>

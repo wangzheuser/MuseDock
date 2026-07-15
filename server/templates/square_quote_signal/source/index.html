@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1080,height=1080,initial-scale=1.0">
+<title>方形霓虹观点</title>
+<style>:root{--accent:#22f2c5}
+*{box-sizing:border-box}html,body{margin:0;overflow:hidden}body{position:relative;font-family:"Noto Sans SC","Microsoft YaHei",Arial,sans-serif}
+header,footer{position:relative;z-index:3;display:flex;justify-content:space-between;font:700 16px/1 "Courier New",monospace;letter-spacing:2px}
+main{position:relative;z-index:2;padding-bottom:32px}.headline{margin:0;overflow-wrap:anywhere}.subtitle{overflow-wrap:anywhere}.metric:empty,.subtitle:empty,.bullets:empty{display:none}.logo,.quote-mark{display:none}
+.reveal{opacity:.28;transform:translateY(26px);animation:reveal .72s cubic-bezier(.16,1,.3,1) forwards}.d1{animation-delay:.18s}.d2{animation-delay:.34s}
+@keyframes reveal{to{opacity:1;transform:none}}@keyframes grow{to{transform:scaleX(1)}}@media(prefers-reduced-motion:reduce){*{animation:none!important}.reveal{opacity:1;transform:none}}
+
+html,body{width:1080px;height:1080px}body{padding:56px 64px 205px}
+main{margin-top:72px}.headline{font-size:68px;line-height:1.07;letter-spacing:-3px;max-width:900px}.subtitle{font-size:23px;line-height:1.52;max-width:850px;margin:28px 0 0}
+.metric{font-size:76px;font-weight:900;line-height:1;margin-bottom:24px}.bullets{display:grid;gap:14px;margin-top:42px}.bullet{font-size:21px;line-height:1.38}
+footer{position:absolute;left:64px;right:64px;bottom:290px;padding-top:18px}
+
+body{background:#07090b;color:#f4f5ef}.decor{position:absolute;right:-190px;bottom:-120px;width:620px;height:620px;border:4px solid var(--accent);border-radius:50%;box-shadow:0 0 0 42px rgba(34,242,197,.08),0 0 0 90px rgba(34,242,197,.04)}header,footer,.metric{color:var(--accent)}.metric{font-size:112px}.headline{font-size:76px}.subtitle{color:#b8c4c0}.bullets{display:none}.headline:after{content:"";display:block;width:220px;height:8px;background:var(--accent);margin-top:36px;transform:scaleX(0);transform-origin:left;animation:grow .7s .45s forwards}
+</style>
+</head>
+<body data-hv-canvas data-width="1080" data-height="1080" data-template-family="neon-opinion">
+<div class="decor" aria-hidden="true"></div><div class="quote-mark" aria-hidden="true" data-layout-ignore>“</div>
+<header><span class="logo">M</span><span data-hv-element-id="eyebrow" data-hv-bind="eyebrow" data-text-key="eyebrow">OPEN QUESTION / 讨论</span><span data-hv-element-id="section_no" data-hv-bind="section_no">03/06</span></header>
+<main>
+<div class="metric reveal" data-hv-element-id="metric" data-hv-bind="metric" data-text-key="metric">WHY?</div>
+<h1 class="headline reveal d1" data-hv-element-id="headline" data-hv-bind="headline" data-text-key="headline">内容的价值，是信息量还是判断力？</h1>
+<div class="mock reveal d1"></div>
+<p class="subtitle reveal d2" data-hv-element-id="subtitle" data-hv-bind="subtitle" data-text-key="subtitle">把你的标准留在评论区。</p>
+<section class="bullets" data-hv-element-id="bullets" data-hv-bind="bullets" data-text-key="body"></section>
+</main>
+<footer><span data-hv-element-id="footer_text" data-hv-bind="footer_text">SIGNAL / 03</span><span>● MUSEDock</span></footer>
+<script>
+const variables=window.__HV_VARS__||{};
+for(const node of document.querySelectorAll('[data-hv-bind]')){
+  const key=node.dataset.hvBind;
+  if(key!=='bullets'&&variables[key]!==undefined&&variables[key]!==null&&variables[key]!=='')node.textContent=String(variables[key]);
+}
+const bulletRoot=document.querySelector('[data-hv-bind="bullets"]');
+if(bulletRoot&&Array.isArray(variables.bullets)&&variables.bullets.length){
+  // 列表内容只通过 textContent 写入，保留模板结构并避免注入 HTML。
+  bulletRoot.replaceChildren(...variables.bullets.slice(0,4).map((text,index)=>{
+    const element=document.createElement('div');
+    element.className='bullet reveal';
+    element.style.animationDelay=(0.48+index*0.11)+'s';
+    const number=document.createElement('b');
+    number.textContent=String(index+1).padStart(2,'0');
+    const content=document.createElement('span');
+    content.textContent=String(text);
+    element.append(number,content);
+    return element;
+  }));
+}
+</script>
+</body>
+</html>

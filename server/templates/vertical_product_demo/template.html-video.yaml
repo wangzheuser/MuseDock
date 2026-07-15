@@ -1,0 +1,98 @@
+id: vertical_product_demo
+name: 竖屏产品演示
+description: 明亮产品界面、设备卡片和荧光绿动作提示，适合功能演示、前后对比与使用场景。
+category: 品牌产品
+tags:
+  - 竖屏
+  - 产品
+  - 功能
+  - 界面
+  - 演示
+  - product
+best_for:
+  - 功能演示
+  - 产品更新
+  - 使用场景
+  - 效率工具
+not_for:
+  - 纯人物故事
+  - 严肃新闻播报
+  - 没有产品或流程对象的内容
+scene_roles:
+  - feature
+  - demo
+  - benefit
+  - cta
+visual_family: clean-product-ui
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source/index.html
+output:
+  resolution:
+    width: 1080
+    height: 1920
+  fps: 30
+  duration: 7
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    headline:
+      type: string
+      required: true
+      max_length: 36
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 72
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 仅在素材明确提供时展示的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      description: 当前场景的要点列表。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 40
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+  examples:
+    - eyebrow: PRODUCT NOTE / 功能
+      section_no: 02/04
+      headline: 先生成草稿，再进入逐帧精修
+      subtitle: 把“自动完成”改成“可控迭代”，每个片段都能独立检查和重做。
+      bullets:
+        - 默认保留可编辑工程
+        - 逐帧预览与质量检查
+        - 确认后再导出最终视频
+      footer_text: EDITABLE BY DEFAULT
+preview:
+  poster: preview/poster.jpg
+  title: 竖屏产品演示预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []

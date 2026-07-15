@@ -19,6 +19,11 @@ const {
   getManifestAspect,
   getManifestAspects,
 } = require('../services/creative-video/html-video/templateRegistry');
+const {
+  buildTemplatePreviewDescriptor,
+  buildTemplatePreviewHtml,
+  resolveTemplatePosterPath,
+} = require('../services/creative-video/html-video/templatePreviewService');
 
 const router = express.Router();
 const SUPPORTED_CLEANUP_TARGETS = new Set(['creative-workflows', 'media-cache', 'render-outputs', 'browser-data', 'cookies']);
@@ -57,6 +62,9 @@ async function getConfigTemplatesRoute(req, res) {
         description: manifest.description || '',
         category: manifest.category || '',
         tags: Array.isArray(manifest.tags) ? manifest.tags : [],
+        best_for: Array.isArray(manifest.best_for) ? manifest.best_for : [],
+        not_for: Array.isArray(manifest.not_for) ? manifest.not_for : [],
+        visual_family: manifest.visual_family || '',
         engine: manifest.engine,
         mapped_engine: mappedEngine(manifest.engine),
         aspect_ratio: getManifestAspect(manifest),
@@ -64,6 +72,7 @@ async function getConfigTemplatesRoute(req, res) {
         duration_sec: output.duration_sec ?? output.duration,
         source_entry: manifest.source_entry,
         license: manifest.license,
+        preview: buildTemplatePreviewDescriptor(manifest),
         compatible: compatibility.ok,
         compatibility_reasons: compatibility.reasons,
       };
@@ -73,6 +82,60 @@ async function getConfigTemplatesRoute(req, res) {
   } catch (error) {
     res.status(500).json({ success: false, message: '读取视频模板失败。', error: error.message });
   }
+}
+
+/**
+ * 在正式模板目录中查找指定模板。
+ * @param {string} templateId 模板 ID。
+ * @returns {object|null} 匹配的模板声明。
+ */
+function findTemplateManifest(templateId) {
+  const id = String(templateId || '').trim();
+  if (!id) return null;
+  return scanTemplateManifests(DEFAULT_ROOT_DIRS || DEFAULT_ROOT_DIR)
+    .find(manifest => manifest.id === id) || null;
+}
+
+/**
+ * 返回用于模板选择器的动态 HTML 预览。
+ * @param {import('express').Request} req Express 请求。
+ * @param {import('express').Response} res Express 响应。
+ */
+async function getTemplatePreviewRoute(req, res) {
+  const manifest = findTemplateManifest(req.params.templateId);
+  if (!manifest) {
+    return res.status(404).json({ success: false, message: '未找到指定视频模板。' });
+  }
+  try {
+    const html = await buildTemplatePreviewHtml(manifest);
+    res.set({
+      'Cache-Control': 'no-store',
+      'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src data: https://fonts.gstatic.com; img-src data: blob:; media-src data: blob:; connect-src 'none'; frame-ancestors 'self'",
+      'X-Content-Type-Options': 'nosniff',
+    });
+    return res.type('html').send(html);
+  } catch (error) {
+    const status = error.code === 'TEMPLATE_PREVIEW_SOURCE_NOT_FOUND' ? 404 : 500;
+    return res.status(status).json({ success: false, message: `读取模板动态预览失败：${error.message}` });
+  }
+}
+
+/**
+ * 返回模板选择器使用的静态封面。
+ * @param {import('express').Request} req Express 请求。
+ * @param {import('express').Response} res Express 响应。
+ */
+function getTemplatePosterRoute(req, res) {
+  const manifest = findTemplateManifest(req.params.templateId);
+  if (!manifest) {
+    return res.status(404).json({ success: false, message: '未找到指定视频模板。' });
+  }
+  const posterPath = resolveTemplatePosterPath(manifest);
+  if (!posterPath) {
+    return res.status(404).json({ success: false, message: '当前模板尚未生成预览封面。' });
+  }
+  res.set('Cache-Control', 'public, max-age=3600');
+  return res.sendFile(posterPath);
 }
 
 async function getConfigSystemHealthRoute(req, res) {
@@ -203,6 +266,8 @@ async function cleanupConfigDataRoute(req, res) {
 router.get('/app-settings', getAppSettingsRoute);
 router.post('/app-settings', saveAppSettingsRoute);
 router.get('/templates', getConfigTemplatesRoute);
+router.get('/templates/:templateId/preview', getTemplatePreviewRoute);
+router.get('/templates/:templateId/poster', getTemplatePosterRoute);
 router.get('/system-health', getConfigSystemHealthRoute);
 router.get('/tts-voices', getTtsVoicesRoute);
 router.post('/tts-preview', previewTtsRoute);

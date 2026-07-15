@@ -1,0 +1,95 @@
+id: portrait_cinematic_story
+name: 竖版电影故事
+description: 4:5 深色电影画幅、琥珀光晕和胶片章节标记，适合人物故事、品牌幕后与情绪转折。
+category: 故事叙事
+tags:
+  - 4:5
+  - 电影
+  - 故事
+  - 人物
+  - 幕后
+  - cinematic
+best_for:
+  - 人物故事
+  - 品牌幕后
+  - 情绪转折
+  - 故事结尾
+not_for:
+  - 密集步骤
+  - 精确数据比较
+  - 软件界面演示
+scene_roles:
+  - story
+  - reflection
+  - turning_point
+  - ending
+visual_family: portrait-cinema
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source/index.html
+output:
+  resolution:
+    width: 1080
+    height: 1350
+  fps: 30
+  duration: 8
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    headline:
+      type: string
+      required: true
+      max_length: 36
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 72
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 仅在素材明确提供时展示的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      description: 当前场景的要点列表。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 40
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+  examples:
+    - eyebrow: CHAPTER IV / 幕后
+      section_no: 05/06
+      headline: 真正改变作品的，往往是第一次审片之后
+      subtitle: 创作不是一次命中，而是看见问题、做出取舍，再把它打磨到值得发布。
+      bullets: []
+      footer_text: A STORY ABOUT ITERATION
+preview:
+  poster: preview/poster.jpg
+  title: 竖版电影故事预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []

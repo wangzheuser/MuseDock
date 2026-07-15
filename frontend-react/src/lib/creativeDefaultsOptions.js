@@ -48,9 +48,27 @@ export const DEFAULT_CREATIVE_DEFAULTS = {
 };
 
 export const TEMPLATE_NAME_ZH = {
+  bold_poster: '醒目宣言海报',
   bold_signal: '信号卡片',
+  creative_voltage: '创意电压',
+  data_chart: '编辑部趋势图',
   glitch_title: '故障风格标题',
+  light_leak: '漏光电影',
+  liquid_hero: '流体极光主视觉',
   news_signal_vertical: '竖屏财经信号',
+  pentagram_stat: '瑞士网格统计',
+  portrait_cinematic_story: '竖版电影故事',
+  portrait_data_story: '竖版数据故事',
+  portrait_editorial_explainer: '竖版杂志解释',
+  portrait_product_steps: '竖版产品路径',
+  square_compare_grid: '方形双栏对比',
+  square_editorial_cards: '方形模块简报',
+  square_product_spotlight: '方形产品聚焦',
+  square_quote_signal: '方形霓虹观点',
+  vertical_editorial_digest: '竖屏编辑部解读',
+  vertical_process_steps: '竖屏蓝图步骤',
+  vertical_product_demo: '竖屏产品演示',
+  vertical_story_quote: '竖屏人物观点',
   'frame-bold-poster': '醒目海报',
   'frame-bold-signal': '强信号卡片',
   'frame-build-minimal': '极简构建',
@@ -74,6 +92,17 @@ export const TEMPLATE_NAME_ZH = {
   'frame-vignelli': '维涅利版式',
   'frame-warm-grain': '暖色颗粒',
   'vfx-text-cursor': '文字光标特效',
+};
+
+const TEMPLATE_CATEGORY_ZH = {
+  heroes: '品牌产品',
+  hero: '品牌产品',
+  titles: '标题开场',
+  title: '标题开场',
+  news: '资讯解读',
+  data: '数据图表',
+  cinematic: '故事叙事',
+  promo: '品牌产品',
 };
 
 /**
@@ -176,6 +205,18 @@ export function getTemplateDisplayName(template) {
 }
 
 /**
+ * 返回适合在模板选项中展示的中文分类，未知英文分类不直接暴露给用户。
+ * @param {object} template 模板声明。
+ * @returns {string} 中文分类或空字符串。
+ */
+export function getTemplateCategoryLabel(template) {
+  const category = String(template?.category || '').trim();
+  if (!category) return '';
+  if (TEMPLATE_CATEGORY_ZH[category]) return TEMPLATE_CATEGORY_ZH[category];
+  return /[\u3400-\u9fff]/.test(category) ? category : '';
+}
+
+/**
  * 返回模板下拉选项文案。
  * @param {object} template 模板声明。
  * @param {string} aspectRatio 当前画幅。
@@ -183,7 +224,8 @@ export function getTemplateDisplayName(template) {
  */
 export function optionLabel(template, aspectRatio) {
   const compatible = isTemplateShownForAspect(template, aspectRatio) && !hasBlockingCompatibilityReason(template);
-  return `${getTemplateDisplayName(template)}${compatible ? '' : '（不兼容）'}`;
+  const category = getTemplateCategoryLabel(template);
+  return `${getTemplateDisplayName(template)}${category ? ` · ${category}` : ''}${compatible ? '' : '（不兼容）'}`;
 }
 
 /**

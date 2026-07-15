@@ -6,12 +6,11 @@ import {
   DEFAULT_TTS_VOICE,
   getCreativeDefaults,
   getTemplateId,
-  hasBlockingCompatibilityReason,
   isTemplateShownForAspect,
   normalizeTtsVoiceOptions,
-  optionLabel,
 } from '@/lib/creativeDefaultsOptions.js';
 import { api } from '../../api/client.js';
+import { TemplatePicker } from '../creative/TemplatePicker.jsx';
 import { Switch } from './Switch.jsx';
 
 /**
@@ -254,29 +253,20 @@ export function CreativeDefaultsSettings({
             ));
 
             return (
-              <label
+              <div
                 key={aspectRatio}
                 className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-2.5"
               >
                 <span className="text-xs font-semibold text-[#5f6876]">{aspectRatio}</span>
-                <select
+                <TemplatePicker
+                  compact
+                  templates={aspectTemplates}
+                  aspectRatio={aspectRatio}
                   value={value}
                   disabled={disabled}
-                  onChange={event => updateTemplate(aspectRatio, event.target.value)}
-                  className="h-[38px] w-full rounded-lg border border-[#d9dde5] bg-white px-2.5 text-[13px] text-[#30343b] outline-none transition focus:border-[#25f4ee] focus:ring-2 focus:ring-[#25f4ee]/15 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <option value="">不指定模板</option>
-                  {aspectTemplates.map(template => (
-                    <option
-                      key={`${aspectRatio}-${getTemplateId(template)}`}
-                      value={getTemplateId(template)}
-                      disabled={!isTemplateShownForAspect(template, aspectRatio) || hasBlockingCompatibilityReason(template)}
-                    >
-                      {optionLabel(template, aspectRatio)}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  onChange={templateId => updateTemplate(aspectRatio, templateId)}
+                />
+              </div>
             );
           })}
         </div>

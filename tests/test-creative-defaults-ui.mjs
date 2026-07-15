@@ -29,6 +29,9 @@ for (const text of [
   '联网研究默认开启',
   '抖音视频抽帧',
   '强信号卡片',
+  '竖屏编辑部解读',
+  '方形双栏对比',
+  '竖版电影故事',
   '正在保存创作默认值',
   '保存创作默认值',
 ]) {
@@ -42,6 +45,10 @@ assert.match(combinedCreativeDefaultsSource, /playbackSpeed/);
 assert.match(composerSource, /min="0\.1"/);
 assert.match(composerSource, /max="2\.0"/);
 assert.match(composerSource, /step="0\.1"/);
+assert.match(composerSource, /summaryText/);
+assert.match(composerSource, /summaryBadges/);
+assert.doesNotMatch(composerSource, /summaryItems/);
+assert.match(composerSource, /max-\[720px\]:col-span-2/);
 assert.match(settingsPageSource, /CreativeDefaultsSettings/);
 
 console.log('creative defaults ui tests passed');

@@ -19,7 +19,7 @@
   .header-row{display:flex;align-items:baseline;justify-content:space-between}
 </style>
 </head>
-<body>
+<body data-hv-canvas data-width="1920" data-height="1080">
   <article class="article">
     <div class="header-row">
       <div class="kicker nyt-red" style="font-weight:600">全球 · 月活跃用户 · 2018–2026</div>
@@ -85,13 +85,18 @@
       <span style="font-size:10.5px;opacity:0.6">NYT-STYLE · FRAME-DATA-CHART</span>
     </footer>
   </article>
-
-  <script src="./gsap.min.js"></script>
-  <script>
-    window.__timelines = window.__timelines || {};
-    const tl = gsap.timeline({ paused: true });
-    tl.to({}, { duration: 6 });
-    window.__timelines["main"] = tl;
-  </script>
+<script>
+const variables=window.__HV_VARS__||{};
+const bindings={"headline":"h1.serif","eyebrow":".kicker.nyt-red","subtitle":"svg .serif text:last-child","footer_text":"footer span:first-child"};
+for(const [key,selector] of Object.entries(bindings)){
+  const node=document.querySelector(selector);
+  if(!node)continue;
+  node.dataset.hvBind=key;
+  node.dataset.hvElementId=key;
+  if(key==='headline'||key==='subtitle')node.dataset.textKey=key;
+  // 只替换当前模板明确声明的文本节点，避免破坏装饰结构。
+  if(variables[key]!==undefined&&variables[key]!==null&&variables[key]!=='')node.textContent=String(variables[key]);
+}
+</script>
 </body>
 </html>

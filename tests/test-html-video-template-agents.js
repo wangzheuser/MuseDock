@@ -28,6 +28,8 @@ const compactIndex = [{
   category: 'title',
   best_for: ['科技产品发布', '冲突感开场'],
   aspect_support: ['16:9'],
+  inputs: { schema: { internal_marker: { description: 'SHOULD_NOT_REACH_SELECTOR' } } },
+  license: { name: 'INTERNAL_LICENSE_DETAIL' },
 }, {
   id: 'soft-story-card',
   name: '柔和故事卡片',
@@ -72,6 +74,10 @@ assert.ok(selectionPrompt.includes('"confidence": 0.86'));
 assert.ok(selectionPrompt.includes('不要输出 Markdown'));
 assert.ok(selectionPrompt.includes('不要输出 HTML'));
 assert.ok(selectionPrompt.includes('frame-glitch-title'));
+assert.ok(selectionPrompt.includes('not_for'));
+assert.ok(selectionPrompt.includes('evidence_policy'));
+assert.ok(selectionPrompt.includes('整条视频的视觉系统'));
+assert.doesNotMatch(selectionPrompt, /SHOULD_NOT_REACH_SELECTOR|INTERNAL_LICENSE_DETAIL/);
 
 const selectionOk = selectorAgent.parseTemplateSelectionResponse(
   JSON.stringify({

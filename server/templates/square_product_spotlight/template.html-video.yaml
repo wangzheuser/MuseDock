@@ -1,0 +1,98 @@
+id: square_product_spotlight
+name: 方形产品聚焦
+description: 薰衣草渐变、悬浮产品窗口和圆形轨道，适合产品卖点、更新说明与功能卡片。
+category: 品牌产品
+tags:
+  - 方形
+  - 产品
+  - 功能
+  - 渐变
+  - 界面
+  - spotlight
+best_for:
+  - 产品卖点
+  - 版本更新
+  - 功能卡片
+  - 工具推荐
+not_for:
+  - 严肃数据报告
+  - 历史叙事
+  - 强新闻现场感
+scene_roles:
+  - feature
+  - benefit
+  - demo
+  - cta
+visual_family: soft-product-orbit
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source/index.html
+output:
+  resolution:
+    width: 1080
+    height: 1080
+  fps: 30
+  duration: 6
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    headline:
+      type: string
+      required: true
+      max_length: 36
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 72
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 仅在素材明确提供时展示的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      description: 当前场景的要点列表。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 40
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+  examples:
+    - eyebrow: FEATURE DROP / 更新
+      section_no: 04/04
+      headline: 每个片段，都能单独重做
+      subtitle: 不必推翻整条视频，从问题发生的那一帧继续。
+      bullets:
+        - 独立预览
+        - 局部替换
+        - 版本可追溯
+      footer_text: MUSEDock EDITOR
+preview:
+  poster: preview/poster.jpg
+  title: 方形产品聚焦预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []

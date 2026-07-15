@@ -27,6 +27,7 @@
     "test:filter": "node tests/run-all.js",
     "test:ai-text": "node tests/test-ai-text-model.js",
     "eval:quality": "node scripts/quality-eval/index.js",
+    "templates:previews": "node scripts/generate-template-previews.js",
     "mcp": "node scripts/musedock-mcp.mjs",
     "skill:install": "node scripts/install-musedock-skill.mjs"
   },

@@ -1,0 +1,96 @@
+id: square_compare_grid
+name: 方形双栏对比
+description: 珊瑚红与深蓝双栏、强分隔线和结论标签，适合前后对比、路线选择与利弊分析。
+category: 对比决策
+tags:
+  - 方形
+  - 对比
+  - 双栏
+  - 利弊
+  - 决策
+  - comparison
+best_for:
+  - 前后对比
+  - 方案选择
+  - 利弊分析
+  - 误区纠正
+not_for:
+  - 情绪独白
+  - 单线时间轴
+  - 需要大幅产品截图的内容
+scene_roles:
+  - comparison
+  - decision
+  - myth_vs_fact
+visual_family: split-comparison
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source/index.html
+output:
+  resolution:
+    width: 1080
+    height: 1080
+  fps: 30
+  duration: 6
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    headline:
+      type: string
+      required: true
+      max_length: 36
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 72
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 仅在素材明确提供时展示的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      description: 当前场景的要点列表。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 40
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+  examples:
+    - eyebrow: A / B DECISION
+      section_no: 02/05
+      headline: 自动导出 vs 可编辑草稿
+      subtitle: 区别不在生成速度，而在发现问题之后还有没有修改空间。
+      bullets:
+        - 自动导出：快，但问题被固化
+        - 可编辑草稿：多一步检查，更可控
+      footer_text: CHOOSE FOR CONTROL
+preview:
+  poster: preview/poster.jpg
+  title: 方形双栏对比预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []

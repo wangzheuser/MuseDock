@@ -1,0 +1,87 @@
+id: bold_poster
+name: 醒目宣言海报
+description: 米白纸张、番茄红强调和倾斜巨型排版，适合强观点、结论与态度表达。
+category: 观点表达
+tags:
+  - 横屏
+  - 海报
+  - 观点
+  - 宣言
+  - 编辑排版
+best_for:
+  - 观点开场
+  - 态度宣言
+  - 争议讨论
+  - 强结论
+not_for:
+  - 连续数据图表
+  - 操作教程
+  - 需要大量界面截图的内容
+scene_roles:
+  - hook
+  - thesis
+  - conclusion
+visual_family: editorial-poster
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source.html
+output:
+  resolution:
+    width: 1920
+    height: 1080
+  fps: 30
+  duration: 6
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    headline:
+      type: string
+      required: true
+      max_length: 36
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 72
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 仅在素材明确提供时展示的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      description: 当前场景的要点列表。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 40
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+  examples: []
+preview:
+  poster: preview/poster.jpg
+  title: 醒目宣言海报预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []

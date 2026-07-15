@@ -1,0 +1,97 @@
+id: square_editorial_cards
+name: 方形模块简报
+description: 芥末黄与黑色模块化简报，信息块清晰、节奏明快，适合社交平台要点总结。
+category: 内容简报
+tags:
+  - 方形
+  - 简报
+  - 卡片
+  - 要点
+  - 社交媒体
+  - digest
+best_for:
+  - 三点总结
+  - 热点速览
+  - 清单内容
+  - 概念拆解
+not_for:
+  - 电影感故事
+  - 单个大图展示
+  - 复杂折线图
+scene_roles:
+  - summary
+  - explain
+  - checklist
+visual_family: brutalist-digest
+engine: hyperframes
+engine_version: 1.0.0
+source_entry: source/index.html
+output:
+  resolution:
+    width: 1080
+    height: 1080
+  fps: 30
+  duration: 6
+  duration_range_sec:
+    - 2
+    - 90
+inputs:
+  schema:
+    headline:
+      type: string
+      required: true
+      max_length: 36
+      description: 当前场景主标题。
+    eyebrow:
+      type: string
+      required: false
+      max_length: 28
+      description: 栏目、分类或上下文标签。
+    subtitle:
+      type: string
+      required: false
+      max_length: 72
+      description: 补充解释或结论。
+    metric:
+      type: string
+      required: false
+      max_length: 24
+      description: 仅在素材明确提供时展示的数字或关键词。
+    bullets:
+      type: array
+      required: false
+      max_items: 4
+      description: 当前场景的要点列表。
+    section_no:
+      type: string
+      required: false
+      max_length: 8
+      description: 章节编号，例如 01/06。
+    footer_text:
+      type: string
+      required: false
+      max_length: 40
+      description: 来源、提示或页脚说明。
+    duration_sec:
+      type: number
+      required: false
+      description: 当前场景时长，单位秒。
+  examples:
+    - eyebrow: QUICK BRIEF / 速览
+      section_no: 01/04
+      headline: 一张图看懂这次变化
+      subtitle: 删掉噪音，只留下观众真正能带走的三件事。
+      bullets:
+        - 变化：默认工作流更可控
+        - 影响：二次编辑成本下降
+        - 行动：先审片，再决定导出
+      footer_text: SOCIAL DIGEST · 1080
+preview:
+  poster: preview/poster.jpg
+  title: 方形模块简报预览
+  sample_time_sec: 1.2
+license:
+  name: Apache-2.0
+  commercial_use: true
+  attribution_required: false
+assets_attribution: []
