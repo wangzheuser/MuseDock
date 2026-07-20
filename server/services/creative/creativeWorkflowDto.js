@@ -85,11 +85,15 @@ function normalizeCreativeWorkflowDto(workflow) {
     success: true,
     workflow_id: safeString(workflow.workflow_id),
     status: safeString(workflow.status),
+    pipeline_version: Number(workflow.pipeline_version) || 1,
+    execution_status: safeString(workflow.execution_status),
+    product_status: safeString(workflow.product_status),
     message: safeString(workflow.message),
     title: firstString(project.title, hyperframes.title, workflow.title),
     input: firstString(workflow.creative_context?.input?.raw_text, workflow.input),
     created_at: safeString(workflow.created_at),
     updated_at: safeString(workflow.updated_at),
+    quality_report: firstObject(workflow.quality_report, workflow.creative_context?.quality_report),
     active_task: workflow.active_task ?? null,
     result: {
       render: normalizeRender(workflow),
@@ -107,10 +111,17 @@ function normalizeCreativeWorkflowDto(workflow) {
 
 function normalizeCreativeWorkflowSummary(workflow) {
   const dto = normalizeCreativeWorkflowDto(workflow);
+  const isPipelineV2 = Number(workflow?.pipeline_version) === 2;
 
   return {
     workflow_id: dto.workflow_id || safeString(workflow?.workflow_id),
     status: dto.status || safeString(workflow?.status),
+    // 旧任务摘要保持原有结构，V2 任务才暴露新增的双状态字段。
+    ...(isPipelineV2 ? {
+      pipeline_version: 2,
+      execution_status: dto.execution_status || safeString(workflow?.execution_status),
+      product_status: dto.product_status || safeString(workflow?.product_status),
+    } : {}),
     message: dto.message || safeString(workflow?.message),
     title: dto.title || safeString(workflow?.title),
     input: dto.input || safeString(workflow?.input),

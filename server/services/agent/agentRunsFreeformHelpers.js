@@ -256,6 +256,50 @@ function buildFreeformNarrationRepairMessages({ scenes = [], issues = [], transc
   ];
 }
 
+/**
+ * 构建按真实语速修订旁白的提示，禁止借扩写引入新事实。
+ * @param {object} input 修订输入。
+ * @returns {Array<object>} 模型消息。
+ */
+function buildMeasuredDurationRepairMessages({ scenes = [], actualDurationSec = 0, targetDurationSec = 60, transcriptText = '' } = {}) {
+  const currentChars = scenes.reduce((sum, scene) => (
+    sum + narrationBudget.countNarrationChars(scene?.narration_text || '')
+  ), 0);
+  const measuredRate = actualDurationSec > 0 ? currentChars / actualDurationSec : FREEFORM_CHARS_PER_SECOND;
+  const targetChars = Math.max(1, Math.round(measuredRate * targetDurationSec));
+  const action = actualDurationSec < targetDurationSec ? '扩写' : '压缩';
+  return [
+    {
+      role: 'system',
+      content: [
+        '你是短视频旁白时长修订 Agent。',
+        '只调整已有场景旁白长度，不改变事实、结论、引用和场景数量。',
+        '只能返回 JSON 对象，不要 Markdown 或解释。',
+      ].join('\n'),
+    },
+    {
+      role: 'user',
+      content: [
+        `真实配音时长为 ${Number(actualDurationSec).toFixed(2)} 秒，目标为 ${Number(targetDurationSec).toFixed(2)} 秒。`,
+        `请${action}旁白，使总字数约为 ${targetChars} 字，允许误差 5%。`,
+        '禁止新增原场景和来源材料里没有的人名、产品、数字、日期、事件或因果关系。',
+        '扩写时只补充已有事实的通俗解释、证据边界和观众行动；压缩时保留归因、口径和限定词。',
+        '返回全部 scenes，格式：{"scenes":[{"index":1,"narration_text":"完整旁白"}]}。',
+        '',
+        '当前 scenes：',
+        JSON.stringify(scenes.map(scene => ({
+          index: scene.index,
+          headline: scene.headline || '',
+          narration_text: scene.narration_text || '',
+        })), null, 2),
+        '',
+        '可用来源材料：',
+        String(transcriptText || '').slice(0, 12000) || '（无）',
+      ].join('\n'),
+    },
+  ];
+}
+
 function extractRepairScenes(parsed = {}) {
   if (Array.isArray(parsed.scenes)) return parsed.scenes;
   if (Array.isArray(parsed.storyboard?.scenes)) return parsed.storyboard.scenes;
@@ -379,6 +423,38 @@ async function repairFreeformNarrationWithModel({ modelService, freeformAgent, s
   return { success: true, scenes: applied.scenes };
 }
 
+/**
+ * 根据首次 TTS 的真实语速修订旁白，供第二次且最后一次 TTS 使用。
+ * @param {object} input 时长修订输入。
+ * @returns {Promise<object>} 修订结果。
+ */
+async function fitFreeformNarrationToMeasuredDurationWithModel({
+  modelService,
+  freeformAgent,
+  scenes,
+  actualDurationSec,
+  targetDurationSec,
+  transcriptText,
+} = {}) {
+  const messages = buildMeasuredDurationRepairMessages({
+    scenes,
+    actualDurationSec,
+    targetDurationSec,
+    transcriptText,
+  });
+  const response = await modelService.callTextModel({ messages, temperature: 0.1, stream: false });
+  if (!response || response.success === false) {
+    return { success: false, message: response?.message || '按真实配音时长修订旁白失败。' };
+  }
+  const parsed = freeformAgent.parseFreeformBriefResponse(response.text || response.content || '');
+  if (!parsed.success) return parsed;
+  const applied = applyFreeformNarrationRepairs(scenes, extractRepairScenes(parsed.brief));
+  if (!applied.changed) return { success: false, message: '时长修订结果缺少可用 scenes。' };
+  const validation = narrationQuality.validateNarrationScenes(applied.scenes);
+  if (!validation.ok) return { success: false, message: validation.message, issues: validation.issues };
+  return { success: true, scenes: applied.scenes };
+}
+
 module.exports = {
   normalizeFreeformNarrationScenes,
   resolveFreeformTargetDurationSec,
@@ -387,11 +463,13 @@ module.exports = {
   fitFreeformNarrationToBudget,
   buildFreeformNarrationCompressionMessages,
   buildFreeformNarrationRepairMessages,
+  buildMeasuredDurationRepairMessages,
   extractRepairScenes,
   applyFreeformNarrationRepairs,
   compressFreeformNarrationDeterministically,
   compressFreeformNarrationWithModel,
   repairFreeformNarrationWithModel,
+  fitFreeformNarrationToMeasuredDurationWithModel,
   pathExists,
   mapFreeformProjectFilesToDir,
 };

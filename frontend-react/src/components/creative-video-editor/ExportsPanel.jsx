@@ -18,7 +18,7 @@ export const PLAYBACK_SPEED_ERROR = '请输入 0.1 到 2.0 之间的导出倍速
 
 export function parsePlaybackSpeedInput(value) {
   const text = String(value ?? '').trim();
-  const normalized = text || '1.0';
+  const normalized = text || '1.1';
   if (!/^\d+(\.\d?)?$/.test(normalized)) {
     return { ok: false, message: PLAYBACK_SPEED_ERROR };
   }
@@ -31,6 +31,17 @@ export function parsePlaybackSpeedInput(value) {
 
 function getExportLabel(item, index) {
   return item?.file_name || item?.path || item?.url || item?.file || `导出 ${index + 1}`;
+}
+
+/**
+ * 格式化导出记录的实际倍速，缺失历史数据时不推测。
+ * @param {unknown} value 导出记录中的倍速。
+ * @returns {string} 用户可见倍速文案。
+ */
+export function formatExportPlaybackSpeed(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return '导出倍速未知';
+  const speed = Number(value);
+  return Number.isFinite(speed) && speed > 0 ? `导出倍速 ${speed.toFixed(1)}x` : '导出倍速未知';
 }
 
 export function formatExportTime(value) {
@@ -110,7 +121,7 @@ function defaultExportDraft() {
     width: '',
     height: '',
     fps: 'project',
-    playbackSpeed: '1.0',
+    playbackSpeed: '1.1',
     tailProtection: 'pad_end',
   };
 }
@@ -215,6 +226,19 @@ export function ExportsPanel({
   useEffect(() => {
     saveExportDraft(draft);
   }, [draft]);
+
+  useEffect(() => {
+    const parsed = parsePlaybackSpeedInput(defaultPlaybackSpeed);
+    if (!parsed.ok) return;
+    setDraft(previous => ({ ...previous, playbackSpeed: parsed.formatted }));
+    setSpeedError('');
+  }, [defaultPlaybackSpeed]);
+
+  const indexedExports = exportsList.map((item, index) => ({ item, index }));
+  const exportGroups = [
+    { id: 'export', title: '正式成品', records: indexedExports.filter(({ item }) => item?.kind === 'export') },
+    { id: 'preview', title: '预览文件', records: indexedExports.filter(({ item }) => item?.kind === 'preview') },
+  ].filter(group => group.records.length > 0);
 
   function applyPlatform(platform) {
     const preset = PLATFORM_PRESETS[platform] || PLATFORM_PRESETS.custom;
@@ -364,7 +388,13 @@ export function ExportsPanel({
           {speedError || '0.1 到 2.0，最多 1 位小数。1.0 为原速。低于 0.5x 可能导出更慢、画面略卡顿。'}
         </p>
       </div>
-      {exportsList.length ? exportsList.map((item, index) => {
+      {exportGroups.length ? exportGroups.map(group => (
+        <section className="grid gap-2" key={group.id} aria-labelledby={`export-group-${group.id}`}>
+          <div className="flex items-center justify-between border-b border-[#e5e7eb] pb-1">
+            <h4 className="m-0 text-xs font-bold text-[#111827]" id={`export-group-${group.id}`}>{group.title}</h4>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">{group.records.length} 个文件</span>
+          </div>
+          {group.records.map(({ item, index }) => {
         const playbackUrl = getExportPlaybackUrl(item, resolveExportPlaybackUrl);
         const itemKey = item.id || item.path || index;
         const qualityReport = item.quality_report || null;
@@ -376,7 +406,7 @@ export function ExportsPanel({
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-[#e5e7eb] bg-white p-3 text-xs text-[#4b5563] max-[720px]:grid-cols-1 [&_strong]:break-all [&_strong]:text-[#111827]" key={itemKey}>
             <div className="grid min-w-0 gap-[3px]">
               <strong>{getExportLabel(item, index)}</strong>
-              <span>{formatExportTime(item.created_at) || item.status || '已生成'}{item.kind === 'preview' ? ' · 预览' : ''}{item.playback_speed && Number(item.playback_speed) !== 1 ? ` · ${item.playback_speed}x` : ''}{item.tail_padding_sec ? ` · 已保护尾音 +${Number(item.tail_padding_sec).toFixed(1)}s` : ''}</span>
+              <span>{formatExportTime(item.created_at) || item.status || '已生成'} · {item.kind === 'preview' ? '预览文件' : '正式成品'} · {formatExportPlaybackSpeed(item.playback_speed)}{item.tail_padding_sec ? ` · 已保护尾音 +${Number(item.tail_padding_sec).toFixed(1)}s` : ''}</span>
               <span className={`inline-flex items-center gap-1 font-medium ${qualityDisplay.className}`} role="status" title={qualityReport?.message || qualityDisplay.label}>
                 <QualityIcon size={14} aria-hidden="true" />{qualityDisplay.label}{warningCount ? `（${warningCount} 项）` : ''}
               </span>
@@ -414,7 +444,9 @@ export function ExportsPanel({
             </div>
           </div>
         );
-      }) : <p>暂无导出记录</p>}
+          })}
+        </section>
+      )) : <p>暂无导出记录</p>}
       <Dialog open={Boolean(pendingDelete)} onOpenChange={(open) => { if (!open && !deleting) setPendingDelete(null); }}>
         <DialogContent className="bg-white text-[#111827]" showCloseButton={!deleting}>
           <DialogHeader>

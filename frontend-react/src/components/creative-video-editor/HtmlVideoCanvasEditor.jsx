@@ -3,6 +3,7 @@ import { Maximize2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 import {
+  buildFrameAudioPlan,
   canEditText,
   clamp,
   createDraftSummary,
@@ -340,6 +341,10 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
   const expandedPreviewRef = useRef(null);
   const previewSlotRef = useRef(null);
   const playbackTimerRef = useRef(null);
+  const narrationAudioRef = useRef(null);
+  const musicAudioRef = useRef(null);
+  const sfxTimersRef = useRef([]);
+  const sfxAudioRef = useRef([]);
   const iframeLoadTimerRef = useRef(null);
   const selectedElementRef = useRef(null);
   const editingReadyRef = useRef(false);
@@ -348,7 +353,6 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
   const undoStackRef = useRef([]);
   const [html, setHtml] = useState('');
   const [loadedFrameId, setLoadedFrameId] = useState('');
-  const [iframeKey, setIframeKey] = useState(0);
   const [saving, setSaving] = useState(false);
   const [previewError, setPreviewError] = useState('');
   const [htmlLoadError, setHtmlLoadError] = useState('');
@@ -364,6 +368,7 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
   const [previewZoom, setPreviewZoom] = useState(1);
   const [expandedPreviewOpen, setExpandedPreviewOpen] = useState(false);
   const [expandedPreviewHtml, setExpandedPreviewHtml] = useState('');
+  const [audioWarning, setAudioWarning] = useState('');
 
   const frame = editor.selectedFrame;
   const frameId = frameIdOf(frame);
@@ -382,10 +387,66 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
   const previewFrameStyle = previewSize.width && previewSize.height
     ? { width: `${Math.round(previewSize.width * previewZoom)}px`, height: `${Math.round(previewSize.height * previewZoom)}px` }
     : { width: '100%', height: '100%' };
+  const audioPlan = useMemo(() => buildFrameAudioPlan(editor.project, frame), [editor.project, frame]);
+  const narrationUrl = audioPlan.narration_mode === 'combined'
+    ? editor.getAudioTrackPlaybackUrl?.('narration') || ''
+    : (audioPlan.narration_mode === 'frame' ? editor.getNarrationPlaybackUrl?.(frameId) || '' : '');
+  const musicUrl = audioPlan.has_music ? editor.getAudioTrackPlaybackUrl?.('music') || '' : '';
 
   function clearPlaybackTimer() {
     if (playbackTimerRef.current) clearTimeout(playbackTimerRef.current);
     playbackTimerRef.current = null;
+  }
+
+  /** 停止当前镜头的所有音轨和待触发音效。 */
+  function stopFrameAudio() {
+    for (const timer of sfxTimersRef.current) clearTimeout(timer);
+    sfxTimersRef.current = [];
+    for (const audio of [narrationAudioRef.current, musicAudioRef.current, ...sfxAudioRef.current]) {
+      audio?.pause?.();
+    }
+    sfxAudioRef.current = [];
+  }
+
+  /** 从指定时间和音量启动已预加载的主音轨。 */
+  function playAudioElement(audio, offsetSec, volume, loop = false) {
+    if (!audio) return;
+    audio.pause();
+    audio.loop = loop;
+    audio.volume = volume;
+    const seek = () => {
+      const duration = Number(audio.duration);
+      const maxOffset = Number.isFinite(duration) && duration > 0 ? Math.max(0, duration - 0.01) : Number(offsetSec) || 0;
+      const target = loop && Number.isFinite(duration) && duration > 0
+        ? (Number(offsetSec) || 0) % duration
+        : Math.min(Number(offsetSec) || 0, maxOffset);
+      try { audio.currentTime = Math.max(0, target); } catch (_) {}
+    };
+    if (audio.readyState >= 1) seek();
+    else audio.addEventListener('loadedmetadata', seek, { once: true });
+    audio.play().catch(() => setAudioWarning('部分声音不可用，画面将继续播放。'));
+  }
+
+  /** 按当前镜头时间窗同步播放旁白、配乐和音效。 */
+  function startFrameAudio() {
+    stopFrameAudio();
+    setAudioWarning('');
+    if (narrationUrl) playAudioElement(narrationAudioRef.current, audioPlan.narration_offset_sec, audioPlan.narration_volume);
+    if (musicUrl) playAudioElement(musicAudioRef.current, audioPlan.music_offset_sec, audioPlan.music_volume, true);
+    for (const event of audioPlan.sfx) {
+      const timer = setTimeout(() => {
+        const url = editor.getSfxEventPlaybackUrl?.(event.id || event.event_id || event.sfx_id);
+        if (!url) return;
+        const audio = new Audio(url);
+        audio.volume = event.volume;
+        sfxAudioRef.current.push(audio);
+        audio.addEventListener('ended', () => {
+          sfxAudioRef.current = sfxAudioRef.current.filter(item => item !== audio);
+        }, { once: true });
+        audio.play().catch(() => setAudioWarning('部分声音不可用，画面将继续播放。'));
+      }, event.local_time_sec * 1000);
+      sfxTimersRef.current.push(timer);
+    }
   }
 
   function snapshotBeforeEdit() {
@@ -541,7 +602,7 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
     return () => {
       if (iframeLoadTimerRef.current) clearTimeout(iframeLoadTimerRef.current);
     };
-  }, [rawHtml, htmlReady, iframeKey]);
+  }, [rawHtml, htmlReady, htmlReloadKey]);
 
   useEffect(() => {
     editingReadyRef.current = editingReady;
@@ -552,10 +613,12 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
     let cancelled = false;
     frameLoadRequestRef.current = requestId;
     clearPlaybackTimer();
+    stopFrameAudio();
     setHtml('');
     setLoadedFrameId('');
     setHtmlLoadError('');
     setPreviewError('');
+    setAudioWarning('');
     setEditingReady(false);
     setPlaybackState('idle');
     setElementInfo(null);
@@ -600,6 +663,7 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
 
   useEffect(() => () => {
     clearPlaybackTimer();
+    stopFrameAudio();
     if (iframeLoadTimerRef.current) clearTimeout(iframeLoadTimerRef.current);
   }, []);
 
@@ -642,7 +706,11 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
   function beginPlayback() {
     clearPlaybackTimer();
     const win = iframeRef.current?.contentWindow;
-    if (win?.document) playFrame(win);
+    if (win?.document) {
+      freezeFrame(win, 0);
+      playFrame(win);
+    }
+    startFrameAudio();
     removeEditorOverlay(win?.document);
     setEditingReady(false);
     setPlaybackState('playing');
@@ -656,6 +724,7 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
 
   function finishPlayback(targetTimeMs = null) {
     clearPlaybackTimer();
+    stopFrameAudio();
     const win = iframeRef.current?.contentWindow;
     if (win?.document) {
       freezeFrame(win, targetTimeMs);
@@ -670,15 +739,7 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
   }
 
   function replay() {
-    clearPlaybackTimer();
-    setEditingReady(false);
-    setPlaybackState('idle');
-    setPreviewError('');
-    setElementInfo(null);
-    setElementCandidates([]);
-    setLayerItems([]);
-    selectedElementRef.current = null;
-    setIframeKey(key => key + 1);
+    if (htmlReady) beginPlayback();
   }
 
   /** 使用当前 iframe DOM 快照打开只读大图，保留尚未保存的画布修改。 */
@@ -870,7 +931,10 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
     }
     doc.addEventListener('pointerup', endDrag, true);
     doc.addEventListener('pointercancel', endDrag, true);
-    beginPlayback();
+    freezeFrame(doc.defaultView, 0);
+    refreshLayerItems(doc);
+    setPlaybackState('ready');
+    setEditingReady(true);
   }
 
   function updateSelectedText(text) {
@@ -1037,10 +1101,12 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
 
   return (
     <section className="grid h-full min-h-0 min-w-0 grid-cols-[minmax(0,1fr)_260px] gap-2 overflow-hidden max-[1100px]:grid-cols-1 max-[1100px]:grid-rows-[minmax(0,1fr)_minmax(220px,40vh)]">
+      {narrationUrl ? <audio ref={narrationAudioRef} className="hidden" src={narrationUrl} preload="auto" onError={() => setAudioWarning('部分声音不可用，画面将继续播放。')} /> : null}
+      {musicUrl ? <audio ref={musicAudioRef} className="hidden" src={musicUrl} preload="auto" onError={() => setAudioWarning('部分声音不可用，画面将继续播放。')} /> : null}
       <div className="grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-2 overflow-hidden">
         <div className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-2.5 overflow-hidden rounded-lg border border-slate-700 bg-slate-950">
           <div className="flex items-center justify-between gap-2 border-b border-slate-700 bg-slate-800 px-2.5 py-2 max-[720px]:flex-col max-[720px]:items-start">
-            <span className="text-xs text-slate-300">{previewError || (playbackState === 'playing' ? '正在播放镜头动画...' : editingReady ? '已停在镜头可编辑帧，可开始编辑。' : '正在准备预览...')}</span>
+            <span className="text-xs text-slate-300">{previewError || audioWarning || (playbackState === 'playing' ? '正在播放镜头动画和声音...' : editingReady ? '镜头已就绪，可播放片段或开始编辑。' : '正在准备预览...')}</span>
             <div className="flex flex-wrap justify-end gap-1.5">
               <button className={secondaryButtonClass} type="button" disabled={disabled || previewZoom <= 0.75} aria-label="缩小画布" onClick={() => setPreviewZoom(value => Math.max(0.75, Number((value - 0.25).toFixed(2))))}>−</button>
               <button className={secondaryButtonClass} type="button" disabled={disabled} title="恢复适合窗口" onClick={() => setPreviewZoom(1)}>{Math.round(previewZoom * 100)}%</button>
@@ -1049,7 +1115,7 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
                 <Maximize2 size={13} aria-hidden="true" />
                 放大预览
               </button>
-              <button className={secondaryButtonClass} type="button" disabled={disabled} onClick={replay}>重新播放</button>
+              <button className={secondaryButtonClass} type="button" disabled={disabled || !htmlReady} onClick={replay}>{playbackState === 'ended' ? '重新播放' : '播放片段'}</button>
               <button className={secondaryButtonClass} type="button" disabled={disabled} onClick={jumpToEnd}>跳到结尾并编辑</button>
             </div>
           </div>
@@ -1062,7 +1128,6 @@ export function HtmlVideoCanvasEditor({ editor, onDirtyChange }) {
           {!htmlReady && !htmlLoadError ? <p className="m-3 rounded-lg border border-slate-700 bg-slate-800 p-3 text-sm text-slate-300">正在加载当前镜头 HTML...</p> : null}
           <div ref={previewSlotRef} className={`grid h-full min-h-0 place-items-center overflow-auto px-2 pb-2 ${DARK_SCROLLBAR_CLASS}`}>
             <iframe
-              key={iframeKey}
               ref={iframeRef}
               className="block rounded-md border border-slate-700 bg-slate-950"
               style={previewFrameStyle}

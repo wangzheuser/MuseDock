@@ -400,7 +400,7 @@ function fakeHtmlVideoServices(calls = {}) {
     assert.equal(record.retry.attempts.at(-1).status, 'done');
     assert.equal(record.retry.attempts.at(-1).id, 'retry_attempt_success');
     assert.equal(record.stages.find(stage => stage.id === 'project').status, 'done');
-    assert.equal(record.stages.find(stage => stage.id === 'check').status, 'skipped');
+    assert.equal(record.stages.find(stage => stage.id === 'check').status, 'done');
     assert.equal(record.stages.find(stage => stage.id === 'render').status, 'done');
     assert.equal(record.stages.find(stage => stage.id === 'inspect').status, 'done');
     assert.deepEqual(record.result.hyperframes_freeform.project.scene_spec, baseSceneSpec());

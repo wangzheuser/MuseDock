@@ -1,6 +1,7 @@
 const aiModelConfig = require('../ai/aiModelConfig');
 const aiTextModel = require('../ai/aiTextModel');
 const { AGENTS, STAGES } = require('../creative-video/agentStages');
+const { buildRequirementSearchQueries } = require('./pipeline/evidencePack');
 
 const RESEARCH_SEARCH_TIMEOUT_MS = 25_000;
 const RESEARCH_SUMMARY_TIMEOUT_MS = 60_000;
@@ -11,10 +12,14 @@ const RESEARCH_SUMMARY_TIMEOUT_MS = 60_000;
 function withTimeout(promise, timeoutMs, message) {
   const timeout = Number(timeoutMs);
   if (!Number.isFinite(timeout) || timeout <= 0) return promise;
-  return Promise.race([
+  let timer;
+  const timed = Promise.race([
     promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), timeout)),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), timeout);
+    }),
   ]);
+  return timed.finally(() => clearTimeout(timer));
 }
 
 // ponytail: 3 行纯函数，与 creativeWorkflows 各持一份，避免为它把 166 处调用迁去共享 util
@@ -28,6 +33,8 @@ function safeString(value) {
 async function defaultResearchProvider({
   query,
   now,
+  creativeContract,
+  fetchImpl,
   aiModelConfig: injectedAiModelConfig,
   aiTextModel: injectedAiTextModel,
   webSearchProvider,
@@ -35,6 +42,9 @@ async function defaultResearchProvider({
   return runResearchProvider({
     query,
     now,
+    creativeContract,
+    fetchImpl: fetchImpl || globalThis.fetch,
+    fetchEvidencePages: true,
     aiModelConfig: injectedAiModelConfig || aiModelConfig,
     aiTextModel: injectedAiTextModel || aiTextModel,
     webSearchProvider: webSearchProvider || defaultWebSearchProvider,
@@ -95,6 +105,107 @@ function extractOfficialPageSummary(html, maxChars = 6000) {
     || source.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1]
     || source;
   return stripHtml(main).slice(0, maxChars);
+}
+
+/**
+ * 从网页元数据中提取可验证的发布时间。
+ * @param {string} html 网页源码。
+ * @returns {string} ISO 时间或原始日期字符串。
+ */
+function extractHtmlPublishedAt(html) {
+  const source = String(html || '');
+  const patterns = [
+    /<meta[^>]+(?:property|name)=["'](?:article:published_time|datePublished|publishdate|date)["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:article:published_time|datePublished|publishdate|date)["']/i,
+    /<time[^>]+datetime=["']([^"']+)["']/i,
+    /"datePublished"\s*:\s*"([^"]+)"/i,
+  ];
+  const value = patterns.map(pattern => source.match(pattern)?.[1]).find(Boolean) || '';
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : safeString(value);
+}
+
+/**
+ * Twitter/X Snowflake ID 自带发布时间，可用于补全原帖的权威时间锚点。
+ * @param {string} url X/Twitter 状态链接。
+ * @returns {string} ISO 时间。
+ */
+function inferXStatusPublishedAt(url) {
+  const id = safeString(url).match(/\/(?:status|statuses)\/(\d+)/i)?.[1];
+  if (!id) return '';
+  try {
+    const milliseconds = (BigInt(id) >> 22n) + 1288834974657n;
+    const value = Number(milliseconds);
+    return Number.isFinite(value) ? new Date(value).toISOString() : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * 抓取候选来源正文；X 状态链接优先使用官方 oEmbed 读取原帖文本。
+ * @param {object} source 搜索候选。
+ * @param {Function} fetchImpl fetch 实现。
+ * @returns {Promise<object>} 带正文证据的来源。
+ */
+async function fetchEvidenceSource(source = {}, fetchImpl = globalThis.fetch) {
+  if (typeof fetchImpl !== 'function' || !safeString(source.url)) return source;
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
+    Accept: 'text/html,application/json',
+  };
+  try {
+    if (/(?:x|twitter)\.com\/[^/]+\/status\/\d+/i.test(source.url)) {
+      const response = await fetchImpl(`https://publish.twitter.com/oembed?omit_script=true&url=${encodeURIComponent(source.url)}`, {
+        headers,
+        signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined,
+      });
+      if (response?.ok) {
+        const payload = await response.json();
+        const summary = stripHtml(payload?.html || '');
+        if (summary) {
+          return {
+            ...source,
+            title: safeString(payload?.author_name) || source.title,
+            summary,
+            published_at: safeString(source.published_at) || inferXStatusPublishedAt(source.url),
+            evidence: 'original_post',
+          };
+        }
+      }
+      return source;
+    }
+    const response = await fetchImpl(source.url, {
+      headers,
+      signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined,
+    });
+    if (!response?.ok) return source;
+    const contentType = safeString(response.headers?.get?.('content-type'));
+    if (!/html|text\//i.test(contentType)) return source;
+    const html = await response.text();
+    const summary = extractOfficialPageSummary(html);
+    if (!summary) return source;
+    return {
+      ...source,
+      title: stripHtml(html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '') || source.title,
+      summary,
+      published_at: safeString(source.published_at) || extractHtmlPublishedAt(html),
+      evidence: source.evidence === 'official_feed' ? source.evidence : 'page_body',
+    };
+  } catch {
+    return source;
+  }
+}
+
+/**
+ * 限量抓取合并后的候选正文，搜索摘要本身不升级为证据。
+ * @param {Array<object>} sources 搜索候选。
+ * @param {Function} fetchImpl fetch 实现。
+ * @returns {Promise<Array<object>>} 来源列表。
+ */
+async function enrichResearchSources(sources = [], fetchImpl = globalThis.fetch) {
+  const enriched = await Promise.all(sources.slice(0, 16).map(source => fetchEvidenceSource(source, fetchImpl)));
+  return [...enriched, ...sources.slice(16)];
 }
 
 function decodeDuckDuckGoRedirect(url) {
@@ -186,6 +297,7 @@ const FIRST_PARTY_DOMAIN_RULES = [
   { pattern: /^(?:meta|llama(?:-?\d[\w.-]*)?)$/i, domain: 'meta.com' },
   { pattern: /^(?:xai|grok(?:-?\d[\w.-]*)?)$/i, domain: 'x.ai' },
   { pattern: /^(?:microsoft|copilot)$/i, domain: 'microsoft.com' },
+  { pattern: /^(?:kimi|moonshot)$/i, domain: 'kimi.com' },
 ];
 
 /**
@@ -379,6 +491,7 @@ function mergeResearchSources(groups = [], limit = 8, query = '') {
       merged.push({
         ...source,
         discovery_channel: group.channel,
+        ...(group.requirement_id ? { requirement_ids: [group.requirement_id] } : {}),
         source_type: classifyResearchSource(source, query),
       });
       if (merged.length >= limit) break;
@@ -623,12 +736,18 @@ function parseToolCallArguments(toolCall) {
 async function runResearchProvider({
   query,
   now,
+  creativeContract,
   aiTextModel: textModelService,
   webSearchProvider,
+  fetchImpl,
+  fetchEvidencePages = false,
 } = {}) {
   const normalizedQuery = safeString(query);
   const researchTopic = buildSearchQuery(normalizedQuery);
-  const searchQueries = buildResearchSearchQueries(normalizedQuery, now);
+  const contractQueries = buildRequirementSearchQueries(creativeContract, normalizedQuery);
+  const searchQueries = creativeContract?.version === 2 && contractQueries.some(item => item.requirement_id)
+    ? contractQueries
+    : buildResearchSearchQueries(normalizedQuery, now);
   const asOf = safeString(now) || new Date().toISOString();
   const messages = [
     {
@@ -682,12 +801,32 @@ async function runResearchProvider({
         };
       }));
       const prioritizedGroups = [
+        ...groups.filter(group => group.channel === 'requirement'),
         ...groups.filter(group => group.channel === 'primary'),
         ...groups.filter(group => group.channel === 'community'),
         ...groups.filter(group => group.channel === 'social'),
         ...groups.filter(group => group.channel === 'general'),
       ];
-      const sources = mergeResearchSources(prioritizedGroups, 8, researchTopic);
+      // 每个关键要求至少保留一个候选来源，不能让固定 8 条上限截断后半段核验项。
+      const sourceLimit = Math.min(24, Math.max(8, searchQueries.length * 2));
+      const directSources = (Array.isArray(creativeContract?.reference_urls) ? creativeContract.reference_urls : [])
+        .map(url => ({
+          title: '',
+          url,
+          summary: '',
+          discovery_channel: 'direct',
+          source_type: classifyResearchSource({ url }, researchTopic),
+        }));
+      const mergedSearchSources = mergeResearchSources(prioritizedGroups, sourceLimit, researchTopic);
+      const seenSourceUrls = new Set();
+      const discoveredSources = [...directSources, ...mergedSearchSources].filter(source => {
+        if (!source.url || seenSourceUrls.has(source.url)) return false;
+        seenSourceUrls.add(source.url);
+        return true;
+      }).slice(0, Math.min(24, sourceLimit + directSources.length));
+      const sources = fetchEvidencePages
+        ? await enrichResearchSources(discoveredSources, fetchImpl)
+        : discoveredSources;
       const coverage = buildResearchCoverage(groups, sources);
       if (sources.length > 0) {
         const finalResult = await withTimeout(
@@ -843,6 +982,10 @@ module.exports = {
   parseSogouResults,
   parseRssResults,
   extractOfficialPageSummary,
+  extractHtmlPublishedAt,
+  inferXStatusPublishedAt,
+  fetchEvidenceSource,
+  enrichResearchSources,
   normalizeSearchResults,
   extractSiteFilters,
   buildTimeGroundedSearchQuery,

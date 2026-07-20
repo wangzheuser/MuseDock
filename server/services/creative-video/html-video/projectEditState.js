@@ -139,6 +139,7 @@ function buildProjectEditState(project = {}, options = {}) {
   const latestExport = latestItem(exportsList.filter(item => item?.kind !== 'preview')) || latestItem(exportsList);
   const latestPreview = latestItem(exportsList.filter(item => item?.kind === 'preview'));
   const latestContentRevisionMs = timestampMs(latestRenderedContentRevision?.created_at || latestRenderedContentRevision?.createdAt);
+  const latestLayoutQaMs = timestampMs(layoutQa?.created_at || layoutQa?.createdAt);
   const latestExportMs = timestampMs(latestExport?.created_at || latestExport?.createdAt);
   const latestPreviewMs = timestampMs(latestPreview?.created_at || latestPreview?.createdAt);
 
@@ -155,6 +156,8 @@ function buildProjectEditState(project = {}, options = {}) {
     narration_tail_risk_max_overflow_sec: Math.max(0, ...tailRiskFrames.map(item => item.overflow_sec || 0)),
     layout_issue_count: layoutIssues.length,
     has_layout_issues: layoutIssues.length > 0,
+    latest_layout_qa: layoutQa || null,
+    layout_qa_outdated: latestLayoutQaMs > 0 && latestContentRevisionMs > latestLayoutQaMs,
     latest_revision: latestRevision || null,
     latest_export: latestExport || null,
     latest_preview: latestPreview || null,

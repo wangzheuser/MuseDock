@@ -11,6 +11,7 @@ const {
   editHtmlVideoProject,
   renderHtmlVideoProject,
   exportHtmlVideoProject,
+  getHtmlVideoProjectAudioTrackFile,
   getHtmlVideoProjectExportFile,
   patchHtmlVideoProjectFrame,
   patchHtmlVideoProjectSfxEvent,
@@ -26,6 +27,7 @@ function writeJson(filePath, data) {
 function createFixture() {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'html-video-service-modes-'));
   const projectDir = path.join(rootDir, WORKFLOW_ID, 'agent_runs', 'run-1-html-video');
+  const narrationPath = path.join(rootDir, WORKFLOW_ID, 'agent_runs', 'run-1-tts.wav');
   writeJson(getWorkflowPath(WORKFLOW_ID, rootDir), {
     workflow_id: WORKFLOW_ID,
     run_id: 'run-1',
@@ -49,6 +51,8 @@ function createFixture() {
       { id: 'frame_02', scene_id: 'scene_02', template_id: 'simple', inputs: {}, narration_text: '' },
     ],
     audio: {
+      narration_path: narrationPath,
+      music_path: 'audio/music.wav',
       sfx: {
         enabled: true,
         status: 'ready',
@@ -68,11 +72,14 @@ function createFixture() {
   });
   fs.mkdirSync(path.join(projectDir, 'exports'), { recursive: true });
   fs.writeFileSync(path.join(projectDir, 'exports', 'output.mp4'), 'fake mp4');
-  return { rootDir, projectDir };
+  fs.mkdirSync(path.join(projectDir, 'audio'), { recursive: true });
+  fs.writeFileSync(narrationPath, 'fake narration');
+  fs.writeFileSync(path.join(projectDir, 'audio', 'music.wav'), 'fake music');
+  return { rootDir, projectDir, narrationPath };
 }
 
 (async () => {
-  const { rootDir, projectDir } = createFixture();
+  const { rootDir, projectDir, narrationPath } = createFixture();
   const calls = [];
   const fakeOrchestrator = {
     materializeHtmlVideoProject: async options => {
@@ -143,7 +150,7 @@ function createFixture() {
 
   const exported = await exportHtmlVideoProject(WORKFLOW_ID, { skip_render: true }, options);
   assert.equal(exported.success, true);
-  assert.deepEqual(calls.slice(-1), [['export', false, 1, 'pad_end']]);
+  assert.deepEqual(calls.slice(-1), [['export', false, 1.1, 'pad_end']]);
   const workflowAfterExport = JSON.parse(fs.readFileSync(getWorkflowPath(WORKFLOW_ID, rootDir), 'utf8'));
   const composeSubstage = workflowAfterExport.project_substages.find(item => item.id === 'compose');
   assert.deepEqual(composeSubstage, {
@@ -162,11 +169,39 @@ function createFixture() {
   assert.equal(missingExportFile.success, false);
   assert.match(missingExportFile.message, /未找到导出文件记录/);
 
+  const narrationFile = await getHtmlVideoProjectAudioTrackFile(WORKFLOW_ID, 'narration', { rootDir });
+  assert.equal(narrationFile.success, true);
+  assert.equal(narrationFile.file_path, fs.realpathSync(narrationPath));
+  const musicFile = await getHtmlVideoProjectAudioTrackFile(WORKFLOW_ID, 'music', { rootDir });
+  assert.equal(musicFile.success, true);
+  assert.equal(musicFile.file_path, fs.realpathSync(path.join(projectDir, 'audio', 'music.wav')));
+  const invalidTrack = await getHtmlVideoProjectAudioTrackFile(WORKFLOW_ID, 'unknown', { rootDir });
+  assert.equal(invalidTrack.code, 'AUDIO_TRACK_INVALID');
+
+  const projectWithInvalidAudio = JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8'));
+  projectWithInvalidAudio.audio.music_path = path.join(rootDir, 'outside.wav');
+  fs.writeFileSync(path.join(rootDir, 'outside.wav'), 'outside');
+  writeJson(path.join(projectDir, 'project.json'), projectWithInvalidAudio);
+  const escapedMusic = await getHtmlVideoProjectAudioTrackFile(WORKFLOW_ID, 'music', { rootDir });
+  assert.equal(escapedMusic.code, 'AUDIO_TRACK_FILE_NOT_FOUND');
+  projectWithInvalidAudio.audio.music_path = 'audio/missing.wav';
+  writeJson(path.join(projectDir, 'project.json'), projectWithInvalidAudio);
+  const missingMusic = await getHtmlVideoProjectAudioTrackFile(WORKFLOW_ID, 'music', { rootDir });
+  assert.equal(missingMusic.code, 'AUDIO_TRACK_FILE_NOT_FOUND');
+  projectWithInvalidAudio.audio.music_path = 'audio/music.wav';
+  writeJson(path.join(projectDir, 'project.json'), projectWithInvalidAudio);
+
   const speedExport = await exportHtmlVideoProject(WORKFLOW_ID, {
     export_options: { playback_speed: 0.1, tail_protection: 'none' },
   }, options);
   assert.equal(speedExport.success, true);
   assert.deepEqual(calls.slice(-1), [['export', false, 0.1, 'none']]);
+
+  const originalSpeedExport = await exportHtmlVideoProject(WORKFLOW_ID, {
+    export_options: { playback_speed: 1 },
+  }, options);
+  assert.equal(originalSpeedExport.success, true);
+  assert.deepEqual(calls.slice(-1), [['export', false, 1, 'pad_end']]);
 
   const maxSpeedExport = await exportHtmlVideoProject(WORKFLOW_ID, {
     export_options: { playback_speed: '2.0' },

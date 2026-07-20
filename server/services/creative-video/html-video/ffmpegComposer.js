@@ -781,7 +781,7 @@ function buildAtempoFilter(speed) {
 async function retimeVideoWithFfmpeg({
   inputPath,
   outputPath,
-  playbackSpeed = 1,
+  playbackSpeed = 1.1,
   includeAudio = false,
   fps = 30,
   width = 1920,

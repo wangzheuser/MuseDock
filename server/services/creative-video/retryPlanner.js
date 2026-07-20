@@ -296,16 +296,42 @@ function retryPlan(classification, repairAction, retryFrom, patch = {}) {
 function createCreativeWorkflowRetryPlan(input = {}) {
   const workflow = objectOrEmpty(input.workflow);
   const project = objectOrEmpty(input.project);
+  if (safeString(workflow.status) === 'needs_input'
+    && safeString(workflow.product_status) === 'research_incomplete') {
+    return retryPlan({
+      code: 'research_evidence_incomplete',
+      sub_stage: 'research',
+      message: safeString(workflow.message),
+    }, 'restart_workflow', 'research', {
+      reuse: ['creative_contract', 'source'],
+      discard: ['research', 'evidence_pack', 'assets', 'agent_run', 'brief', 'audio', 'project'],
+      user_message: '将重新读取原始来源并从联网研究阶段继续执行。',
+    });
+  }
   const failedWorkflowStage = safeString(workflow.last_failure?.stage);
   if (['source', 'research', 'assets', 'agent_run', 'brief', 'audio'].includes(failedWorkflowStage)) {
+    const pipelineV2 = Number(workflow.pipeline_version) === 2;
+    const stableReuseByStage = {
+      source: [],
+      research: ['creative_contract', 'source'],
+      assets: ['creative_contract', 'evidence_pack', 'source'],
+      agent_run: ['creative_contract', 'evidence_pack', 'source', 'assets'],
+      brief: ['creative_contract', 'evidence_pack', 'source', 'assets', 'agent_run'],
+      audio: ['creative_contract', 'evidence_pack', 'editorial_plan', 'source', 'assets', 'agent_run'],
+    };
+    const failedStageIndex = ['source', 'research', 'assets', 'agent_run', 'brief', 'audio', 'project'].indexOf(failedWorkflowStage);
     return retryPlan({
       code: `${failedWorkflowStage}_failed`,
       sub_stage: failedWorkflowStage,
       message: safeString(workflow.last_failure?.message),
     }, 'restart_workflow', failedWorkflowStage, {
-      reuse: [],
-      discard: [failedWorkflowStage],
-      user_message: `将在保留同一任务 ID 的前提下重新执行创作流程，修复“${failedWorkflowStage}”阶段失败。`,
+      reuse: pipelineV2 ? stableReuseByStage[failedWorkflowStage] : [],
+      discard: pipelineV2
+        ? ['source', 'research', 'assets', 'agent_run', 'brief', 'audio', 'project'].slice(failedStageIndex)
+        : [failedWorkflowStage],
+      user_message: pipelineV2
+        ? `将校验并复用上游稳定产物，从“${failedWorkflowStage}”阶段继续执行。`
+        : `将在保留同一任务 ID 的前提下重新执行创作流程，修复“${failedWorkflowStage}”阶段失败。`,
     });
   }
   const classification = classifyCreativeWorkflowFailure(input);

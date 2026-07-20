@@ -8,6 +8,20 @@ const {
   classifyCreativeWorkflowFailure,
   createCreativeWorkflowRetryPlan,
 } = require('../server/services/creative-video/retryPlanner');
+
+{
+  const plan = createCreativeWorkflowRetryPlan({
+    workflow: {
+      status: 'needs_input',
+      product_status: 'research_incomplete',
+      message: '关键证据尚未覆盖，请补充原始来源链接后重试。',
+    },
+  });
+  assert.equal(plan.can_retry, true);
+  assert.equal(plan.code, 'research_evidence_incomplete');
+  assert.equal(plan.retry_from, 'research');
+  assert.equal(plan.repair_action, 'restart_workflow');
+}
 const { createDiagnostic } = require('../server/services/creative-video/html-video/diagnostics');
 const { createEmptyProject, markCheckpointFrame, markCheckpointStage } = require('../server/services/creative-video/html-video/projectSchema');
 

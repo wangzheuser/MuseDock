@@ -76,6 +76,7 @@ function buildNode(scene, sourceScene = scene) {
     'viewer_gain', 'viewer_action', 'content_role', 'visual_direction',
     'evidence_points', 'update_subject', 'update_detail', 'update_time',
     'timeliness_status', 'source_attribution', 'workflow_impact', 'test_action',
+    'requirement_ids', 'claim_ids', 'source_ids', 'layout_archetype',
   ].forEach((key) => {
     if (sourceScene[key] != null && sourceScene[key] !== '') {
       base.metadata[key] = clone(sourceScene[key]);
@@ -235,10 +236,11 @@ function layoutVariantForFrame(scene = {}, sourceScene = {}, index = 0, total = 
     scene.kind,
     sourceScene.kind,
     sourceScene.content_role,
+    sourceScene.layout_archetype,
     sourceScene.visual_direction,
     compactText(sourceScene.evidence_points, 160),
   ].filter(Boolean).join(' ').toLowerCase();
-  return /(data|evidence|metric|chart|数据|证据|指标|图表)/.test(roleText) ? 'evidence' : 'detail';
+  return /(source_quote|metric_correction|evidence_matrix|timeline|comparison|data|evidence|metric|chart|数据|证据|指标|图表)/.test(roleText) ? 'evidence' : 'detail';
 }
 
 /**

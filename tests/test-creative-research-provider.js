@@ -17,6 +17,8 @@ const {
 } = require('../server/services/creative/creativeResearchProvider');
 
 async function run() {
+  assert.equal(resolveFirstPartyDomain('Kimi K3 最新发布'), 'kimi.com');
+  assert.equal(classifyResearchSource({ url: 'https://platform.kimi.com/' }, 'Kimi K3'), 'first_party');
   assert.equal(
     buildTimeGroundedSearchQuery('美国 伊朗 冲突 最新消息', '2026-07-13T08:00:00.000Z'),
     '美国 伊朗 冲突 最新消息 2026-07-13',
@@ -141,6 +143,7 @@ async function run() {
   const searchQueries = [];
   const result = await defaultResearchProvider({
     query: 'OpenAI 最新产品新闻',
+    fetchImpl: async () => ({ ok: false }),
     aiModelConfig: {
       getRuntimeConfig: async () => ({ modelId: 'gpt-5.5' }),
     },
@@ -188,6 +191,7 @@ async function run() {
   const channelFiltering = await defaultResearchProvider({
     query: '过去24小时 AI 产品更新',
     now: '2026-07-14T08:00:00.000Z',
+    fetchImpl: async () => ({ ok: false }),
     aiTextModel: {
       callTextModel: async () => ({ success: true, text: '已整理两条动态。' }),
     },
@@ -217,6 +221,7 @@ async function run() {
   const fallbackSearchQueries = [];
   const fallback = await defaultResearchProvider({
     query: longResearchQuery,
+    fetchImpl: async () => ({ ok: false }),
     aiTextModel: {
       callTextModel: async request => {
         fallbackCalls.push(request);

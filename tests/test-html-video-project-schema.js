@@ -17,6 +17,7 @@ assert.deepEqual(project.template_inputs, {});
 assert.deepEqual(project.content_graph, { schemaVersion: 1, intent: 'promo', synopsis: '', nodes: [], edges: [] });
 assert.deepEqual(project.output.resolution, { width: 1920, height: 1080 });
 assert.equal(project.output.fps, 30);
+assert.equal(project.output.default_playback_speed, 1.1);
 assert.deepEqual(project.frames, []);
 assert.deepEqual(project.timeline, {
   tracks: [
@@ -80,6 +81,14 @@ assert.deepEqual(outputProject.output.resolution, { width: 1080, height: 1920 })
 assert.equal(outputProject.output.fps, 24);
 assert.equal(outputProject.output.duration, 7);
 assert.equal(outputProject.template_schema.properties.headline.label, '标题');
+
+const legacyPlaybackProject = schema.normalizeProject({
+  project_id: 'legacy-playback',
+  output: { default_playback_speed: 1 },
+  exports: [{ id: 'old-export', kind: 'export', playback_speed: 1 }],
+});
+assert.equal(legacyPlaybackProject.output.default_playback_speed, 1.1);
+assert.equal(legacyPlaybackProject.exports[0].playback_speed, 1);
 
 const audioHashProject = schema.normalizeProject({
   project_id: 'audio_hash_project',

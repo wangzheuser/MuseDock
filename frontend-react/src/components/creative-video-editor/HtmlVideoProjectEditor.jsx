@@ -256,6 +256,7 @@ export function HtmlVideoProjectEditor({ editor, onExported }) {
           <DialogHeader className="sr-only"><DialogTitle>全片预览</DialogTitle></DialogHeader>
           <PreviewPanel
             previews={editor.previewsList}
+            defaultPlaybackSpeed={editor.project?.output?.default_playback_speed}
             disabled={disabled}
             generating={editor.status === 'previewing'}
             previewOutdated={editor.editState?.preview_outdated}

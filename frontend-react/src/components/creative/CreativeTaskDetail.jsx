@@ -70,6 +70,25 @@ const STATUS_CHIP_CLASS = {
   '': 'bg-slate-100 text-slate-600 ring-slate-200',
 };
 
+const PRODUCT_STATUS_TEXT = {
+  draft: '草稿',
+  research_incomplete: '关键证据不足',
+  planned: '脚本已规划',
+  voiced: '旁白已生成',
+  editable: '可编辑',
+  needs_review: '需要复核',
+  publish_ready: '可发布',
+  exported: '已导出',
+};
+
+const QUALITY_CHECK_TEXT = {
+  contract_coverage: '需求覆盖',
+  factual_grounding: '事实引用',
+  narration_timing: '旁白时长',
+  layout: '画面布局',
+  technical: '技术检查',
+};
+
 function formatRetryItem(value) {
   const text = String(value || '').trim();
   if (!text) return '';
@@ -585,6 +604,89 @@ function SourceImageAssetsPanel({ workflow, compact = false }) {
   );
 }
 
+function CreativePipelineQualityPanel({ workflow }) {
+  const contract = plainObject(workflow?.creative_context?.creative_contract);
+  const evidencePack = plainObject(workflow?.creative_context?.evidence_pack);
+  const qualityReport = plainObject(workflow?.quality_report || workflow?.creative_context?.quality_report);
+  const checks = plainObject(qualityReport.checks);
+  const missingIds = Array.isArray(evidencePack?.coverage?.missing_critical_requirement_ids)
+    ? evidencePack.coverage.missing_critical_requirement_ids
+    : [];
+  const requirements = Array.isArray(contract.must_cover) ? contract.must_cover : [];
+  const missingRequirements = missingIds
+    .map(id => requirements.find(item => item.id === id))
+    .filter(Boolean);
+  const blockingMessages = [...new Set([
+    ...(Array.isArray(checks.contract_coverage?.issues) ? checks.contract_coverage.issues : []),
+    ...(Array.isArray(checks.factual_grounding?.issues) ? checks.factual_grounding.issues : []),
+    ...(Array.isArray(checks.layout?.blocking_issues) ? checks.layout.blocking_issues : []),
+  ].map(issue => firstText(issue?.user_message, issue?.message, issue?.code)).filter(Boolean))];
+  if (checks.narration_timing && checks.narration_timing.passed === false) {
+    blockingMessages.push(`旁白实际 ${Number(checks.narration_timing.actual_duration_sec || 0).toFixed(1)} 秒，未进入目标 ${Number(checks.narration_timing.target_duration_sec || 0).toFixed(1)} 秒的允许范围。`);
+  }
+  if (checks.technical && checks.technical.passed === false) {
+    blockingMessages.push('视频工程或导出技术检查未通过。');
+  }
+  if (Number(workflow?.pipeline_version) !== 2 && Number(contract.version) !== 2) return null;
+
+  const productStatus = firstText(workflow?.product_status, 'draft');
+  return (
+    <section className="grid gap-3 rounded-lg border border-[#e7e9ee] bg-[#fafbfc] p-3" aria-label="创作质量门禁">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <strong className="text-[13px] text-[#111827]">Creative Pipeline V2</strong>
+          <p className="mt-1 text-xs leading-relaxed text-[#69717e]">任务执行完成不等于作品可发布，以下状态由完整质量门禁统一计算。</p>
+        </div>
+        <span className={cn(
+          'rounded-full px-3 py-1 text-xs font-bold ring-1',
+          ['publish_ready', 'exported'].includes(productStatus)
+            ? 'bg-green-50 text-green-700 ring-green-200'
+            : productStatus === 'research_incomplete' || productStatus === 'needs_review'
+              ? 'bg-amber-50 text-amber-800 ring-amber-200'
+              : 'bg-blue-50 text-blue-700 ring-blue-200',
+        )}>
+          作品状态：{PRODUCT_STATUS_TEXT[productStatus] || productStatus}
+        </span>
+      </div>
+
+      {missingRequirements.length ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] leading-relaxed text-amber-900">
+          <strong>需要补充关键证据：</strong>
+          <ul className="mb-0 mt-1 list-disc pl-5">
+            {missingRequirements.map(item => <li key={item.id}>{item.text}</li>)}
+          </ul>
+        </div>
+      ) : null}
+
+      {blockingMessages.length ? (
+        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[13px] leading-relaxed text-red-900">
+          <strong>阻止发布的问题：</strong>
+          <ul className="mb-0 mt-1 list-disc pl-5">
+            {blockingMessages.map(message => <li key={message}>{message}</li>)}
+          </ul>
+        </div>
+      ) : null}
+
+      {Object.keys(checks).length ? (
+        <div className="grid grid-cols-5 gap-2 max-[840px]:grid-cols-2">
+          {Object.entries(QUALITY_CHECK_TEXT).map(([id, label]) => {
+            const check = plainObject(checks[id]);
+            const passed = check.passed === true;
+            return (
+              <div key={id} className="rounded-md border border-[#e7e9ee] bg-white px-3 py-2">
+                <div className="text-xs font-bold text-[#69717e]">{label}</div>
+                <div className={cn('mt-1 text-[13px] font-bold', passed ? 'text-green-700' : 'text-amber-700')}>
+                  {passed ? '通过' : '待处理'}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function CreativeTaskDetail({
   status,
   message,
@@ -600,13 +702,18 @@ export function CreativeTaskDetail({
   onContinueEdit,
   onRetryWorkflow,
   getWorkflowVideoUrl,
+  previewUrl = '',
+  previewStatus = 'idle',
+  previewMessage = '',
+  onRetryPreview,
 }) {
   const [promptModalOpen, setPromptModalOpen] = useState(false);
   const [promptCopyStatus, setPromptCopyStatus] = useState('idle');
   const [errorLogCopyStatus, setErrorLogCopyStatus] = useState('idle');
   if (!workflowId && !workflow) return null;
 
-  const videoUrl = getWorkflowVideoUrl?.(workflow) || '';
+  const formalVideoUrl = getWorkflowVideoUrl?.(workflow) || '';
+  const videoUrl = formalVideoUrl || previewUrl;
   const canStopAndDelete = workflowId && workflow?.status !== 'done';
   const promptInput = workflow?.creative_context?.input || {};
   const promptSnapshot = workflow?.prompt_snapshot || {};
@@ -791,6 +898,7 @@ export function CreativeTaskDetail({
           </div>
         </div>
         <CreativeTitlePanel workflow={workflow} />
+        <CreativePipelineQualityPanel workflow={workflow} />
         {isDone ? <SourceImageAssetsPanel workflow={workflow} compact /> : null}
       </section>
       {!isDone ? (
@@ -815,9 +923,25 @@ export function CreativeTaskDetail({
         />
       ) : null}
       {workflow?.status === 'done' && videoUrl ? (
-        <CreativeVideoPreview
-          videoUrl={videoUrl}
-        />
+        <div className="grid gap-3">
+          <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700" role="status">
+            {formalVideoUrl ? '视频生成完成。' : (previewMessage || '预览已生成，可进入二次编辑；最终成片尚未导出。')}
+          </div>
+          <CreativeVideoPreview videoUrl={videoUrl} />
+        </div>
+      ) : workflow?.status === 'done' && previewStatus === 'loading' ? (
+        <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700" role="status">
+          <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+          <span>{previewMessage || '正在生成视频预览...'}</span>
+        </div>
+      ) : workflow?.status === 'done' && previewStatus === 'failed' ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
+          <span>{previewMessage || '生成视频预览失败，请重试。'}</span>
+          <Button variant="secondary" size="sm" type="button" className="gap-1.5" onClick={onRetryPreview}>
+            <RefreshCcw size={14} />
+            <span>重新生成预览</span>
+          </Button>
+        </div>
       ) : (
         <CreativeStatusMessage status={status} message={message} />
       )}

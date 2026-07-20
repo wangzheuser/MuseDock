@@ -336,7 +336,7 @@ assert.match(page, /function\s+normalizeLastSeq\(value\)\s*\{[\s\S]*Number\.isFi
 assert.match(loadActiveBlock, /last_seq:\s*normalizeLastSeq\(parsed\.last_seq\)/, 'loadActiveCreativeTask should normalize missing or invalid last_seq to 0 without deleting otherwise valid storage');
 assert.match(page, /if \(isDifferentTask\) \{[\s\S]*lastSeqRef\.current = normalizeLastSeq\(sinceSeq\)/, 'Switching task stream subscriptions should normalize lastSeq');
 assert.match(page, /else if \(sinceSeq !== undefined\) \{[\s\S]*lastSeqRef\.current = normalizeLastSeq\(sinceSeq\)/, 'Reusing task stream subscriptions should normalize explicit sinceSeq');
-assert.match(page, /if \(nextWorkflow\?\.status === 'done'\) \{[\s\S]*if \(activeTaskRef\.current\?\.workflow_id === workflowId\) \{[\s\S]*stopTaskStream\(\{ clearStorage: true \}\);[\s\S]*\}[\s\S]*setStatus\('done'\);[\s\S]*setMessage\('视频生成完成。'\);/, 'Polling fallback should stop only the current workflow stream before setting done UI state');
+assert.match(page, /if \(nextWorkflow\?\.status === 'done'\) \{[\s\S]*if \(activeTaskRef\.current\?\.workflow_id === workflowId\) \{[\s\S]*stopTaskStream\(\{ clearStorage: true \}\);[\s\S]*\}[\s\S]*setStatus\('done'\);[\s\S]*setMessage\(getWorkflowCompletionMessage\(nextWorkflow, nextMessage\)\);/, 'Polling fallback should stop only the current workflow stream before setting done UI state');
 assert.match(page, /if \(nextWorkflow\?\.status === 'failed' \|\| json\?\.success === false\) \{[\s\S]*if \(activeTaskRef\.current\?\.workflow_id === workflowId\) \{[\s\S]*stopTaskStream\(\{ clearStorage: true \}\);[\s\S]*\}[\s\S]*setStatus\('failed'\);[\s\S]*setMessage\(nextMessage \|\| '视频生成失败，请查看任务详情。'\);/, 'Polling fallback should stop only the current workflow stream before setting failed UI state');
 assert.match(page, /\}, \[status, workflowId, persistTasks, stopTaskStream, subscribeTaskEvents\]\);/, 'Polling effect should declare stable stream callback dependencies');
 assert.match(page, /\}, \[workflowId, routeWorkflowId, selectedWorkflowId, stopTaskStream, subscribeTaskEvents\]\);/, 'Active task recovery effect should declare stream callback dependencies');
@@ -451,6 +451,13 @@ assert.match(creativeVideoPreview, /CreativeVideoPreview\(\{ videoUrl \}\)/, 'Cr
 assert.match(creativeVideoPreview, /<video className="[^"]*" src=\{videoUrl\} controls/, 'Creative video preview should render a native controls video element');
 assert.doesNotMatch(creativeVideoPreview, /<Button|继续编辑|二次编辑/, 'Creative video preview should stay focused on playback only');
 assert.match(creativeTaskDetail, /workflow\?\.status === 'done' && videoUrl/, 'Creative video preview should render after workflow is done');
+assert.match(page, /api\.getHtmlVideoProject\(targetWorkflowId\)/, 'Completed task detail should load the editable project before choosing a preview');
+assert.match(page, /project\?\.edit_state\?\.preview_outdated === true/, 'Outdated previews should be regenerated');
+assert.match(page, /api\.createHtmlVideoProjectPreview\(targetWorkflowId, \{\}\)/, 'Missing previews should reuse the existing preview endpoint');
+assert.match(page, /previewRequestSeqRef\.current !== requestSeq/, 'Stale preview requests should not update another selected task');
+assert.match(creativeTaskDetail, /正在生成视频预览/, 'Preview generation should expose a Chinese loading state');
+assert.match(creativeTaskDetail, /重新生成预览/, 'Preview failures should offer a retry action');
+assert.match(creativeTaskDetail, /最终成片尚未导出/, 'Preview playback should not be described as a final export');
 assert.match(creativeTaskDetail, /!\s*isDone\s*\? \([\s\S]*<CreativeWorkflowStepper workflow=\{workflow\} \/>[\s\S]*<CreativeProgressPanel/, 'Creative detail should hide stepper and current progress after a task is done');
 assert.match(creativeTaskDetail, /!\s*isDone \? <SourceImageAssetsPanel workflow=\{workflow\} \/> : null/, 'Creative detail should keep source assets outside the video area only before completion');
 assert.ok(!styles.includes('.creativeDetailMeta'), 'compact task meta row should be inline Tailwind, not styles.css');

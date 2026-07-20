@@ -1,4 +1,6 @@
-﻿function createAgentRunsFreeformWorkflow({
+﻿const DEFAULT_BRIEF_SKILL_CONTEXT_MAX_CHARS = 1500;
+
+function createAgentRunsFreeformWorkflow({
   fsp,
   path,
   crypto,
@@ -25,6 +27,7 @@
   fitFreeformNarrationToBudget,
   compressFreeformNarrationWithModel,
   repairFreeformNarrationWithModel,
+  fitFreeformNarrationToMeasuredDurationWithModel,
   mapFreeformProjectFilesToDir,
   buildHtmlVideoExportFileUrl,
 } = {}) {
@@ -758,13 +761,10 @@
 
     const resolvedStylePrompt = options.stylePrompt || options.style_prompt || audioDirection.stylePrompt || undefined;
 
-    let result;
+    /** 按当前场景执行一次 TTS，第二次调用只用于真实时长闭环。 */
+    const synthesizeScenes = nextScenes => sceneTtsService.synthesizeSceneTts({
 
-    try {
-
-      result = await sceneTtsService.synthesizeSceneTts({
-
-        scenes,
+        scenes: nextScenes,
 
         outputDir: getAgentRunsDir(awemeId, options.rootDir),
 
@@ -798,6 +798,12 @@
         ttsQueueIntervalMs: options.ttsQueueIntervalMs,
 
       });
+
+    let result;
+
+    try {
+
+      result = await synthesizeScenes(scenes);
 
     } catch (error) {
 
@@ -835,7 +841,7 @@
 
 
 
-    const sceneTtsValue = {
+    let sceneTtsValue = {
 
       ...(result.scene_tts || {}),
 
@@ -847,15 +853,98 @@
 
     };
 
-    const timedPlan = storyboardTiming.buildTimedStoryboardPlan({
+    let timedPlan = storyboardTiming.buildTimedStoryboardPlan({
       storyboardPlan: {
         target_duration_sec: targetDurationSec,
         scenes,
       },
       sceneTts: sceneTtsValue,
     });
+    const strictDuration = options.strictDuration === true || Number(options.pipelineVersion) >= 2;
+    const firstDuration = Number(timedPlan.duration || 0);
+    const firstDeviation = targetDurationSec > 0 ? Math.abs(firstDuration - targetDurationSec) / targetDurationSec : 0;
+    if (strictDuration && timedPlan.status !== 'timed') {
+      return failHyperframesFreeformSection(
+        awemeId,
+        runId,
+        'audio',
+        timedPlan.message || '无法读取实际配音时长。',
+        options,
+        { operation_id: operationId, code: 'audio_duration_mismatch' },
+      );
+    }
+    if (strictDuration && timedPlan.status === 'timed' && firstDeviation > 0.05) {
+      transcript = transcript || await readJsonIfExists(mediaPipeline.getMediaPaths(awemeId, options.rootDir).transcript);
+      const repaired = await fitFreeformNarrationToMeasuredDurationWithModel({
+        modelService: options.aiTextModel || defaultAiTextModel,
+        freeformAgent: options.hyperframesFreeformAgent || defaultHyperframesFreeformAgent,
+        scenes,
+        actualDurationSec: firstDuration,
+        targetDurationSec,
+        transcriptText: transcript?.text || '',
+      });
+      if (!repaired.success) {
+        return failHyperframesFreeformSection(
+          awemeId,
+          runId,
+          'audio',
+          `实际配音时长与目标偏差超过 5%，自动修订失败：${repaired.message || '未知错误'}`,
+          options,
+          { operation_id: operationId, code: 'audio_duration_mismatch' },
+        );
+      }
+      scenes = repaired.scenes;
+      narrationFit = {
+        ...narrationFit,
+        scenes,
+        brief: replaceFreeformBriefScenes(narrationFit.brief, scenes, narrationFit.budget),
+        changed: true,
+      };
+      try {
+        result = await synthesizeScenes(scenes);
+      } catch (error) {
+        result = { success: false, message: `修订后配音生成失败：${error.message || '未知错误'}` };
+      }
+      if (!result?.success) {
+        return failHyperframesFreeformSection(
+          awemeId,
+          runId,
+          'audio',
+          result?.message || '修订后配音生成失败。',
+          options,
+          { operation_id: operationId, code: 'audio_duration_mismatch' },
+        );
+      }
+      sceneTtsValue = {
+        ...(result.scene_tts || {}),
+        status: result.scene_tts?.status || 'done',
+        message: result.message || result.scene_tts?.message || '高级成片音频已生成。',
+        updated_at: result.scene_tts?.updated_at || new Date().toISOString(),
+      };
+      timedPlan = storyboardTiming.buildTimedStoryboardPlan({
+        storyboardPlan: { target_duration_sec: targetDurationSec, scenes },
+        sceneTts: sceneTtsValue,
+      });
+      const finalDuration = Number(timedPlan.duration || 0);
+      const finalDeviation = targetDurationSec > 0 ? Math.abs(finalDuration - targetDurationSec) / targetDurationSec : 0;
+      if (timedPlan.status !== 'timed' || finalDeviation > 0.05) {
+        return failHyperframesFreeformSection(
+          awemeId,
+          runId,
+          'audio',
+          `修订后实际配音时长 ${finalDuration.toFixed(1)} 秒，仍未进入目标 ${targetDurationSec} 秒的 5% 容差。`,
+          options,
+          {
+            operation_id: operationId,
+            audio_duration_sec: finalDuration,
+            target_duration_sec: targetDurationSec,
+            code: 'audio_duration_mismatch',
+          },
+        );
+      }
+    }
     const maxAudioDurationSec = targetDurationSec * 1.1;
-    if (timedPlan.status === 'timed' && Number(timedPlan.duration) > maxAudioDurationSec) {
+    if (!strictDuration && timedPlan.status === 'timed' && Number(timedPlan.duration) > maxAudioDurationSec) {
       return failHyperframesFreeformSection(
         awemeId,
         runId,
@@ -893,6 +982,14 @@
     const updated = await updateRunHyperframesFreeformIfOperationCurrent(awemeId, runId, 'audio', operationId, current => ({
 
       status: 'ready',
+
+      brief: {
+
+        ...current.brief,
+
+        data: narrationFit.brief,
+
+      },
 
       audio: {
 
@@ -974,7 +1071,7 @@
 
         skillRoot: options.skillRoot,
 
-        maxChars: options.skillContextMaxChars,
+        maxChars: options.skillContextMaxChars || DEFAULT_BRIEF_SKILL_CONTEXT_MAX_CHARS,
 
         env: options.env,
 
@@ -1066,7 +1163,7 @@
 
     try {
 
-      logEvent(logger, 'info', { ...baseLog, stage: 'model_request_started', stream: true, temperature: 0.35, ...elapsedMeta() });
+      logEvent(logger, 'info', { ...baseLog, stage: 'model_request_started', stream: false, temperature: 0.35, ...elapsedMeta() });
 
       modelResult = await modelService.callTextModel({
 
@@ -1074,9 +1171,7 @@
 
         temperature: 0.35,
 
-        stream: true,
-
-        fallbackToNonStreamOnGatewayTimeout: true,
+        stream: false,
 
         configPath: options.configPath,
 
@@ -1084,12 +1179,16 @@
 
         fetchImpl: options.fetchImpl,
 
-        // Brief 超时必须有明确上限；失败后由工作流提供重试入口，不在后台重复等待。
+        // 导演简报不展示流式过程，直接非流式请求，避免超时后再重复请求一次。
         maxRetries: 0,
 
-        requestTimeoutMs: 90000,
+        requestTimeoutMs: 180000,
 
-        streamChunkTimeoutMs: 120000,
+        response_format: { type: 'json_object' },
+
+        reasoning_effort: 'low',
+
+        max_completion_tokens: 4500,
 
         logger,
 
@@ -1212,6 +1311,14 @@
 
             {
 
+              role: 'assistant',
+
+              content: rawText,
+
+            },
+
+            {
+
               role: 'user',
 
               content: `上次输出未通过解析或内容价值检查：${parsed.message || '格式无效'}。请重新从头输出完整、精简、可被 JSON.parse 直接解析且严格满足原输出要求的 JSON 对象；不要输出 Markdown 或解释。`,
@@ -1224,8 +1331,6 @@
 
           stream: false,
 
-          fallbackToNonStreamOnGatewayTimeout: true,
-
           configPath: options.configPath,
 
           textConfig: options.textConfig,
@@ -1234,7 +1339,13 @@
 
           maxRetries: 0,
 
-          requestTimeoutMs: 90000,
+          requestTimeoutMs: 180000,
+
+          response_format: { type: 'json_object' },
+
+          reasoning_effort: 'low',
+
+          max_completion_tokens: 4500,
 
           logger,
 

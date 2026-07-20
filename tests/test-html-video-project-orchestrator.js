@@ -624,6 +624,39 @@ async function fakeFrameOutput(projectDir, fileName) {
     assert.equal(composed.quality_report.publish_ready, true);
     assert.equal(composed.project.exports[0].quality_report.metrics.video_bitrate, 8000000);
 
+    const layoutRejected = await projectOrchestrator.composeHtmlVideoProject({
+      projectDir,
+      project: {
+        ...composed.project,
+        layout_qa_reports: [{
+          id: 'layout_qa_failed',
+          created_at: '2026-07-11T10:00:00.000Z',
+          success: false,
+          issues: [{ code: 'text_overlap', severity: 'error', message: '字幕与正文重叠。' }],
+        }],
+      },
+      services: {
+        ffmpegComposer: {
+          concatFramesWithFfmpeg: async (frames, outputPath) => {
+            await fs.writeFile(outputPath, 'mp4');
+            return { success: true, output_path: outputPath };
+          },
+          verifyDurationWithFfprobe: async () => ({ success: true, duration_sec: 4, expected_duration_sec: 4 }),
+          probeMediaQualityWithFfprobe: async () => ({
+            success: true,
+            pass: true,
+            publish_ready: true,
+            message: '最终视频技术质检通过。',
+            metrics: { width: 1920, height: 1080, fps: 30 },
+            issues: [],
+          }),
+        },
+      },
+    });
+    assert.equal(layoutRejected.success, false);
+    assert.equal(layoutRejected.quality_report.code, 'layout_qa_failed');
+    assert.equal(layoutRejected.project.exports.length, 1, '布局检查未通过时不应新增导出记录');
+
     const rejected = await projectOrchestrator.composeHtmlVideoProject({
       projectDir,
       project: composed.project,

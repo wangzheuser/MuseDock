@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EditorInlineActions, EditorPanel, EditorPanelHeader } from './editorUi.jsx';
-import { formatExportTime, getExportPlaybackUrl, parsePlaybackSpeedInput } from './ExportsPanel.jsx';
+import { formatExportPlaybackSpeed, formatExportTime, getExportPlaybackUrl, parsePlaybackSpeedInput } from './ExportsPanel.jsx';
 
-export function PreviewPanel({ previews = [], disabled, generating, previewOutdated, onCreatePreview, getExportPlaybackUrl: resolveExportPlaybackUrl }) {
-  const [playbackSpeed, setPlaybackSpeed] = useState('1.0');
+export function PreviewPanel({ previews = [], defaultPlaybackSpeed, disabled, generating, previewOutdated, onCreatePreview, getExportPlaybackUrl: resolveExportPlaybackUrl }) {
+  const [playbackSpeed, setPlaybackSpeed] = useState(() => {
+    const parsed = parsePlaybackSpeedInput(defaultPlaybackSpeed ?? 1.1);
+    return parsed.ok ? parsed.formatted : '1.1';
+  });
   const [speedError, setSpeedError] = useState('');
   const videoRef = useRef(null);
   const latestPreview = useMemo(() => (
@@ -11,6 +14,12 @@ export function PreviewPanel({ previews = [], disabled, generating, previewOutda
       .sort((a, b) => Date.parse(b?.created_at || 0) - Date.parse(a?.created_at || 0))[0] || null
   ), [previews]);
   const playbackUrl = latestPreview ? getExportPlaybackUrl(latestPreview, resolveExportPlaybackUrl) : '';
+
+  useEffect(() => {
+    const parsed = parsePlaybackSpeedInput(defaultPlaybackSpeed ?? 1.1);
+    setPlaybackSpeed(parsed.ok ? parsed.formatted : '1.1');
+    setSpeedError('');
+  }, [defaultPlaybackSpeed]);
 
   useEffect(() => {
     const parsed = parsePlaybackSpeedInput(playbackSpeed);
@@ -40,7 +49,7 @@ export function PreviewPanel({ previews = [], disabled, generating, previewOutda
               value={playbackSpeed}
               disabled={disabled}
               inputMode="decimal"
-              placeholder="1.0"
+              placeholder="1.1"
               aria-describedby="preview-playback-speed-help"
               onBlur={() => {
                 const parsed = parsePlaybackSpeedInput(playbackSpeed);
@@ -65,7 +74,7 @@ export function PreviewPanel({ previews = [], disabled, generating, previewOutda
       {playbackUrl ? (
         <video ref={videoRef} className="w-full rounded-md border border-[#e5e7eb] bg-black" src={playbackUrl} controls />
       ) : <p>暂无可播放预览。</p>}
-      {latestPreview ? <p className="m-0 text-xs text-[#6b7280]">最近预览：{formatExportTime(latestPreview.created_at) || latestPreview.id}</p> : null}
+      {latestPreview ? <p className="m-0 text-xs text-[#6b7280]">最近预览：{formatExportTime(latestPreview.created_at) || latestPreview.id} · {formatExportPlaybackSpeed(latestPreview.playback_speed)}</p> : null}
     </EditorPanel>
   );
 }

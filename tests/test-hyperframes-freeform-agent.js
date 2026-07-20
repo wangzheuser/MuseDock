@@ -34,7 +34,7 @@ async function run() {
   assert.match(briefMessages[1].content, /官方发布页确认了最新信息/);
   assert.match(briefMessages[1].content, /https:\/\/openai\.com\/news\//);
   assert.match(briefMessages[1].content, /默认按 analysis 创作，不强制裁决话题真假/);
-  assert.match(briefMessages[1].content, /联网研究是创作素材，不是覆盖用户输入的最终判决/);
+  assert.match(briefMessages[1].content, /事实只能来自其中的 claims/);
   assert.match(briefMessages[1].content, /不得仅因页面正文抓取失败而降级/);
   assert.match(briefMessages[1].content, /最多 2 个场景/);
   assert.match(briefMessages[1].content, /全部调用总成本÷成功交付数量/);
@@ -43,10 +43,11 @@ async function run() {
   assert.match(briefMessages[1].content, /audience_takeaways/);
   assert.match(briefMessages[1].content, /viewer_gain/);
   assert.match(briefMessages[1].content, /viewer_action/);
-  assert.match(briefMessages[1].content, /禁止全部抽象成/);
-  assert.match(briefMessages[1].content, /content_role="update"/);
-  assert.match(briefMessages[1].content, /不得把主题改成来源核验教程/);
-  assert.match(briefMessages[1].content, /负责人社交媒体/);
+  assert.match(briefMessages[1].content, /禁止抽象成泛化营销词/);
+  assert.match(briefMessages[1].content, /每个场景必须填写 requirement_ids/);
+  assert.match(briefMessages[1].content, /不得为凑结构加入合同外的第二个主体/);
+  assert.match(briefMessages[1].content, /layout_archetype/);
+  assert.match(briefMessages[1].content, /负责人表示/);
   assert.match(briefMessages[1].content, /配音硬预算/);
 
   const emptyAnalysis = agent.parseFreeformBriefResponse(JSON.stringify({ title: '空洞解读' }), {
@@ -82,8 +83,11 @@ async function run() {
       ],
     },
   }), { contentMode: 'news', targetDurationSec: 10 });
-  assert.equal(overlongNarration.success, false);
-  assert.match(overlongNarration.message, /旁白共.*硬预算/);
+  assert.equal(overlongNarration.success, true);
+  assert.ok(overlongNarration.brief.storyboard.scenes
+    .map(scene => scene.narration_text)
+    .join('')
+    .replace(/\s+/g, '').length <= 50);
 
   const weakCoverageDenial = agent.parseFreeformBriefResponse(JSON.stringify({
     title: '错误否定',
@@ -161,7 +165,7 @@ async function run() {
 
   const updateCoverageOptions = {
     contentMode: 'analysis',
-    creative_context: { input: { raw_text: '制作过去24小时 AI 资讯动态，告诉创作者怎么测试。' } },
+    creative_context: { input: { raw_text: '制作 AI 时效资讯动态，告诉创作者怎么测试。' } },
   };
   const updateCoverageDrift = agent.parseFreeformBriefResponse(JSON.stringify({
     title: '24小时信号核验法',
@@ -177,7 +181,7 @@ async function run() {
     },
   }), updateCoverageOptions);
   assert.equal(updateCoverageDrift.success, false);
-  assert.match(updateCoverageDrift.message, /2 个不同具名主体/);
+  assert.match(updateCoverageDrift.message, /2 个具体动态/);
   assert.match(updateCoverageDrift.message, /不能把资讯改成核验教程/);
 
   const validUpdateCoverage = agent.parseFreeformBriefResponse(JSON.stringify({
@@ -194,8 +198,8 @@ async function run() {
           source_attribution: '负责人发文称', workflow_impact: '脚本生成', test_action: '用同一长文测试一稿可用率',
         },
         {
-          headline: '平台B更新', narration_text: '媒体称平台B开放批量画面生成。', viewer_gain: '知道画面变化。',
-          evidence_points: ['媒体7月14日报道'], content_role: 'update', update_subject: '平台B', update_detail: '开放批量画面生成',
+          headline: '产品A额度变化', narration_text: '媒体称产品A同时调整了生成额度。', viewer_gain: '知道额度变化。',
+          evidence_points: ['媒体7月14日报道'], content_role: 'update', update_subject: '产品A', update_detail: '调整生成额度',
           update_time: '2026年7月14日', timeliness_status: 'current_unverified',
           source_attribution: '媒体称', workflow_impact: '画面制作', test_action: '对同一分镜记录返工时间', viewer_action: '完成一次对照测试。',
         },
@@ -226,14 +230,14 @@ async function run() {
   assert.match(failed.message, /解析/);
 
   const longMessages = agent.buildFreeformBriefMessages({
-    run: { huge: 'a'.repeat(30000) },
+    run: { result: { rewrite_script: 'a'.repeat(30000) } },
   });
   const truncatedBlocks = longMessages[1].content.match(/\{\n  "truncated": true,[\s\S]*?\n\}/g) || [];
   assert.ok(truncatedBlocks.length >= 1);
   const value = JSON.parse(truncatedBlocks[0]);
   assert.equal(value.truncated, true);
   assert.equal(typeof value.preview, 'string');
-  assert.ok(value.preview.length < 12000);
+  assert.ok(value.preview.length < 6000);
 }
 
 run().then(() => {

@@ -59,7 +59,9 @@ async function listen(app) {
   const calls = [];
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'html-video-export-route-'));
   const exportFilePath = path.join(tmpDir, 'output.mp4');
+  const audioFilePath = path.join(tmpDir, 'narration.wav');
   await fs.writeFile(exportFilePath, 'fake mp4');
+  await fs.writeFile(audioFilePath, 'fake audio');
   const fakeService = {
     getCreativeWorkflowHtmlVideoProject: async id => {
       calls.push(['get', id]);
@@ -226,6 +228,16 @@ async function listen(app) {
       }
       return { success: true, workflow_id: id, export_id: exportId, file_path: exportFilePath };
     },
+    getHtmlVideoProjectAudioTrackFile: async (id, track) => {
+      calls.push(['audio-file', id, track]);
+      if (!['narration', 'music'].includes(track)) {
+        return { success: false, code: 'AUDIO_TRACK_INVALID', workflow_id: id, track, message: '音轨类型无效，仅支持旁白或背景音乐。' };
+      }
+      if (track === 'music') {
+        return { success: false, code: 'AUDIO_TRACK_NOT_FOUND', workflow_id: id, track, message: '当前工程没有可播放的背景音乐。' };
+      }
+      return { success: true, workflow_id: id, track, file_path: audioFilePath };
+    },
   };
 
   const app = express();
@@ -359,6 +371,14 @@ async function listen(app) {
     const missingExportFile = await requestJson(server, 'GET', `/api/creative-workflows/${workflowId}/html-video-project/exports/missing_export/file`);
     assert.equal(missingExportFile.statusCode, 404);
     assert.match(missingExportFile.body.message, /未找到导出文件记录/);
+    const narrationFile = await requestText(server, 'GET', `/api/creative-workflows/${workflowId}/html-video-project/audio/narration/file`);
+    assert.equal(narrationFile.statusCode, 200);
+    assert.equal(narrationFile.body, 'fake audio');
+    const missingMusic = await requestJson(server, 'GET', `/api/creative-workflows/${workflowId}/html-video-project/audio/music/file`);
+    assert.equal(missingMusic.statusCode, 404);
+    const invalidTrack = await requestJson(server, 'GET', `/api/creative-workflows/${workflowId}/html-video-project/audio/unknown/file`);
+    assert.equal(invalidTrack.statusCode, 400);
+    assert.match(invalidTrack.body.message, /音轨类型无效/);
 
     const reservedRequests = [
       ['PATCH', 'timeline'],
@@ -390,7 +410,7 @@ async function listen(app) {
     assert.equal(invalidDiscardPlanId.statusCode, 400);
     assert.match(invalidDiscardPlanId.body.message, /编辑计划 ID 无效/);
 
-    assert.deepEqual(calls.map(item => item[0]), ['get', 'patch', 'post', 'patch-inputs', 'patch-frame', 'sfx', 'edit', 'create-edit-plan', 'run-edit-plan', 'accept-edit-plan', 'discard-edit-plan', 'render', 'render', 'render', 'layout-qa', 'layout-qa', 'get-frame-html', 'get-frame-html', 'put-frame-html', 'iterate-frame', 'accept-draft', 'discard-draft', 'export', 'exports', 'export-file', 'export-file']);
+    assert.deepEqual(calls.map(item => item[0]), ['get', 'patch', 'post', 'patch-inputs', 'patch-frame', 'sfx', 'edit', 'create-edit-plan', 'run-edit-plan', 'accept-edit-plan', 'discard-edit-plan', 'render', 'render', 'render', 'layout-qa', 'layout-qa', 'get-frame-html', 'get-frame-html', 'put-frame-html', 'iterate-frame', 'accept-draft', 'discard-draft', 'export', 'exports', 'export-file', 'export-file', 'audio-file', 'audio-file', 'audio-file']);
     assert.deepEqual(calls.find(item => item[0] === 'create-edit-plan'), ['create-edit-plan', workflowId, '全片改成财经杂志风']);
     assert.deepEqual(calls.find(item => item[0] === 'run-edit-plan'), ['run-edit-plan', workflowId, 'edit_plan_0001', true]);
     assert.deepEqual(calls.find(item => item[0] === 'accept-edit-plan'), ['accept-edit-plan', workflowId, 'edit_plan_0001']);

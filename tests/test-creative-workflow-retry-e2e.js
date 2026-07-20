@@ -439,7 +439,7 @@ function plannerProject(overrides = {}) {
     assert.equal(record.last_failure, null);
     assert.equal(record.retry.attempts.at(-1).status, 'done');
     assert.equal(record.stages.find(stage => stage.id === 'project').status, 'done');
-    assert.equal(record.stages.find(stage => stage.id === 'check').status, 'skipped');
+    assert.equal(record.stages.find(stage => stage.id === 'check').status, 'done');
     assert.equal(record.stages.find(stage => stage.id === 'render').status, 'done');
     assert.equal(record.stages.find(stage => stage.id === 'inspect').status, 'done');
     assert.equal(calls.source, 0);

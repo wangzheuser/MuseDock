@@ -699,6 +699,11 @@ export function useHtmlVideoProject({ workflowId, api }) {
     return api.getHtmlVideoProjectNarrationFileUrl(workflowId, frameId);
   }, [api, workflowId]);
 
+  const getAudioTrackPlaybackUrl = useCallback((track) => {
+    if (!workflowId || !track || !api?.getHtmlVideoProjectAudioTrackFileUrl) return '';
+    return api.getHtmlVideoProjectAudioTrackFileUrl(workflowId, track);
+  }, [api, workflowId]);
+
   const getSfxEventPlaybackUrl = useCallback((eventId) => {
     if (!workflowId || !eventId || !api?.getHtmlVideoProjectSfxEventFileUrl) return '';
     return api.getHtmlVideoProjectSfxEventFileUrl(workflowId, eventId);
@@ -777,6 +782,7 @@ export function useHtmlVideoProject({ workflowId, api }) {
     deleteExportRecord,
     getExportPlaybackUrl,
     getNarrationPlaybackUrl,
+    getAudioTrackPlaybackUrl,
     getSfxEventPlaybackUrl,
   };
 }

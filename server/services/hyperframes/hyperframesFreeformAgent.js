@@ -1,4 +1,8 @@
 const MAX_JSON_CHARS = 12000;
+const {
+  buildEditorialPlan,
+  validateEditorialPlan,
+} = require('../creative/pipeline/editorialPlan');
 
 function stripCodeFence(text = '') {
   let value = String(text || '').trim();
@@ -34,17 +38,18 @@ function getOptionSummary(options = {}) {
 function getResearchSummary(options = {}) {
   const research = options?.creative_context?.research_context;
   if (!research || typeof research !== 'object' || Array.isArray(research)) return null;
+  const hasEvidencePack = Number(options?.creative_context?.evidence_pack?.version) === 2;
   return {
     status: research.status || '',
     query: research.query || '',
     updated_at: research.updated_at || '',
-    summary: research.summary || '',
+    summary: String(research.summary || '').slice(0, 1000),
     coverage: research.coverage || {},
     sources: (Array.isArray(research.sources) ? research.sources : []).slice(0, 5).map(source => ({
       title: source?.title || '',
       url: source?.url || '',
       published_at: source?.published_at || '',
-      summary: source?.summary || '',
+      summary: hasEvidencePack ? '' : String(source?.summary || '').slice(0, 600),
       evidence: source?.evidence || '',
       discovery_channel: source?.discovery_channel || '',
       source_type: source?.source_type || '',
@@ -52,10 +57,71 @@ function getResearchSummary(options = {}) {
   };
 }
 
+/**
+ * 精简 Evidence Pack，只把导演决策需要的 Claim 和来源索引传给模型。
+ * @param {object} options 创作选项。
+ * @returns {object|null} 精简证据包。
+ */
+function getEvidenceSummary(options = {}) {
+  const pack = options?.creative_context?.evidence_pack;
+  if (!pack || typeof pack !== 'object' || Array.isArray(pack)) return null;
+  return {
+    version: pack.version,
+    sources: (Array.isArray(pack.sources) ? pack.sources : []).map(source => ({
+      id: source?.id || '',
+      title: source?.title || '',
+      url: source?.url || '',
+      source_type: source?.source_type || source?.type || '',
+      published_at: source?.published_at || '',
+    })),
+    claims: (Array.isArray(pack.claims) ? pack.claims : []).map(claim => ({
+      id: claim?.id || '',
+      requirement_ids: claim?.requirement_ids || [],
+      text: String(claim?.text || '').slice(0, 1200),
+      status: claim?.status || '',
+      source_ids: claim?.source_ids || [],
+    })),
+    coverage: {
+      status: pack.coverage?.status || '',
+      ready: pack.coverage?.ready === true,
+      missing_critical_requirement_ids: pack.coverage?.missing_critical_requirement_ids || [],
+    },
+  };
+}
+
+/**
+ * 精简运行记录，避免把生成状态和空产物重复发给导演模型。
+ */
+function getRunSummary(run = {}) {
+  const result = run?.result || {};
+  return {
+    input_summary: run?.input_summary || {},
+    result: {
+      summary: result.summary || '',
+      rewrite_script: result.rewrite_script || '',
+      video_brief: result.video_brief || {},
+    },
+  };
+}
+
+/**
+ * 按 4~8 秒一个有效场景给出节奏范围，不强制模型凑固定场景数。
+ */
+function getRecommendedSceneRange(targetDurationSec) {
+  const duration = Number(targetDurationSec) || 60;
+  return {
+    min: Math.max(3, Math.min(8, Math.ceil(duration / 8))),
+    max: Math.max(3, Math.min(12, Math.ceil(duration / 4))),
+  };
+}
+
 function buildFreeformBriefMessages({ run = {}, skillContext = '', options = {} } = {}) {
   const optionSummary = getOptionSummary(options);
   const researchSummary = getResearchSummary(options);
-  const narrationCharBudget = Math.floor(Number(optionSummary.target_duration_sec || 60) * 3.8);
+  const creativeContract = options?.creative_context?.creative_contract || null;
+  const evidencePack = getEvidenceSummary(options);
+  const narrationCharBudget = Math.floor(Number(optionSummary.target_duration_sec || 60) * 5);
+  const recommendedSceneRange = getRecommendedSceneRange(optionSummary.target_duration_sec);
   return [
     {
       role: 'system',
@@ -77,13 +143,19 @@ function buildFreeformBriefMessages({ run = {}, skillContext = '', options = {} 
         optionSummary.style_prompt || '未指定',
         '',
         '联网研究素材：',
-        researchSummary ? safeJson(researchSummary, 9000) : '未提供',
+        researchSummary ? safeJson(researchSummary, 5000) : '未提供',
+        '',
+        'Creative Contract（必须逐项覆盖）：',
+        creativeContract ? safeJson(creativeContract, 9000) : '未提供',
+        '',
+        'Evidence Pack（事实唯一来源）：',
+        evidencePack ? safeJson(evidencePack, 8000) : '未提供',
         '',
         '技能上下文：',
-        String(skillContext || '未提供'),
+        String(skillContext || '未提供').slice(0, 6000),
         '',
         '运行摘要：',
-        safeJson(run),
+        safeJson(getRunSummary(run), 6000),
         '',
         '输出要求：',
         '1. 只返回 JSON 对象。',
@@ -94,14 +166,14 @@ function buildFreeformBriefMessages({ run = {}, skillContext = '', options = {} 
         '6. storyboard.scenes[].visual_text 承载画面文字素材：keywords 是 3~5 个画面关键词；cards 是 2~4 条提炼后的要点短语或数据点，每条 4~16 个汉字。keywords/cards 禁止照抄 narration_text 原句，也不要写成完整长句；旁白全文会由系统作为底部字幕注入，画面文字只放提炼后的短文案。',
         '7. audio_direction 给出高级成片音频导演建议，必须包含 voice 和 style_prompt；style_prompt 可描述情绪、口吻、语速、停顿、吸气、笑声或哭腔，例如紧张、深呼吸、语速加快、沉默片刻、长叹一口气。',
         '8. storyboard.scenes[].narration_text 和 captions.text 只能包含观众可见、可朗读的正文；吸气、停顿、语速等表演指令只能写入 audio_direction.style_prompt，不要写进旁白或字幕。',
-        '9. design_md 使用 Markdown 文本描述视觉方向、版式、动效和检查要点。',
+        '9. design_md 使用 Markdown 文本描述视觉方向、版式、动效和检查要点，不超过 400 字。',
         '10. content_mode=news 时侧重发生了什么和实际影响；analysis 时侧重信号、背景、可能意义和观众价值；discussion 时侧重争议、不同观点和观察方向。默认按 analysis 创作，不强制裁决话题真假。',
-        '11. 联网研究是创作素材，不是覆盖用户输入的最终判决。搜索未命中只能表示当前没有搜到，不能据此断言事件不存在或尚未发生。',
+        '11. 当提供 Evidence Pack 时，事实只能来自其中的 claims；搜索列表、用户目标和编辑推断不能冒充证据。',
         '12. 不确定信息优先准确归因，例如“负责人表示”“部分用户发现”“社区正在讨论”；观察、转述和编辑推断必须区分，不能把局部现象扩大成全面结论。',
         '13. 除非未知信息直接影响核心表达，否则不要反复使用“尚未确认”“未知”“有待证实”“暂不明确”；60 秒内最多 2 个场景出现此类兜底措辞，专门解释证据边界的场景最多 1 个。',
         '14. 每个场景都要推进叙事，至少提供现象、背景、影响、观点或后续观察中的一种新信息，禁止把搜索摘要逐条改写成免责声明。',
         '15. analysis 模式必须输出 premise_check、thesis 和 audience_takeaways。先校验用户前提，再给出一个明确中心判断和 2~4 条观众可带走的信息。',
-        '16. analysis 模式的每个场景都输出 viewer_gain；有联网材料时，全片至少安排 2 个 evidence_points，并把日期、数字、名称、价格、适用范围或具体案例保留到 narration_text，禁止全部抽象成“入口重组”“价值提升”等营销词。',
+        '16. analysis 模式的每个场景都输出 viewer_gain；把已核验的日期、数字、名称、适用范围和案例保留到 narration_text，禁止抽象成泛化营销词。',
         '17. analysis 模式至少给出一个 viewer_action，告诉目标观众如何选择、判断或下一步怎么做；结尾不能只说“继续观察”“等待官方说明”。',
         '18. 提问式开场最多占一个场景，后续必须直接回答标题；不要连续提出问题而不给答案。',
         '19. 当 coverage.status=weak 且 source_types.first_party=0 时，禁止把检索失败写成“官方未确认”“官方未发布”或“并非官方”；只能说明“本次检索未获得第一方页面”，且不得把检索数量当作视频核心内容。',
@@ -109,10 +181,12 @@ function buildFreeformBriefMessages({ run = {}, skillContext = '', options = {} 
         '21. 当模型定位、价格或真实效果尚缺一手资料或独立样本时，只能给“先测谁、怎么对比”的测试顺序，不能把编辑推断压缩成“复杂用A、脚本用B”这类确定选型。',
         '22. 有效任务成本统一表达为“全部调用总成本÷成功交付数量”或“单次平均成本÷成功率”；禁止再把调用次数乘一次后又除以成功率。',
         '23. evidence_points 只能写来源材料支持的事实；用户的创作目标、受众任务和编辑建议应分别写成 viewer_action 或明确标为编辑假设，不能冒充研究证据。',
-        '24. 当用户要求“资讯、动态、更新、发布、上线、过去24小时或最新消息”时，不得把主题改成来源核验教程。至少安排 2 个 content_role="update" 的场景，并分别填写 update_subject、update_detail、update_time、timeliness_status、source_attribution、workflow_impact、test_action；两个 update_subject 必须是不同的具名模型、产品、平台或机构。timeliness_status 只能是 within_window、current_unverified 或 historical_background。',
-        '25. update 场景必须同时讲清“谁发生了什么、消息来自哪里、影响创作工作流哪一环、观众今天怎么测”。负责人社交媒体、可信媒体或社区线索可以使用，只要准确归因，不要求强行裁决真假。专门讲时间窗、抓取失败、证据边界或“某页面不代表更新”的场景最多 1 个，且不得超过全片场景数的 20%。',
-        '26. 当用户明确要求过去24小时、今天、今日或最新消息时，只有 timeliness_status=within_window 或 current_unverified 的场景可以计为动态；旧闻只能标 historical_background 并作为背景，不能拿两条历史资料冒充两条当前动态。update_time 必须写来源显示的日期时间，或明确写“当前线索未给出精确时间”。',
+        '24. 旁白和画面文案不得出现 Creative Contract、Evidence Pack、Claim 等内部实现名称。',
+        '24. 当提供 Creative Contract 时，每个场景必须填写 requirement_ids；事实场景还必须填写 claim_ids、source_ids，且 ID 必须存在于 Creative Contract 和 Evidence Pack。',
+        '25. 不得为凑结构加入合同外的第二个主体、产品动态或行业新闻；场景只服务用户目标和 must_cover。',
+        '26. 根据叙事需要选择 source_quote、metric_correction、evidence_matrix、timeline、comparison、verdict 或 explain 作为 layout_archetype；模板只控制视觉主题，不控制所有场景使用同一种卡片布局。',
         `27. 全部 storyboard.scenes[].narration_text 合计不超过 ${narrationCharBudget} 个非空白字符；这是 ${optionSummary.target_duration_sec || 60} 秒成片的配音硬预算。先删重复解释和套话，不要依赖后续自动截断。`,
+        `28. 建议输出 ${recommendedSceneRange.min}~${recommendedSceneRange.max} 个有效场景，每个场景约 4~8 秒；不要为了命中固定数量拆分或填充无关内容。`,
         '',
         '输出示例：',
         safeJson({
@@ -131,6 +205,10 @@ function buildFreeformBriefMessages({ run = {}, skillContext = '', options = {} 
               {
                 headline: '开场',
                 narration_text: '第一段旁白。',
+                requirement_ids: ['req_01'],
+                claim_ids: ['claim_01'],
+                source_ids: ['src_01'],
+                layout_archetype: 'source_quote',
                 viewer_gain: '观众看完本段新增的认知。',
                 evidence_points: ['具体日期、数字、名称或案例'],
                 viewer_action: '观众可以采取的判断或行动。',
@@ -180,7 +258,7 @@ function isCompleteUpdateScene(scene = {}) {
  * 判断用户是否要求严格的当前时间窗口。
  */
 function requestsCurrentWindow(userInputText = '') {
-  return /过去\s*24\s*小时|近\s*24\s*小时|今天|今日|最新消息/.test(String(userInputText || ''));
+  return /过去\s*24\s*小时|近\s*24\s*小时|今天|今日|最新消息|时效/.test(String(userInputText || ''));
 }
 
 /**
@@ -204,6 +282,9 @@ function validateFreeformBrief(brief = {}, options = {}) {
     Array.isArray(scene?.evidence_points) ? scene.evidence_points : []
   )).filter(Boolean);
   const researchContext = options?.creative_context?.research_context || {};
+  const creativeContract = options?.creative_context?.creative_contract || {};
+  const evidencePack = options?.creative_context?.evidence_pack || {};
+  const isPipelineV2 = Number(creativeContract.version) === 2;
   const researchSources = researchContext.sources;
   const coverage = researchContext.coverage || {};
   const creativeInput = options?.creative_context?.input || {};
@@ -220,7 +301,8 @@ function validateFreeformBrief(brief = {}, options = {}) {
   const narrationText = scenes.map(scene => String(scene?.narration_text || '')).join('\n');
   const targetDurationSec = Number(options.targetDurationSec || options.target_duration_sec || brief.target_duration_sec || 60) || 60;
   const narrationCharCount = narrationText.replace(/\s+/g, '').length;
-  const narrationCharBudget = Math.floor(targetDurationSec * 3.8);
+  // ponytail: 给模型输出留 5% 标点浮动，真实时长仍由后续 TTS 校验。
+  const narrationCharBudget = Math.ceil(targetDurationSec * 5.25);
   const uncertaintyPattern = /尚未|未全|未完整|没有取得|未取得|未获得|缺少|待(?:实测|核实|验证|确认)|仍需(?:核验|确认|实测)|或能|无法|未知|有待|暂不明确/;
   const uncertaintySceneCount = scenes.filter(scene => uncertaintyPattern.test(String(scene?.narration_text || ''))).length;
   const briefText = JSON.stringify(brief);
@@ -241,11 +323,9 @@ function validateFreeformBrief(brief = {}, options = {}) {
       && (!Array.isArray(researchSources) || researchSources.length === 0))
     || (options?.creative_context?.input?.use_research === false);
   const completeUpdateScenes = scenes.filter(isCompleteUpdateScene);
-  const distinctUpdateSubjects = new Set(completeUpdateScenes.map(scene => String(scene.update_subject).trim()));
   const currentWindowRequested = requestsCurrentWindow(userInputText);
   const currentUpdateScenes = completeUpdateScenes.filter(scene => ['within_window', 'current_unverified']
     .includes(String(scene.timeliness_status || '').trim()));
-  const currentUpdateSubjects = new Set(currentUpdateScenes.map(scene => String(scene.update_subject).trim()));
   const researchYear = String(researchContext.updated_at || '').match(/20\d{2}/)?.[0] || '';
   const staleCurrentScenes = currentUpdateScenes.filter(scene => {
     const updateYear = String(scene.update_time || '').match(/20\d{2}/)?.[0] || '';
@@ -257,6 +337,15 @@ function validateFreeformBrief(brief = {}, options = {}) {
     scene?.narration_text,
     scene?.update_detail,
   ].filter(Boolean).join(' '))).length;
+
+  if (isPipelineV2) {
+    const editorialValidation = validateEditorialPlan(
+      buildEditorialPlan(brief, creativeContract, evidencePack),
+      creativeContract,
+      evidencePack,
+    );
+    issues.push(...editorialValidation.issues.map(issue => issue.message));
+  }
 
   if (mode === 'analysis') {
     if (!String(brief.premise_check || '').trim()) issues.push('缺少 premise_check，尚未校验用户前提');
@@ -279,26 +368,26 @@ function validateFreeformBrief(brief = {}, options = {}) {
   if (/(?:调用价|单次成本).{0,12}(?:×|乘).{0,10}(?:次数|尝试).{0,12}(?:÷|除以?).{0,8}成功率/.test(narrationText)) {
     issues.push('有效成本公式重复计算了尝试次数，应使用总成本除以成功交付数量');
   }
-  if (
+  if (!isPipelineV2 &&
     coverage.status === 'weak'
     && Number(coverage?.source_types?.first_party || 0) === 0
     && /官方(?:未确认|未发布|没有|不存在)|未发现官方|并非官方|只能按传闻|官方原始来源(?:为|：)?0/.test(JSON.stringify(brief))
   ) {
     issues.push('弱覆盖不能推出官方未确认或未发布，只能说明本次检索未获得第一方页面');
   }
-  if (Array.isArray(researchSources) && researchSources.length > 0 && evidencePoints.length < 2) {
+  if (!isPipelineV2 && Array.isArray(researchSources) && researchSources.length > 0 && evidencePoints.length < 2) {
     issues.push('已有联网材料时至少需要 2 个 evidence_points');
   }
-  if (updateCoverageRequested && (completeUpdateScenes.length < 2 || distinctUpdateSubjects.size < 2)) {
-    issues.push('资讯主题至少需要 2 个不同具名主体的具体动态，并逐条提供来源归因、工作流影响和测试动作');
+  if (!isPipelineV2 && updateCoverageRequested && completeUpdateScenes.length < 2) {
+    issues.push('资讯主题至少需要 2 个具体动态，并逐条提供来源归因、工作流影响和测试动作');
   }
-  if (updateCoverageRequested && researchDisabled) {
+  if (!isPipelineV2 && updateCoverageRequested && researchDisabled) {
     issues.push('资讯主题缺少联网素材，不能用占位字段生成具名动态；请开启联网研究或改为方法型解读');
   }
-  if (currentWindowRequested && (currentUpdateScenes.length < 2 || currentUpdateSubjects.size < 2 || staleCurrentScenes.length > 0)) {
-    issues.push('当前时效主题至少需要 2 个落在目标窗口或明确标为当前待核验的具名动态，历史资料不能冒充当前更新');
+  if (!isPipelineV2 && currentWindowRequested && (currentUpdateScenes.length < 2 || staleCurrentScenes.length > 0)) {
+    issues.push('当前时效主题至少需要 2 个落在目标窗口或明确标为当前待核验的具体动态，历史资料不能冒充当前更新');
   }
-  if (updateCoverageRequested && evidenceBoundarySceneCount > Math.max(1, Math.floor(scenes.length * 0.2))) {
+  if (!isPipelineV2 && updateCoverageRequested && evidenceBoundarySceneCount > Math.max(1, Math.floor(scenes.length * 0.2))) {
     issues.push('时间核验和证据边界最多占 1 个场景且不得超过全片 20%，不能把资讯改成核验教程');
   }
   return {
@@ -346,9 +435,48 @@ function parseJsonObject(text = '') {
   throw new Error(`响应不是 JSON 对象。原始内容预览：${preview}`);
 }
 
+/**
+ * 在不删除场景的前提下按比例压缩旁白，真实时长仍由后续 TTS 结果校验。
+ * @param {object} brief 导演简报。
+ * @param {object} options 创作参数。
+ * @returns {object} 时长预算内的导演简报。
+ */
+function fitNarrationBudget(brief = {}, options = {}) {
+  const scenes = Array.isArray(brief?.storyboard?.scenes) ? brief.storyboard.scenes : [];
+  if (!scenes.length) return brief;
+  const targetDurationSec = Number(options.targetDurationSec || options.target_duration_sec || brief.target_duration_sec || 60) || 60;
+  const budget = Math.floor(targetDurationSec * 5);
+  const lengths = scenes.map(scene => String(scene?.narration_text || '').replace(/\s+/g, '').length);
+  const total = lengths.reduce((sum, length) => sum + length, 0);
+  if (total <= budget) return brief;
+  const minimum = Math.min(12, Math.floor(budget / scenes.length / 2));
+  let remaining = Math.max(0, budget - minimum * scenes.length);
+  const limits = lengths.map(length => minimum + Math.floor(remaining * length / total));
+  remaining = budget - limits.reduce((sum, limit) => sum + limit, 0);
+  for (let index = 0; remaining > 0; index = (index + 1) % limits.length, remaining -= 1) limits[index] += 1;
+
+  return {
+    ...brief,
+    storyboard: {
+      ...brief.storyboard,
+      scenes: scenes.map((scene, index) => {
+        const narration = String(scene?.narration_text || '').trim();
+        const limit = limits[index];
+        if (narration.replace(/\s+/g, '').length <= limit) return scene;
+        const preview = narration.slice(0, Math.max(1, limit));
+        const punctuation = Math.max(...['。', '！', '？', '；', '!', '?', ';'].map(mark => preview.lastIndexOf(mark)));
+        const shortened = punctuation >= Math.floor(limit * 0.55)
+          ? preview.slice(0, punctuation + 1)
+          : `${preview.slice(0, Math.max(1, limit - 1)).trim()}。`;
+        return { ...scene, narration_text: shortened };
+      }),
+    },
+  };
+}
+
 function parseFreeformBriefResponse(text = '', options = {}) {
   try {
-    const brief = parseJsonObject(text);
+    const brief = fitNarrationBudget(parseJsonObject(text), options);
     const validation = validateFreeformBrief(brief, options);
     if (!validation.success) return validation;
     return {
@@ -365,6 +493,7 @@ function parseFreeformBriefResponse(text = '', options = {}) {
 
 module.exports = {
   buildFreeformBriefMessages,
+  fitNarrationBudget,
   parseFreeformBriefResponse,
   validateFreeformBrief,
 };

@@ -49,6 +49,8 @@ async function run() {
     messages: [{ role: 'user', content: '生成 JSON' }],
     configPath,
     response_format: { type: 'json_object' },
+    reasoning_effort: 'low',
+    max_completion_tokens: 4500,
     fetchImpl: async (url, options) => {
       requestedUrl = url;
       requestedOptions = options;
@@ -75,6 +77,8 @@ async function run() {
   assert.strictEqual(body.model, 'gpt-test');
   assert.deepStrictEqual(body.messages, [{ role: 'user', content: '生成 JSON' }]);
   assert.deepStrictEqual(body.response_format, { type: 'json_object' });
+  assert.strictEqual(body.reasoning_effort, 'low');
+  assert.strictEqual(body.max_completion_tokens, 4500);
   assert.ok(requestedOptions.signal, 'text model requests should include an AbortSignal');
   assert.strictEqual(typeof requestedOptions.signal.aborted, 'boolean');
 

@@ -13,6 +13,7 @@ const { createDiagnostic, normalizeDiagnostics } = require('./diagnostics');
 const { findFrameByAnyId, canonicalFrameId, sanitizePathSegment } = require('./frameIdentity');
 const { findDraft } = require('./htmlVideoDraftService');
 const { analyzeTimelineMismatch } = require('./timelineRepair');
+const { buildProjectEditState } = require('./projectEditState');
 const sfxEventService = require('./sfxEventService');
 
 function objectOrEmpty(value) {
@@ -256,7 +257,7 @@ function retimeTimelineStarts(project) {
 
 function normalizePlaybackSpeed(value) {
   const speed = Number(value);
-  return Number.isFinite(speed) && speed >= 0.1 && speed <= 2 ? speed : 1;
+  return Number.isFinite(speed) && speed >= 0.1 && speed <= 2 ? speed : 1.1;
 }
 
 function normalizeTailProtection(value) {
@@ -891,7 +892,7 @@ async function composeHtmlVideoProject({
   exportKind = 'export',
   exportFileName = '',
   exportPlatform = '',
-  playbackSpeed = 1,
+  playbackSpeed = 1.1,
   tailProtection = 'pad_end',
 } = {}) {
   void targetDurationSec;
@@ -1362,6 +1363,32 @@ async function composeHtmlVideoProject({
     };
   }
 
+  // 技术编码通过不代表画面可发布；布局失败或内容修改后未复检都必须阻断导出。
+  const editState = buildProjectEditState(nextProject);
+  if (editState.has_layout_issues || editState.layout_qa_outdated) {
+    const issueCount = Number(editState.layout_issue_count || 0);
+    const message = editState.layout_qa_outdated
+      ? '当前内容修改后尚未重新运行布局检查。'
+      : `布局检查仍有 ${issueCount} 个阻断问题。`;
+    qualityReport = {
+      ...qualityReport,
+      success: false,
+      pass: false,
+      publish_ready: false,
+      code: 'layout_qa_failed',
+      message,
+      issues: [
+        ...(Array.isArray(qualityReport.issues) ? qualityReport.issues : []),
+        {
+          code: 'layout_qa_failed',
+          severity: 'error',
+          message,
+          issue_count: issueCount,
+        },
+      ],
+    };
+  }
+
   if (qualityReport.skipped) {
     diagnostics.push(createDiagnostic({
       code: qualityReport.code || 'quality_probe_skipped',
@@ -1492,7 +1519,7 @@ async function renderHtmlVideoProject({
   exportKind = 'export',
   exportFileName = '',
   exportPlatform = '',
-  playbackSpeed = 1,
+  playbackSpeed = 1.1,
   tailProtection = 'pad_end',
 } = {}) {
   const materializer = services.materializer || defaultMaterializer;

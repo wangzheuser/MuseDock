@@ -127,3 +127,64 @@ export function fitPreviewBox(size = {}, aspectRatio = 16 / 9) {
     height: Math.floor(fitted.height),
   };
 }
+
+/** 把工程中的 dB 音量换算成浏览器 audio 使用的 0-1 音量。 */
+export function decibelsToVolume(value, fallbackDb = 0) {
+  const db = Number.isFinite(Number(value)) ? Number(value) : fallbackDb;
+  return clamp(10 ** (db / 20), 0, 1);
+}
+
+/**
+ * 根据工程主时间线生成当前镜头的声音播放计划。
+ * @param {object} project html-video 工程。
+ * @param {object} frame 当前镜头。
+ * @returns {object} 镜头时间窗、主音轨偏移和音效计划。
+ */
+export function buildFrameAudioPlan(project = {}, frame = {}) {
+  project = project || {};
+  frame = frame || {};
+  const frames = Array.isArray(project.frames) ? project.frames : [];
+  const frameIds = new Set([frame?.id, frame?.scene_id].filter(Boolean).map(String));
+  const mainTrack = (Array.isArray(project?.timeline?.tracks) ? project.timeline.tracks : [])
+    .find(track => track?.id === 'main' || track?.type === 'video');
+  const item = (Array.isArray(mainTrack?.items) ? mainTrack.items : [])
+    .find(entry => frameIds.has(String(entry?.frame_id || entry?.scene_id || '')));
+  const frameIndex = frames.findIndex(entry => frameIds.has(String(entry?.id || entry?.scene_id || '')));
+  const fallbackStartSec = frames.slice(0, Math.max(0, frameIndex)).reduce((sum, entry) => {
+    const duration = Number(entry?.duration_sec ?? entry?.durationSec ?? entry?.duration);
+    return sum + (Number.isFinite(duration) && duration > 0 ? duration : 0);
+  }, 0);
+  const itemStartSec = Number(item?.start_sec ?? item?.startSec);
+  const itemDurationSec = Number(item?.duration_sec ?? item?.durationSec);
+  const frameDurationSec = Number(frame?.duration_sec ?? frame?.durationSec ?? frame?.duration);
+  const startSec = Number.isFinite(itemStartSec) && itemStartSec >= 0 ? itemStartSec : fallbackStartSec;
+  const durationSec = Number.isFinite(itemDurationSec) && itemDurationSec > 0
+    ? itemDurationSec
+    : (Number.isFinite(frameDurationSec) && frameDurationSec > 0 ? frameDurationSec : 3);
+  const audio = project.audio || {};
+  const events = Array.isArray(audio?.sfx?.events) ? audio.sfx.events : [];
+  const sfx = events.flatMap(event => {
+    if (event?.enabled === false) return [];
+    const eventFrameId = String(event?.frame_id || event?.scene_id || '');
+    if (eventFrameId && !frameIds.has(eventFrameId)) return [];
+    const sceneTime = Number(event?.time_sec);
+    const globalTime = Number(event?.global_time_sec);
+    const localTimeSec = eventFrameId && Number.isFinite(sceneTime)
+      ? sceneTime
+      : (Number.isFinite(globalTime) ? globalTime - startSec : NaN);
+    if (!Number.isFinite(localTimeSec) || localTimeSec < 0 || localTimeSec >= durationSec) return [];
+    return [{ ...event, local_time_sec: localTimeSec, volume: decibelsToVolume(event?.volume_db, -18) }];
+  });
+
+  return {
+    start_sec: startSec,
+    duration_sec: durationSec,
+    narration_mode: audio.narration_path ? 'combined' : (audio.tts_manifest_path ? 'frame' : 'none'),
+    narration_offset_sec: audio.narration_path ? startSec : 0,
+    narration_volume: decibelsToVolume(audio?.mix?.narration_volume_db, 0),
+    music_offset_sec: startSec,
+    music_volume: decibelsToVolume(audio?.mix?.music_volume_db, -18),
+    has_music: Boolean(audio.music_path),
+    sfx,
+  };
+}

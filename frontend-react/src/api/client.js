@@ -339,6 +339,9 @@ export const api = {
   getHtmlVideoProjectNarrationFileUrl(workflowId, frameId) {
     return `/api/creative-workflows/${encodeURIComponent(workflowId)}/html-video-project/frames/${encodeURIComponent(frameId)}/narration/file`;
   },
+  getHtmlVideoProjectAudioTrackFileUrl(workflowId, track) {
+    return `/api/creative-workflows/${encodeURIComponent(workflowId)}/html-video-project/audio/${encodeURIComponent(track)}/file`;
+  },
   getHtmlVideoProjectSfxEventFileUrl(workflowId, eventId) {
     return `/api/creative-workflows/${encodeURIComponent(workflowId)}/html-video-project/sfx/events/${encodeURIComponent(eventId)}/file`;
   },

@@ -182,6 +182,7 @@ assert.ok(editor.includes('HtmlVideoDraftPanel'), 'HtmlVideoProjectEditor should
 assert.ok(editor.includes('HtmlVideoQualityPanel'), 'HtmlVideoProjectEditor should compose quality panel');
 assert.ok(editor.includes('projectResolution={editor.project?.output?.resolution}'), 'editor should pass the fixed project resolution to export settings');
 assert.ok(editor.includes('defaultPlaybackSpeed={editor.project?.output?.default_playback_speed}'), 'editor should pass the task default playback speed to export settings');
+assert.match(editor, /<PreviewPanel[\s\S]*defaultPlaybackSpeed=\{editor\.project\?\.output\?\.default_playback_speed\}/, 'editor should pass the task default playback speed to preview settings');
 assert.ok(editor.includes('HtmlVideoAiEditPanel'), 'HtmlVideoProjectEditor should compose AI edit panel');
 assert.doesNotMatch(editor, /ReservedCapabilitiesPanel/, 'reserved panel should remain hidden');
 
@@ -204,7 +205,13 @@ assert.ok(exportsPanel.includes('尾音保护'), 'exports panel should expose ta
 assert.ok(exportsPanel.includes('playback_speed'), 'exports panel should submit playback_speed');
 assert.ok(exportsPanel.includes('tail_protection'), 'exports panel should submit tail_protection');
 assert.ok(exportsPanel.includes('inputMode="decimal"'), 'exports panel should use manual decimal speed input');
-assert.ok(exportsPanel.includes('1.0'), 'exports panel should default speed to 1.0');
+assert.ok(exportsPanel.includes("playbackSpeed: '1.1'"), 'exports panel should default speed to 1.1');
+assert.ok(exportsPanel.includes('正式成品'), 'exports panel should group final exports');
+assert.ok(exportsPanel.includes('预览文件'), 'exports panel should group preview files');
+assert.ok(exportsPanel.includes("item?.kind === 'export'"), 'exports panel should put only final exports in the final group');
+assert.ok(exportsPanel.includes("item?.kind === 'preview'"), 'exports panel should put previews in the preview group');
+assert.ok(exportsPanel.includes('导出倍速未知'), 'exports panel should not invent missing historical speed metadata');
+assert.ok(exportsPanel.includes('speed.toFixed(1)'), 'exports panel should always format actual speed, including 1.0x');
 assert.ok(exportsPanel.includes('0.1 到 2.0'), 'exports panel should describe the speed range');
 assert.ok(exportsPanel.includes('最多 1 位小数'), 'exports panel should describe one decimal limit');
 assert.doesNotMatch(exportsPanel, /SPEED_OPTIONS/, 'exports panel should not use fixed speed options');

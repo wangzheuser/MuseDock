@@ -61,6 +61,44 @@ function getWorkflowVideoUrl(workflow) {
 }
 
 /**
+ * 判断工作流是否只生成了可编辑工程，尚未导出正式成片。
+ * @param {object|null} workflow 工作流详情。
+ * @returns {boolean} 是否已进入二次编辑阶段。
+ */
+function isWorkflowReadyForEdit(workflow) {
+  const hyperframes = workflow?.result?.hyperframes_freeform || {};
+  return hyperframes?.project?.ready_for_edit === true
+    || hyperframes?.ready_for_edit === true
+    || workflow?.project?.ready_for_edit === true;
+}
+
+/**
+ * 返回与实际产物一致的完成文案，避免把可编辑工程误报为正式视频。
+ * @param {object|null} workflow 工作流详情。
+ * @param {string} fallback 无明确产物时的回退文案。
+ * @returns {string} 用户可见的完成文案。
+ */
+function getWorkflowCompletionMessage(workflow, fallback = '') {
+  if (getWorkflowVideoUrl(workflow)) return '视频生成完成。';
+  if (isWorkflowReadyForEdit(workflow)) return '可编辑工程已生成，正在准备预览。';
+  return getWorkflowDisplayMessage(workflow, fallback || '创作任务已完成。');
+}
+
+/** 返回工程中最新的预览导出记录。 */
+function latestProjectPreview(project = {}) {
+  return project?.edit_state?.latest_preview
+    || (Array.isArray(project?.exports) ? project.exports.findLast(item => item?.kind === 'preview') : null)
+    || null;
+}
+
+/** 返回预览导出记录的可播放地址。 */
+function previewPlaybackUrl(workflowId, preview) {
+  const directUrl = preview?.url || preview?.output_url || preview?.playback_url || '';
+  if (directUrl) return directUrl;
+  return workflowId && preview?.id ? api.getHtmlVideoProjectExportFileUrl(workflowId, preview.id) : '';
+}
+
+/**
  * 判断任务列表缓存的 workflow 是否足够展示详情，避免 done 摘要跳过详情刷新。
  * @param {object|null} workflow 工作流快照。
  * @returns {boolean} 是否包含详情数据。
@@ -323,6 +361,7 @@ export function OneClickCreativePage() {
   const retryPlanRequestRef = useRef({ workflowId: '', inFlight: false });
   const retryPlanLoadedRef = useRef('');
   const retryPlanSeqRef = useRef(0);
+  const previewRequestSeqRef = useRef(0);
   const [input, setInput] = useState('');
   const [mode, setMode] = useState('quick');
   const [useResearch, setUseResearch] = useState(true);
@@ -347,10 +386,13 @@ export function OneClickCreativePage() {
   const [retryPlanStatus, setRetryPlanStatus] = useState('idle');
   const [retryPlanMessage, setRetryPlanMessage] = useState('');
   const [retrying, setRetrying] = useState(false);
+  const [previewRetryKey, setPreviewRetryKey] = useState(0);
+  const [taskPreview, setTaskPreview] = useState({ workflowId: '', status: 'idle', url: '', message: '' });
   // activeTaskRef holds the value; this state only forces stream connect/stop rerenders.
   const [, setActiveTask] = useState(null);
   const isBusy = status === 'creating' || status === 'polling' || status === 'deleting';
   const submitDisabled = isBusy || !input.trim();
+  const formalVideoUrl = getWorkflowVideoUrl(workflow);
   const sidebarTasks = useMemo(() => tasks.map(task => ({
     ...task,
     timeLabel: getTaskTimeLabel(getSidebarTaskTimeSource(task)),
@@ -585,7 +627,7 @@ export function OneClickCreativePage() {
     };
 
     const fallbackMessage = terminalMessage
-      || (terminalStatus === 'failed' ? '视频生成失败，请查看任务详情。' : '视频生成完成。');
+      || (terminalStatus === 'failed' ? '视频生成失败，请查看任务详情。' : '创作任务已完成，正在加载结果...');
     try {
       if (isStaleFinalFetch()) {
         if (finalWorkflowRefreshRef.current?.key === refreshKey) {
@@ -640,9 +682,14 @@ export function OneClickCreativePage() {
         setMessage(nextMessage || '视频生成失败，请查看任务详情。');
         return;
       }
+      if (nextStatus === 'needs_input') {
+        setStatus('needs_input');
+        setMessage(nextMessage || '关键证据不足，请补充原始来源链接。');
+        return;
+      }
       if (nextStatus === 'done' || terminalStatus === 'done') {
         setStatus('done');
-        setMessage(nextMessage || '视频生成完成。');
+        setMessage(getWorkflowCompletionMessage(nextWorkflow, nextMessage));
         return;
       }
       setMessage(nextMessage);
@@ -1186,7 +1233,16 @@ export function OneClickCreativePage() {
             stopTaskStream({ clearStorage: true });
           }
           setStatus('done');
-          setMessage('视频生成完成。');
+          setMessage(getWorkflowCompletionMessage(nextWorkflow, nextMessage));
+          return;
+        }
+
+        if (nextWorkflow?.status === 'needs_input') {
+          if (activeTaskRef.current?.workflow_id === workflowId) {
+            stopTaskStream({ clearStorage: true });
+          }
+          setStatus('needs_input');
+          setMessage(nextMessage || '关键证据不足，请补充原始来源链接。');
           return;
         }
 
@@ -1219,6 +1275,67 @@ export function OneClickCreativePage() {
       window.clearInterval(timer);
     };
   }, [status, workflowId, persistTasks, stopTaskStream, subscribeTaskEvents]);
+
+  useEffect(() => {
+    const targetWorkflowId = String(selectedWorkflowId || workflow?.workflow_id || workflowId || '').trim();
+    const workflowMatchesSelection = !workflow?.workflow_id || String(workflow.workflow_id) === targetWorkflowId;
+    const requestSeq = previewRequestSeqRef.current + 1;
+    previewRequestSeqRef.current = requestSeq;
+
+    if (workflow?.status !== 'done' || !workflowMatchesSelection || !targetWorkflowId || formalVideoUrl) {
+      setTaskPreview({ workflowId: targetWorkflowId, status: 'idle', url: '', message: '' });
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    /** 加载可用预览；没有预览或预览过期时复用现有预览渲染接口补生成。 */
+    async function ensureTaskPreview() {
+      setTaskPreview({
+        workflowId: targetWorkflowId,
+        status: 'loading',
+        url: '',
+        message: '正在生成视频预览...',
+      });
+      try {
+        let projectResult = await api.getHtmlVideoProject(targetWorkflowId);
+        let project = projectResult?.html_video_project || null;
+        let preview = latestProjectPreview(project);
+        if (!preview || project?.edit_state?.preview_outdated === true) {
+          const generated = await api.createHtmlVideoProjectPreview(targetWorkflowId, {});
+          project = generated?.html_video_project || null;
+          preview = latestProjectPreview(project);
+          if (!preview) {
+            projectResult = await api.getHtmlVideoProject(targetWorkflowId);
+            project = projectResult?.html_video_project || null;
+            preview = latestProjectPreview(project);
+          }
+        }
+        const url = previewPlaybackUrl(targetWorkflowId, preview);
+        if (!url) throw new Error('预览文件生成完成，但没有可播放地址。');
+        if (cancelled || previewRequestSeqRef.current !== requestSeq) return;
+        setTaskPreview({
+          workflowId: targetWorkflowId,
+          status: 'ready',
+          url,
+          message: '预览已生成，可进入二次编辑；最终成片尚未导出。',
+        });
+      } catch (error) {
+        if (cancelled || previewRequestSeqRef.current !== requestSeq) return;
+        setTaskPreview({
+          workflowId: targetWorkflowId,
+          status: 'failed',
+          url: '',
+          message: getErrorMessage(error, '生成视频预览失败，请重试。'),
+        });
+      }
+    }
+
+    ensureTaskPreview();
+    return () => {
+      cancelled = true;
+    };
+  }, [workflow?.status, workflow?.workflow_id, selectedWorkflowId, workflowId, formalVideoUrl, previewRetryKey]);
 
   useEffect(() => {
     const targetWorkflowId = String(workflow?.workflow_id || selectedWorkflowId || workflowId || '').trim();
@@ -1306,6 +1423,10 @@ export function OneClickCreativePage() {
             onContinueEdit={continueEdit}
             onRetryWorkflow={handleRetryWorkflow}
             getWorkflowVideoUrl={getWorkflowVideoUrl}
+            previewUrl={taskPreview.workflowId === selectedWorkflowId ? taskPreview.url : ''}
+            previewStatus={taskPreview.workflowId === selectedWorkflowId ? taskPreview.status : 'idle'}
+            previewMessage={taskPreview.workflowId === selectedWorkflowId ? taskPreview.message : ''}
+            onRetryPreview={() => setPreviewRetryKey(value => value + 1)}
           />
         </div>
       </section>

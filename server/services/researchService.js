@@ -8,6 +8,9 @@ function safeString(value) {
 function normalizeSource(source = {}, now = '') {
   const discoveryChannel = safeString(source.discovery_channel);
   const sourceType = safeString(source.source_type);
+  const requirementIds = Array.isArray(source.requirement_ids)
+    ? source.requirement_ids.map(safeString).filter(Boolean)
+    : [];
   return {
     title: safeString(source.title),
     url: safeString(source.url),
@@ -17,6 +20,7 @@ function normalizeSource(source = {}, now = '') {
     evidence: safeString(source.evidence),
     ...(discoveryChannel ? { discovery_channel: discoveryChannel } : {}),
     ...(sourceType ? { source_type: sourceType } : {}),
+    ...(requirementIds.length ? { requirement_ids: requirementIds } : {}),
   };
 }
 
@@ -25,6 +29,7 @@ async function createResearchContext({
   query,
   now,
   provider,
+  creativeContract,
 } = {}) {
   const updatedAt = safeString(now);
 
@@ -51,7 +56,11 @@ async function createResearchContext({
   }
 
   try {
-    const result = await provider({ query: normalizedQuery, now: updatedAt });
+    const result = await provider({
+      query: normalizedQuery,
+      now: updatedAt,
+      ...(creativeContract ? { creativeContract } : {}),
+    });
     const sources = Array.isArray(result && result.sources)
       ? result.sources.map(source => normalizeSource(source, updatedAt))
       : [];

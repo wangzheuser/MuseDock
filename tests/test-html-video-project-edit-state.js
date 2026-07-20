@@ -80,4 +80,14 @@ function exportEntry(id, createdAt, kind = 'export') {
   assert.equal(state.preview_outdated, true);
 }
 
+{
+  const state = buildProjectEditState({
+    revisions: [revision('rev_accept', '2026-07-11T10:00:03.000Z', 'frame_html_draft_accept')],
+    layout_qa_reports: [{ id: 'qa_1', created_at: '2026-07-11T10:00:02.000Z', success: true, issues: [] }],
+  });
+
+  assert.equal(state.layout_qa_outdated, true);
+  assert.equal(state.latest_layout_qa.id, 'qa_1');
+}
+
 console.log('html-video project edit state tests passed');

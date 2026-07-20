@@ -7,6 +7,9 @@ node_modules/
 /.mimocode/
 /.tmp-test-config/
 /docs/
+!/docs/
+/docs/*
+!/docs/creative-pipeline-v2-implementation-plan.md
 /opc-doc/
 
 # Build output

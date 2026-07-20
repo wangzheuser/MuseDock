@@ -44,6 +44,15 @@ const {
   EMOTIONAL_VOICE_STYLE_PROMPT,
   NEUTRAL_VOICE_STYLE_PROMPT,
 } = require('../tts/stylePrompts');
+const { buildCreativeContract } = require('./pipeline/creativeContract');
+const { buildEvidencePack } = require('./pipeline/evidencePack');
+const {
+  buildEditorialPlan,
+  projectEditorialPlanToBrief,
+  validateEditorialPlan,
+} = require('./pipeline/editorialPlan');
+const { buildProductionSpec } = require('./pipeline/productionSpec');
+const { buildQualityReport, resolveProductStatus } = require('./pipeline/qualityGate');
 
 const DEFAULT_ROOT = path.join(require('../../dataRoot'), 'data/creative-workflows');
 const DEFAULT_MEDIA_ROOT = path.join(require('../../dataRoot'), 'data/media/douyin');
@@ -155,21 +164,23 @@ function sanitizeExportFileName(value, fallback = 'output') {
  * @param {number} fallback 非法值回退值。
  * @returns {number} 合法倍速。
  */
-function normalizePlaybackSpeed(value, fallback = 1) {
+function normalizePlaybackSpeed(value, fallback = 1.1) {
   const text = String(value ?? '').trim();
   if (!/^\d+(\.\d)?$/.test(text)) return fallback;
   const speed = Number(text);
   return Number.isFinite(speed) && speed >= 0.1 && speed <= 2 ? speed : fallback;
 }
 
-function exportOptionsFromPayload(payload = {}) {
+function exportOptionsFromPayload(payload = {}, defaultPlaybackSpeed = 1.1) {
   const input = plainObject(payload.export_options || payload.exportOptions || payload);
   const width = Number(input.width ?? input.resolution?.width);
   const height = Number(input.height ?? input.resolution?.height);
   const fps = Number(input.fps);
   const playbackSpeedRaw = input.playback_speed ?? input.playbackSpeed;
   const playbackSpeedText = String(playbackSpeedRaw ?? '').trim();
-  const playbackSpeed = playbackSpeedText ? Number(playbackSpeedText) : 1;
+  const playbackSpeed = playbackSpeedText
+    ? Number(playbackSpeedText)
+    : normalizePlaybackSpeed(defaultPlaybackSpeed);
   const output = {};
   if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
     output.resolution = { width: Math.round(width), height: Math.round(height) };
@@ -446,6 +457,7 @@ function createAuditedResearchProvider(record, provider, services = {}) {
     aiModelConfig: services.aiModelConfig || aiModelConfig,
     aiTextModel: createAuditedWorkflowTextModel(record, services.aiTextModel || aiTextModel),
     webSearchProvider: services.webSearchProvider,
+    fetchImpl: services.fetchImpl,
   });
 }
 
@@ -1030,6 +1042,9 @@ function createWorkflowSummary(record) {
     workflow_id: record.workflow_id,
     aweme_id: record.aweme_id,
     status: record.status,
+    pipeline_version: Number(record.pipeline_version) || 1,
+    execution_status: record.execution_status || '',
+    product_status: record.product_status || '',
     run_id: record.run_id || '',
     message: record.message || '',
     active_task_id: record.active_task_id || '',
@@ -1042,6 +1057,7 @@ function createWorkflowSummary(record) {
     last_event_seq: Number.isFinite(record.last_event_seq) ? record.last_event_seq : 0,
     stages: normalizeStages(record.stages),
     creative_context: record.creative_context,
+    quality_report: record.quality_report || record.creative_context?.quality_report || null,
     prompt_snapshot: record.prompt_snapshot || null,
     source_context: record.source_context,
     research_context: record.research_context,
@@ -1092,6 +1108,8 @@ async function createCreativeWorkflow(payload = {}, options = {}) {
     sourceContext = creativeContext.createTextSourceContext(normalized.data.raw_text);
   }
   const researchQuery = buildWorkflowResearchQuery(payload, normalized.data);
+  const target = buildWorkflowTarget(snapshot);
+  const creativeContract = buildCreativeContract(normalized.data, target, now);
   const researchContext = normalized.data.use_research
     ? creativeContext.createPendingResearchContext({ query: researchQuery, now })
     : creativeContext.createDisabledResearchContext({ now });
@@ -1103,6 +1121,7 @@ async function createCreativeWorkflow(payload = {}, options = {}) {
     assetContext,
     now,
   });
+  creative.creative_contract = creativeContract;
   const stages = createStages();
   const sourceStage = stages.find(stage => stage.id === 'source');
   sourceStage.status = 'queued';
@@ -1113,6 +1132,9 @@ async function createCreativeWorkflow(payload = {}, options = {}) {
     workflow_id: workflowId,
     aweme_id: awemeId,
     status: 'queued',
+    pipeline_version: 2,
+    execution_status: 'queued',
+    product_status: 'draft',
     message: '创作任务已创建，等待执行。',
     run_id: '',
     active_task_id: '',
@@ -1127,12 +1149,13 @@ async function createCreativeWorkflow(payload = {}, options = {}) {
     research_context: researchContext,
     asset_context: assetContext,
     creative_context: creative,
+    quality_report: null,
     prompt_snapshot: buildPromptSnapshot(payload, normalized.data, now),
     stages,
     result: null,
     error: null,
     creative_defaults_snapshot: snapshot,
-    target: buildWorkflowTarget(snapshot),
+    target,
     skipValidation: normalized.data.skip_validation === true || effectiveSystemSettings.skipValidation === true,
     created_at: now,
     updated_at: now,
@@ -1424,12 +1447,20 @@ async function markStage(record, stageId, status, message, now, extra = {}) {
   });
 }
 
-async function markHtmlVideoLiteFinalStages(record, now, projectStageResult = {}) {
+async function markHtmlVideoLiteFinalStages(record, now, projectStageResult = {}, qualityReport = {}) {
   const hyperframes = projectStageResult.hyperframes_freeform || {};
   const readyForEdit = hyperframes.project?.ready_for_edit === true;
-  await markStage(record, 'check', 'skipped', 'html-video production 已完成，跳过旧 HyperFrames 工程校验。', now, {
-    skipped_at: now,
-  });
+  await markStage(
+    record,
+    'check',
+    'done',
+    qualityReport.passed === true ? '事实、时长、布局与技术质量门禁已通过。' : '完整质量门禁已执行，工程仍有待处理项。',
+    now,
+    {
+      completed_at: now,
+      result: { success: qualityReport.passed === true, quality_report: qualityReport },
+    },
+  );
   if (readyForEdit) {
     await markStage(record, 'render', 'pending', '等待二次编辑完成后手动导出视频。', now, {
       result: { success: true, render: hyperframes.render || null },
@@ -1476,6 +1507,7 @@ async function runStage(record, stageId, rootDir, handler, services, taskContext
     started_at: startedAt,
   });
   record.status = 'running';
+  record.execution_status = 'running';
   record.updated_at = startedAt;
   await persistWorkflow(record, rootDir);
   await emitTaskContextEvent(taskContext, {
@@ -1531,10 +1563,12 @@ async function runStage(record, stageId, rootDir, handler, services, taskContext
 
     const failedAt = getNow(services);
     const rawMessage = safeString(error && error.message) || `${STAGE_LABELS[stageId]}失败。`;
-    const briefTimeout = stageId === 'brief' && /(?:超时|timeout)/i.test(rawMessage);
+    const briefTimeout = stageId === 'brief' && /(?:超时|timeout|HTTP\s*524)/i.test(rawMessage);
     const failureCode = briefTimeout ? 'brief_model_timeout' : '';
+    const timeoutSeconds = rawMessage.match(/(\d+)\s*秒/)?.[1] || '';
+    const timeoutWindow = timeoutSeconds ? `${timeoutSeconds} 秒内` : '网关规定时间内';
     const message = briefTimeout
-      ? '导演策划模型未在 90 秒内响应，未生成视频工程。请稍后重试；如仍超时，请缩短提示词或补充更明确的来源链接。'
+      ? `导演策划模型未在${timeoutWindow}响应，未生成视频工程。请稍后重试；如仍超时，请缩短提示词或补充更明确的来源链接。`
       : rawMessage;
     await markStage(record, stageId, 'failed', message, failedAt, {
       failed_at: failedAt,
@@ -1542,6 +1576,7 @@ async function runStage(record, stageId, rootDir, handler, services, taskContext
     });
     record.success = false;
     record.status = 'failed';
+    record.execution_status = 'failed';
     record.message = message;
     record.error = {
       stage: stageId,
@@ -1549,17 +1584,19 @@ async function runStage(record, stageId, rootDir, handler, services, taskContext
       message,
       updated_at: failedAt,
     };
-    if (failureCode) {
-      record.last_failure = {
-        stage: stageId,
-        code: failureCode,
-        message,
-        updated_at: failedAt,
-      };
-    }
     if (error?.name === 'CreativeWorkflowStageError') {
       record.last_failure = createLastFailureFromError(error, stageId, failedAt);
       await syncProjectStageSummariesFromProjectDir(record, record.last_failure.project_dir);
+    } else {
+      record.last_failure = {
+        stage: stageId,
+        sub_stage: stageId,
+        code: failureCode || `${stageId}_failed`,
+        message,
+        retryable: true,
+        diagnostics: [],
+        updated_at: failedAt,
+      };
     }
     record.updated_at = failedAt;
     await persistWorkflow(record, rootDir);
@@ -1572,6 +1609,78 @@ async function runStage(record, stageId, rootDir, handler, services, taskContext
     });
     return null;
   }
+}
+
+const WORKFLOW_RESUME_STAGE_ORDER = ['source', 'research', 'assets', 'agent_run', 'brief', 'audio', 'project'];
+
+/**
+ * 根据已有稳定产物确定安全恢复点，缺少依赖时自动前移而不是盲目复用。
+ * @param {object} record 创作工作流记录。
+ * @param {string} requestedStage 请求恢复的阶段。
+ * @returns {string} 实际恢复阶段。
+ */
+function resolveWorkflowResumeStage(record = {}, requestedStage = '') {
+  const requested = safeString(requestedStage);
+  if (!WORKFLOW_RESUME_STAGE_ORDER.includes(requested)) return 'source';
+  const context = record.creative_context || {};
+  const hasContract = Number(context.creative_contract?.version) === 2;
+  const hasEvidence = Number(context.evidence_pack?.version) === 2;
+  const hasRun = Boolean(safeString(record.run_id));
+  const hasEditorial = Number(context.editorial_plan?.version) === 2
+    && context.editorial_plan.contract_hash === context.creative_contract?.input_hash
+    && context.editorial_plan.evidence_hash === context.evidence_pack?.input_hash;
+  const hasProduction = Number(context.production_spec?.version) === 2
+    && context.production_spec.editorial_plan_hash === context.editorial_plan?.input_hash;
+
+  if (!hasContract && requested !== 'source') return 'source';
+  if (!hasEvidence && WORKFLOW_RESUME_STAGE_ORDER.indexOf(requested) > WORKFLOW_RESUME_STAGE_ORDER.indexOf('research')) return 'research';
+  if (!hasRun && WORKFLOW_RESUME_STAGE_ORDER.indexOf(requested) > WORKFLOW_RESUME_STAGE_ORDER.indexOf('agent_run')) return 'agent_run';
+  if (!hasEditorial && WORKFLOW_RESUME_STAGE_ORDER.indexOf(requested) > WORKFLOW_RESUME_STAGE_ORDER.indexOf('brief')) return 'brief';
+  if (!hasProduction && requested === 'project') return 'audio';
+  return requested;
+}
+
+/**
+ * 从恢复点开始失效下游产物，避免重试期间继续暴露旧脚本、旧音频或旧 QA。
+ * @param {object} record 创作工作流记录。
+ * @param {string} resumeStage 实际恢复阶段。
+ * @param {string} now 失效时间。
+ * @returns {object} 已更新的工作流记录。
+ */
+function invalidateWorkflowDownstream(record = {}, resumeStage = 'source', now = '') {
+  const stageIndex = Math.max(0, WORKFLOW_RESUME_STAGE_ORDER.indexOf(resumeStage));
+  const context = { ...(record.creative_context || {}) };
+  const contextKeysByStage = {
+    source: ['source_context', 'research_context', 'evidence_pack', 'asset_context', 'brief', 'editorial_plan', 'audio', 'production_spec', 'quality_report'],
+    research: ['research_context', 'evidence_pack', 'asset_context', 'brief', 'editorial_plan', 'audio', 'production_spec', 'quality_report'],
+    assets: ['asset_context', 'brief', 'editorial_plan', 'audio', 'production_spec', 'quality_report'],
+    agent_run: ['brief', 'editorial_plan', 'audio', 'production_spec', 'quality_report'],
+    brief: ['brief', 'editorial_plan', 'audio', 'production_spec', 'quality_report'],
+    audio: ['audio', 'production_spec', 'quality_report'],
+    project: ['quality_report'],
+  };
+  (contextKeysByStage[resumeStage] || []).forEach(key => delete context[key]);
+  record.creative_context = context;
+  record.quality_report = null;
+  record.result = null;
+  if (stageIndex <= WORKFLOW_RESUME_STAGE_ORDER.indexOf('source')) record.source_context = null;
+  if (stageIndex <= WORKFLOW_RESUME_STAGE_ORDER.indexOf('research')) record.research_context = null;
+  if (stageIndex <= WORKFLOW_RESUME_STAGE_ORDER.indexOf('assets')) record.asset_context = null;
+  if (stageIndex <= WORKFLOW_RESUME_STAGE_ORDER.indexOf('agent_run')) record.run_id = '';
+  record.stages = (Array.isArray(record.stages) ? record.stages : []).map(stage => {
+    const currentIndex = WORKFLOW_RESUME_STAGE_ORDER.indexOf(stage.id);
+    if (currentIndex >= 0 && currentIndex < stageIndex) return stage;
+    if (currentIndex < 0 && !['check', 'render', 'inspect'].includes(stage.id)) return stage;
+    return {
+      ...stage,
+      status: 'pending',
+      message: '',
+      result: null,
+      updated_at: now,
+    };
+  });
+  record.product_status = resumeStage === 'project' ? 'voiced' : (resumeStage === 'audio' ? 'planned' : 'draft');
+  return record;
 }
 
 async function runCreativeWorkflow(workflowId, options = {}) {
@@ -1614,6 +1723,12 @@ async function runCreativeWorkflow(workflowId, options = {}) {
     record.target,
     options,
   );
+  const resumeStage = resolveWorkflowResumeStage(record, options.resumeFromStage || options.resume_from_stage);
+  const shouldRunStage = stageId => WORKFLOW_RESUME_STAGE_ORDER.indexOf(stageId) >= WORKFLOW_RESUME_STAGE_ORDER.indexOf(resumeStage);
+  if (safeString(options.resumeFromStage || options.resume_from_stage)) {
+    invalidateWorkflowDownstream(record, resumeStage, getNow(services));
+    await persistWorkflow(record, rootDir);
+  }
 
   const failIfStoppedOrNull = result => {
     if (result === WORKFLOW_STOPPED) {
@@ -1625,42 +1740,55 @@ async function runCreativeWorkflow(workflowId, options = {}) {
     return null;
   };
 
-  let stoppedOrFailed = failIfStoppedOrNull(await runStage(record, 'source', rootDir, async ({ reportStage }) => (
-    ensureSuccess(await prepareSource(record, mediaRoot, getNow(services), services, reportStage), '来源资料准备失败。')
-  ), services, taskContext));
-  if (stoppedOrFailed) {
-    return stoppedOrFailed;
+  let stoppedOrFailed = null;
+  if (shouldRunStage('source')) {
+    stoppedOrFailed = failIfStoppedOrNull(await runStage(record, 'source', rootDir, async ({ reportStage }) => (
+      ensureSuccess(await prepareSource(record, mediaRoot, getNow(services), services, reportStage), '来源资料准备失败。')
+    ), services, taskContext));
+    if (stoppedOrFailed) {
+      return stoppedOrFailed;
+    }
   }
 
-  stoppedOrFailed = failIfStoppedOrNull(await runStage(record, 'research', rootDir, async ({ reportStage }) => {
-    const inputContext = record.creative_context?.input || record.input || {};
-    const useResearch = inputContext.use_research === true;
-    const query = record.research_context?.query || inputContext.raw_text || inputContext.aweme_id || '';
-    await reportStage(useResearch ? '正在联网研究最新资料...' : '联网研究已关闭，继续下一步。', 20);
-    const nextResearchContext = await services.researchService.createResearchContext({
-      enabled: useResearch,
-      query,
-      now: getNow(services),
-      provider: createAuditedResearchProvider(record, services.researchProvider, services),
-    });
-    record.research_context = nextResearchContext;
-    record.creative_context = {
-      ...(record.creative_context || {}),
-      research_context: nextResearchContext,
-    };
-    return {
-      success: true,
-      message: nextResearchContext?.status === 'ready'
-        ? '联网研究素材已准备完成。'
-        : '联网研究未获得可用素材，将按现有输入继续创作。',
-      research_context: nextResearchContext,
-    };
-  }, services, taskContext));
-  if (stoppedOrFailed) {
-    return stoppedOrFailed;
+  if (shouldRunStage('research')) {
+    stoppedOrFailed = failIfStoppedOrNull(await runStage(record, 'research', rootDir, async ({ reportStage }) => {
+      const inputContext = record.creative_context?.input || record.input || {};
+      const useResearch = inputContext.use_research === true;
+      const query = record.research_context?.query || inputContext.raw_text || inputContext.aweme_id || '';
+      await reportStage(useResearch ? '正在联网研究最新资料...' : '联网研究已关闭，继续下一步。', 20);
+      const nextResearchContext = await services.researchService.createResearchContext({
+        enabled: useResearch,
+        query,
+        now: getNow(services),
+        provider: createAuditedResearchProvider(record, services.researchProvider, services),
+        creativeContract: record.creative_context?.creative_contract,
+      });
+      const evidencePack = buildEvidencePack(
+        record.creative_context?.creative_contract,
+        nextResearchContext,
+        getNow(services),
+      );
+      record.research_context = nextResearchContext;
+      record.creative_context = {
+        ...(record.creative_context || {}),
+        research_context: nextResearchContext,
+        evidence_pack: evidencePack,
+      };
+      return {
+        success: true,
+        message: nextResearchContext?.status === 'ready'
+          ? '联网研究素材已准备完成。'
+          : '联网研究未获得可用素材，将按现有输入继续创作。',
+        research_context: nextResearchContext,
+        evidence_pack: evidencePack,
+      };
+    }, services, taskContext));
+    if (stoppedOrFailed) {
+      return stoppedOrFailed;
+    }
   }
 
-  // 时效资讯没有可用研究素材时立即阻断，避免无关素材和导演模型长时间生成占位动态。
+  // 关键证据不足时暂停而不是用无关来源填满脚本，等待用户补充原始链接。
   const researchInputText = record.creative_context?.input?.raw_text || record.input?.raw_text || '';
   const researchContextAfterRun = record.research_context || {};
   const researchSourcesAfterRun = Array.isArray(researchContextAfterRun.sources)
@@ -1668,31 +1796,36 @@ async function runCreativeWorkflow(workflowId, options = {}) {
     : [];
   const researchUnavailable = ['disabled', 'empty', 'failed'].includes(String(researchContextAfterRun.status || ''))
     || (researchContextAfterRun.status === 'ready' && researchSourcesAfterRun.length === 0);
-  if (record.creative_context?.input?.use_research === true
-    && requestsTimelyUpdateCoverage(researchInputText)
-    && researchUnavailable) {
+  const missingCriticalRequirementIds = record.creative_context?.evidence_pack?.coverage?.missing_critical_requirement_ids || [];
+  if (missingCriticalRequirementIds.length > 0
+    || (record.creative_context?.input?.use_research === true
+      && requestsTimelyUpdateCoverage(researchInputText)
+      && researchUnavailable)) {
     const blockedAt = getNow(services);
-    const blockedMessage = '已执行联网检索，但本次没有找到可用的资讯来源，已停止生成占位动态。请补充官方页面、负责人社交媒体或媒体链接后重试，或改为方法型解读。';
-    await markStage(record, 'research', 'failed', blockedMessage, blockedAt, {
-      failed_at: blockedAt,
+    const requirements = record.creative_context?.creative_contract?.must_cover || [];
+    const missingRequirementTexts = missingCriticalRequirementIds
+      .map(id => requirements.find(item => item.id === id)?.text)
+      .filter(Boolean);
+    const blockedMessage = missingRequirementTexts.length
+      ? `关键证据尚未覆盖，已暂停生成：${missingRequirementTexts.join('；')}。请补充原始来源链接后重试。`
+      : '已执行联网检索，但本次没有找到可用资讯来源，已暂停生成。请补充官方页面、负责人社交媒体或媒体链接后重试。';
+    await markStage(record, 'research', 'pending', blockedMessage, blockedAt, {
       blocked: true,
       result: {
-        success: false,
-        code: 'research_materials_empty',
+        success: true,
+        code: 'research_evidence_incomplete',
         message: blockedMessage,
         research_context: researchContextAfterRun,
+        evidence_pack: record.creative_context?.evidence_pack,
       },
     });
-    record.success = false;
-    record.status = 'failed';
+    record.success = true;
+    record.status = 'needs_input';
+    record.execution_status = 'waiting_input';
+    record.product_status = 'research_incomplete';
     record.message = blockedMessage;
-    record.error = { stage: 'research', code: 'research_materials_empty', message: blockedMessage, updated_at: blockedAt };
-    record.last_failure = {
-      stage: 'research',
-      code: 'research_materials_empty',
-      message: blockedMessage,
-      updated_at: blockedAt,
-    };
+    record.error = null;
+    record.last_failure = null;
     record.updated_at = blockedAt;
     const blockedRecord = await persistWorkflow(record, rootDir);
     return createWorkflowSummary(blockedRecord);
@@ -1704,7 +1837,8 @@ async function runCreativeWorkflow(workflowId, options = {}) {
   const skipDecorativeNewsAssets = creativeInputForAssets.mode === 'text'
     && requestsTimelyUpdateCoverage(researchInputText)
     && !hasExplicitAssetIds;
-  stoppedOrFailed = failIfStoppedOrNull(await runStage(record, 'assets', rootDir, async ({ reportStage }) => {
+  if (shouldRunStage('assets')) {
+    stoppedOrFailed = failIfStoppedOrNull(await runStage(record, 'assets', rootDir, async ({ reportStage }) => {
     if (skipDecorativeNewsAssets) {
       return {
         success: true,
@@ -1717,12 +1851,14 @@ async function runCreativeWorkflow(workflowId, options = {}) {
       await prepareSourceAssetContext(record, mediaRoot, getNow(services), services, reportStage),
       '图片素材准备失败。',
     );
-  }, services, taskContext));
-  if (stoppedOrFailed) {
-    return stoppedOrFailed;
+    }, services, taskContext));
+    if (stoppedOrFailed) {
+      return stoppedOrFailed;
+    }
   }
 
-  stoppedOrFailed = failIfStoppedOrNull(await runStage(record, 'agent_run', rootDir, async () => {
+  if (shouldRunStage('agent_run')) {
+    stoppedOrFailed = failIfStoppedOrNull(await runStage(record, 'agent_run', rootDir, async () => {
     const result = ensureSuccess(
       await services.agentRuns.createDouyinHyperframesFreeformRun(record.aweme_id, {
         rootDir: mediaRoot,
@@ -1735,28 +1871,70 @@ async function runCreativeWorkflow(workflowId, options = {}) {
       throw new Error('导演改写任务未返回 run_id。');
     }
     return result;
-  }, services, taskContext));
-  if (stoppedOrFailed) {
-    return stoppedOrFailed;
+    }, services, taskContext));
+    if (stoppedOrFailed) {
+      return stoppedOrFailed;
+    }
   }
 
-  stoppedOrFailed = failIfStoppedOrNull(await runStage(record, 'brief', rootDir, async () => ensureSuccess(
-    await services.agentRuns.generateDouyinRunHyperframesFreeformBrief(record.aweme_id, record.run_id, {
+  if (shouldRunStage('brief')) {
+    stoppedOrFailed = failIfStoppedOrNull(await runStage(record, 'brief', rootDir, async () => {
+    const result = ensureSuccess(
+      await services.agentRuns.generateDouyinRunHyperframesFreeformBrief(record.aweme_id, record.run_id, {
       rootDir: mediaRoot,
       briefOptions: {
         ...buildFreeformTargetOptions(record.target),
         creative_context: record.creative_context,
       },
-    }),
-    '成片策划失败。',
-  ), services, taskContext));
-  if (stoppedOrFailed) {
-    return stoppedOrFailed;
+      }),
+      '成片策划失败。',
+    );
+    const brief = result?.hyperframes_freeform?.brief?.data;
+    if (brief && typeof brief === 'object' && !Array.isArray(brief)) {
+      const editorialPlan = buildEditorialPlan(
+        brief,
+        record.creative_context?.creative_contract,
+        record.creative_context?.evidence_pack,
+      );
+      const editorialValidation = validateEditorialPlan(
+        editorialPlan,
+        record.creative_context?.creative_contract,
+        record.creative_context?.evidence_pack,
+      );
+      if (!editorialValidation.success) {
+        throw new CreativeWorkflowStageError(`脚本未通过需求与事实校验：${editorialValidation.message}`, {
+          stage: 'brief',
+          sub_stage: 'editorial_gate',
+          code: 'editorial_plan_invalid',
+          diagnostics: editorialValidation.issues.map(issue => ({
+            ...issue,
+            stage: 'brief',
+            sub_stage: 'editorial_gate',
+            user_message: issue.message,
+            fallback_allowed: false,
+          })),
+          retryable: true,
+          fallback_allowed: false,
+        });
+      }
+      record.creative_context = {
+        ...(record.creative_context || {}),
+        brief: projectEditorialPlanToBrief(brief, editorialPlan),
+        editorial_plan: editorialPlan,
+      };
+      record.product_status = 'planned';
+    }
+    return result;
+    }, services, taskContext));
+    if (stoppedOrFailed) {
+      return stoppedOrFailed;
+    }
   }
 
-  stoppedOrFailed = failIfStoppedOrNull(await runStage(record, 'audio', rootDir, async () => {
+  if (shouldRunStage('audio')) {
+    stoppedOrFailed = failIfStoppedOrNull(await runStage(record, 'audio', rootDir, async () => {
     if (mediaOptions.generateAudio === false) {
-      return {
+      const result = {
         success: true,
         skipped: true,
         message: '已关闭旁白音频生成，跳过 TTS。',
@@ -1765,19 +1943,74 @@ async function runCreativeWorkflow(workflowId, options = {}) {
           reason: 'disabled_by_settings',
         },
       };
+      record.creative_context = { ...(record.creative_context || {}), audio: result.audio };
+      if (record.creative_context.editorial_plan) {
+        record.creative_context.production_spec = buildProductionSpec(
+          record.creative_context.editorial_plan,
+          result.audio,
+          record.target,
+        );
+      }
+      return result;
     }
     const stylePrompt = await resolveVoiceStylePrompt(record, services);
-    return ensureSuccess(
+    const result = ensureSuccess(
       await services.agentRuns.synthesizeDouyinRunHyperframesFreeformAudio(record.aweme_id, record.run_id, {
         rootDir: mediaRoot,
         ...buildFreeformTargetOptions(record.target),
         stylePrompt,
+        pipelineVersion: 2,
+        strictDuration: true,
       }),
       '音频轨生成失败。',
     );
-  }, services, taskContext));
-  if (stoppedOrFailed) {
-    return stoppedOrFailed;
+    const audio = result?.hyperframes_freeform?.audio || result?.audio;
+    if (audio && typeof audio === 'object' && !Array.isArray(audio)) {
+      record.creative_context = { ...(record.creative_context || {}), audio };
+      if (record.creative_context.editorial_plan) {
+        const voicedBrief = {
+          ...(record.creative_context.brief || {}),
+          storyboard: {
+            ...(record.creative_context.brief?.storyboard || {}),
+            scenes: Array.isArray(audio.scenes) && audio.scenes.length
+              ? audio.scenes
+              : record.creative_context.editorial_plan.scenes,
+          },
+        };
+        const voicedEditorialPlan = buildEditorialPlan(
+          voicedBrief,
+          record.creative_context.creative_contract,
+          record.creative_context.evidence_pack,
+        );
+        const voicedValidation = validateEditorialPlan(
+          voicedEditorialPlan,
+          record.creative_context.creative_contract,
+          record.creative_context.evidence_pack,
+        );
+        if (!voicedValidation.success) {
+          throw new CreativeWorkflowStageError(`时长修订后的旁白越过事实边界：${voicedValidation.message}`, {
+            stage: 'audio',
+            sub_stage: 'narration_grounding',
+            code: 'narration_grounding_invalid',
+            fallback_allowed: false,
+            retryable: true,
+          });
+        }
+        record.creative_context.brief = projectEditorialPlanToBrief(voicedBrief, voicedEditorialPlan);
+        record.creative_context.editorial_plan = voicedEditorialPlan;
+        record.creative_context.production_spec = buildProductionSpec(
+          voicedEditorialPlan,
+          audio,
+          record.target,
+        );
+        record.product_status = 'voiced';
+      }
+    }
+    return result;
+    }, services, taskContext));
+    if (stoppedOrFailed) {
+      return stoppedOrFailed;
+    }
   }
 
   let skipValidation = options.skipValidation === true || record.skipValidation === true;
@@ -1832,16 +2065,34 @@ async function runCreativeWorkflow(workflowId, options = {}) {
   }
 
   const doneAt = getNow(services);
-  await markHtmlVideoLiteFinalStages(record, doneAt, projectStageResult);
+  const qualityReport = buildQualityReport({
+    contract: record.creative_context?.creative_contract,
+    evidencePack: record.creative_context?.evidence_pack,
+    editorialPlan: record.creative_context?.editorial_plan,
+    productionSpec: record.creative_context?.production_spec,
+    projectStageResult,
+  });
+  record.quality_report = qualityReport;
+  record.creative_context = { ...(record.creative_context || {}), quality_report: qualityReport };
+  await markHtmlVideoLiteFinalStages(record, doneAt, projectStageResult, qualityReport);
   record.success = true;
   record.status = 'done';
+  record.execution_status = 'completed';
+  record.product_status = resolveProductStatus({
+    evidencePack: record.creative_context?.evidence_pack,
+    editorialPlan: record.creative_context?.editorial_plan,
+    productionSpec: record.creative_context?.production_spec,
+    qualityReport,
+  });
   const readyForEdit = projectStageResult.hyperframes_freeform?.project?.ready_for_edit === true
     || projectStageResult.hyperframes_freeform?.ready_for_edit === true
     || projectStageResult.project?.ready_for_edit === true;
-  record.message = readyForEdit
-    ? '可编辑工程已生成，请完成二次编辑后再导出视频。'
-    : '创作任务已完成。';
-  record.result = { hyperframes_freeform: projectStageResult.hyperframes_freeform };
+  record.message = qualityReport.passed !== true
+    ? '可编辑工程已生成，但完整质量门禁发现待处理项，请检查后再导出。'
+    : readyForEdit
+      ? '可编辑工程已生成，质量门禁已通过，请确认后导出视频。'
+      : '创作任务已完成。';
+  record.result = { hyperframes_freeform: projectStageResult.hyperframes_freeform, quality_report: qualityReport };
   record.error = null;
   record.last_failure = null;
   record.updated_at = doneAt;
@@ -2348,6 +2599,9 @@ function buildHtmlVideoLiteProjectStageResult({ project, projectDir, renderResul
         render_mode: 'html-video',
         html_video_project_path: projectDir,
         project_dir: projectDir,
+        ready_for_edit: false,
+        layout_qa: project?.layout_qa || null,
+        layout_qa_reports: Array.isArray(project?.layout_qa_reports) ? project.layout_qa_reports : [],
         ...(project?.asset_usage_report ? { asset_usage_report: project.asset_usage_report } : {}),
       },
       render: {
@@ -2419,6 +2673,7 @@ async function retryCreativeWorkflow(workflowId, payload = {}, options = {}) {
   if (plan.repair_action === 'restart_workflow') {
     const record = await readWorkflow(workflowId, rootDir);
     record.status = 'queued';
+    if (Number(record.pipeline_version) === 2) record.execution_status = 'queued';
     record.success = true;
     record.message = '正在重新执行创作流程。';
     record.error = null;
@@ -2429,6 +2684,7 @@ async function retryCreativeWorkflow(workflowId, payload = {}, options = {}) {
       rootDir,
       mediaRoot,
       services,
+      resumeFromStage: plan.retry_from,
     });
   }
 
@@ -2457,6 +2713,7 @@ async function retryCreativeWorkflow(workflowId, payload = {}, options = {}) {
     latest_plan: plan,
   };
   record.status = 'running';
+  if (Number(record.pipeline_version) === 2) record.execution_status = 'running';
   record.success = false;
   record.message = '正在修复并重试。';
   record.updated_at = now;
@@ -2521,10 +2778,34 @@ async function retryCreativeWorkflow(workflowId, payload = {}, options = {}) {
       completed_at: finishedAt,
       result: { success: true, project: projectStageResult.hyperframes_freeform.project },
     });
-    await markHtmlVideoLiteFinalStages(record, finishedAt, projectStageResult);
+    const isPipelineV2 = Number(record.pipeline_version) === 2;
+    const retryQualityReport = isPipelineV2 ? buildQualityReport({
+      contract: record.creative_context?.creative_contract,
+      evidencePack: record.creative_context?.evidence_pack,
+      editorialPlan: record.creative_context?.editorial_plan,
+      productionSpec: record.creative_context?.production_spec,
+      projectStageResult,
+    }) : null;
+    if (retryQualityReport) {
+      record.quality_report = retryQualityReport;
+      record.creative_context = { ...(record.creative_context || {}), quality_report: retryQualityReport };
+      record.result.quality_report = retryQualityReport;
+    }
+    await markHtmlVideoLiteFinalStages(record, finishedAt, projectStageResult, retryQualityReport || { passed: true });
     record.success = true;
     record.status = 'done';
-    record.message = '创作任务已修复并完成。';
+    if (isPipelineV2) {
+      record.execution_status = 'completed';
+      record.product_status = resolveProductStatus({
+        evidencePack: record.creative_context?.evidence_pack,
+        editorialPlan: record.creative_context?.editorial_plan,
+        productionSpec: record.creative_context?.production_spec,
+        qualityReport: retryQualityReport,
+      });
+    }
+    record.message = retryQualityReport && retryQualityReport.passed !== true
+      ? '创作任务已修复，但完整质量门禁仍有待处理项。'
+      : '创作任务已修复并完成。';
     record.error = null;
     record.last_failure = null;
     record.current_progress = 100;
@@ -2547,6 +2828,7 @@ async function retryCreativeWorkflow(workflowId, payload = {}, options = {}) {
   record.last_failure = createLastFailureFromRetryResult(execution, projectDir, finishedAt);
   record.success = false;
   record.status = 'failed';
+  if (Number(record.pipeline_version) === 2) record.execution_status = 'failed';
   record.message = record.last_failure.message;
   record.error = {
     stage: 'project',
@@ -3184,7 +3466,7 @@ async function renderCreativeWorkflowHtmlVideoProject(workflowId, payload = {}, 
     };
   }
 
-  const exportOptions = exportOptionsFromPayload(payload);
+  const exportOptions = exportOptionsFromPayload(payload, project.output?.default_playback_speed);
   if (exportOptions.error) {
     return {
       success: false,
@@ -3251,6 +3533,34 @@ async function renderCreativeWorkflowHtmlVideoProject(workflowId, payload = {}, 
   await syncProjectStageSummariesFromProjectDir(record, result.html_video_project_path || projectDir);
   if (result.project?.generation_checkpoint) {
     syncProjectStageSummariesFromCheckpoint(record, result.project.generation_checkpoint);
+  }
+  if (isExportMode && payload.preview !== true) {
+    const exportQualityReport = buildQualityReport({
+      contract: record.creative_context?.creative_contract,
+      evidencePack: record.creative_context?.evidence_pack,
+      editorialPlan: record.creative_context?.editorial_plan,
+      productionSpec: record.creative_context?.production_spec,
+      projectStageResult: {
+        hyperframes_freeform: {
+          html_video_project_path: result.html_video_project_path || projectDir,
+          project: {
+            ...(result.project || project),
+            html_video_project_path: result.html_video_project_path || projectDir,
+            ready_for_edit: false,
+            layout_qa: result.layout_qa || result.project?.layout_qa,
+          },
+          render: { status: result.success ? 'exported' : 'failed' },
+          visual_inspect: {
+            status: result.success ? 'passed' : 'failed',
+            issues: Array.isArray(result.diagnostics) ? result.diagnostics : [],
+          },
+        },
+      },
+    });
+    record.quality_report = exportQualityReport;
+    record.creative_context = { ...(record.creative_context || {}), quality_report: exportQualityReport };
+    record.product_status = result.success && exportQualityReport.publish_ready ? 'exported' : 'needs_review';
+    record.result = { ...(record.result || {}), quality_report: exportQualityReport };
   }
   record.updated_at = getNow(options.services || {});
   await persistWorkflow(record, rootDir);
@@ -3395,6 +3705,41 @@ async function getHtmlVideoProjectNarrationFile(workflowId, frameId, options = {
   } catch {
     return { success: false, code: 'NARRATION_FILE_NOT_FOUND', workflow_id: workflowId, frame_id: frameId, message: '旁白音频文件不存在。' };
   }
+}
+
+/**
+ * 读取工程整轨旁白或背景音乐，供镜头时间轴同步试听。
+ * @param {string} workflowId 创作任务 ID。
+ * @param {string} track 音轨类型，仅支持 narration、music。
+ * @param {object} options 服务选项。
+ * @returns {Promise<object>} 音频文件结果。
+ */
+async function getHtmlVideoProjectAudioTrackFile(workflowId, track, options = {}) {
+  const rootDir = options.rootDir || DEFAULT_ROOT;
+  const { project, projectDir, error } = await loadWorkflowWithHtmlVideoProject(workflowId, rootDir);
+  if (error) return error;
+  const trackName = safeString(track);
+  const projectPathKey = { narration: 'narration_path', music: 'music_path' }[trackName];
+  if (!projectPathKey) {
+    return { success: false, code: 'AUDIO_TRACK_INVALID', workflow_id: workflowId, track: trackName, message: '音轨类型无效，仅支持旁白或背景音乐。' };
+  }
+  const storedPath = safeString(project.audio?.[projectPathKey]);
+  if (!storedPath) {
+    return { success: false, code: 'AUDIO_TRACK_NOT_FOUND', workflow_id: workflowId, track: trackName, message: `当前工程没有可播放的${trackName === 'music' ? '背景音乐' : '整轨旁白'}。` };
+  }
+
+  const filePath = path.isAbsolute(storedPath)
+    ? path.resolve(storedPath)
+    : htmlVideoProjectStore.resolveProjectPath(projectDir, storedPath);
+  const mediaRoot = inferMediaRootFromProjectDir(projectDir, workflowId) || options.mediaRoot || DEFAULT_MEDIA_ROOT;
+  const workflowMediaDir = path.resolve(mediaRoot, safeString(workflowId));
+  const realWorkflowMediaDir = await fsp.realpath(workflowMediaDir).catch(() => '');
+  const realFilePath = await fsp.realpath(filePath).catch(() => '');
+  // 工程 JSON 可能被手动编辑，发送文件前必须把绝对路径限制在当前任务媒体目录内。
+  if (!realFilePath || !realWorkflowMediaDir || !isPathInside(realFilePath, realWorkflowMediaDir) || !await fileExists(realFilePath)) {
+    return { success: false, code: 'AUDIO_TRACK_FILE_NOT_FOUND', workflow_id: workflowId, track: trackName, message: `${trackName === 'music' ? '背景音乐' : '整轨旁白'}文件不存在或路径无效。` };
+  }
+  return { success: true, workflow_id: workflowId, track: trackName, file_path: realFilePath };
 }
 
 async function getHtmlVideoProjectSfxEventFile(workflowId, eventId, options = {}) {
@@ -3583,6 +3928,8 @@ module.exports = {
   refreshCreativeWorkflowRetryPlan,
   retryCreativeWorkflow,
   buildHtmlVideoLiteProjectStageResult,
+  resolveWorkflowResumeStage,
+  invalidateWorkflowDownstream,
   patchCreativeWorkflowTaskSummary,
   clearCreativeWorkflowTaskSummary,
   listCreativeWorkflowRecords,
@@ -3616,6 +3963,7 @@ module.exports = {
   listHtmlVideoProjectRevisions,
   restoreHtmlVideoProjectRevision,
   getHtmlVideoProjectNarrationFile,
+  getHtmlVideoProjectAudioTrackFile,
   getHtmlVideoProjectSfxEventFile,
   listHtmlVideoProjectExports,
   patchHtmlVideoProjectExport,

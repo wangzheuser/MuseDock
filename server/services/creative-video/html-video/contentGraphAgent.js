@@ -355,6 +355,7 @@ function normalizeContentGraph(graph, sceneSpec = {}, creativeContext = {}, targ
     'viewer_gain', 'viewer_action', 'content_role', 'visual_direction',
     'evidence_points', 'update_subject', 'update_detail', 'update_time',
     'timeliness_status', 'source_attribution', 'workflow_impact', 'test_action',
+    'requirement_ids', 'claim_ids', 'source_ids', 'layout_archetype',
   ];
   const nodes = rawNodes.map((node, index) => {
     const kind = ['text', 'data', 'entity'].includes(String(node?.kind || '').trim())

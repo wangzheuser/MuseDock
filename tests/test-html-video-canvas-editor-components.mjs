@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
+  buildFrameAudioPlan,
   canEditText,
+  decibelsToVolume,
   editableSelector,
   fitPreviewBox,
   isCanvasEditableElement,
@@ -50,7 +52,7 @@ assert.doesNotMatch(canvasEditor, /TemplateInputsPanel/);
 assert.doesNotMatch(canvasEditor, /保存为草稿/);
 assert.match(canvasEditor, /saveAndAcceptFrameEdit/);
 assert.match(canvasEditor, /editingReadyRef/);
-assert.match(canvasEditor, /iframeKey/);
+assert.doesNotMatch(canvasEditor, /iframeKey/);
 assert.match(canvasEditor, /saving/);
 assert.match(canvasEditor, /previewError/);
 assert.match(canvasEditor, /loadedFrameId/);
@@ -91,7 +93,12 @@ assert.match(canvasEditor, /useEffect\(\(\) => \{\s*const requestId = frameLoadR
 assert.match(canvasEditor, /function beginPlayback\(\)\s*\{\s*clearPlaybackTimer\(\);/);
 assert.match(canvasEditor, /function finishPlayback/);
 assert.match(canvasEditor, /finishPlayback\(\);/);
-assert.match(canvasEditor, /function replay\(\)\s*\{\s*clearPlaybackTimer\(\);/);
+assert.match(canvasEditor, /function replay\(\)\s*\{\s*if \(htmlReady\) beginPlayback\(\);/);
+assert.match(canvasEditor, /buildFrameAudioPlan\(editor\.project, frame\)/);
+assert.match(canvasEditor, /function stopFrameAudio/);
+assert.match(canvasEditor, /function startFrameAudio/);
+assert.match(canvasEditor, /正在播放镜头动画和声音/);
+assert.match(canvasEditor, /playbackState === 'ended' \? '重新播放' : '播放片段'/);
 assert.match(canvasEditor, /ResizeObserver/);
 assert.match(canvasEditor, /fitPreviewBox\(previewSlotSize, previewRatio\)/);
 assert.doesNotMatch(canvasEditor, /aspect-video h-full max-h-full w-auto max-w-full/);
@@ -103,6 +110,34 @@ assert.match(canvasEditor, /left: \$\{Math\.round\(offsetLeft\)\}px !important/)
 assert.deepEqual(fitPreviewBox({ width: 1600, height: 480 }, 16 / 9), { width: 853, height: 480 });
 assert.deepEqual(fitPreviewBox({ width: 500, height: 1000 }, 16 / 9), { width: 500, height: 281 });
 assert.equal(previewAspectRatio({ output: { resolution: { width: 1080, height: 1920 } } }), 1080 / 1920);
+assert.ok(Math.abs(decibelsToVolume(-20) - 0.1) < 0.0001);
+assert.equal(buildFrameAudioPlan(null, null).narration_mode, 'none');
+const frameAudioPlan = buildFrameAudioPlan({
+  frames: [
+    { id: 'scene_01', duration_sec: 8 },
+    { id: 'scene_02', duration_sec: 5.6 },
+  ],
+  timeline: { tracks: [{ id: 'main', type: 'video', items: [
+    { frame_id: 'scene_01', start_sec: 0, duration_sec: 8 },
+    { frame_id: 'scene_02', start_sec: 8, duration_sec: 5.6 },
+  ] }] },
+  audio: {
+    narration_path: '/media/narration.wav',
+    music_path: 'audio/music.wav',
+    mix: { narration_volume_db: 0, music_volume_db: -20 },
+    sfx: { events: [
+      { id: 'sfx_01', frame_id: 'scene_02', time_sec: 2.8, volume_db: -18 },
+      { id: 'sfx_02', global_time_sec: 9, volume_db: -20 },
+      { id: 'sfx_other', frame_id: 'scene_01', time_sec: 1 },
+    ] },
+  },
+}, { id: 'scene_02', duration_sec: 5.6 });
+assert.equal(frameAudioPlan.start_sec, 8);
+assert.equal(frameAudioPlan.duration_sec, 5.6);
+assert.equal(frameAudioPlan.narration_mode, 'combined');
+assert.equal(frameAudioPlan.narration_offset_sec, 8);
+assert.equal(frameAudioPlan.has_music, true);
+assert.deepEqual(frameAudioPlan.sfx.map(event => event.local_time_sec), [2.8, 1]);
 
 // 二次编辑修复回归断言
 assert.match(canvasEditor, /\[data-hv-canvas-selected\],\[data-hv-edit-id\]/, '保存时应剥离 data-hv-edit-id');

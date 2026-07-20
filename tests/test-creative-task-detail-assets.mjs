@@ -17,5 +17,8 @@ assert.match(source, /查看图片列表/);
 assert.match(source, /\/api\/creative-workflows\/\$\{encodeURIComponent\(workflowId\)\}\/assets\/\$\{encodeURIComponent\(assetId\)\}\/file/);
 assert.match(source, /w-\[min\(1080px,calc\(100vw-32px\)\)\]/);
 assert.match(source, /sharedAnalysisMessage/);
+assert.match(source, /Creative Pipeline V2/);
+assert.match(source, /需要补充关键证据/);
+assert.match(source, /阻止发布的问题/);
 
 console.log('creative task detail assets ui tests passed');

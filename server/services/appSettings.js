@@ -18,7 +18,7 @@ const DEFAULT_CONFIG = {
     aspectRatio: '9:16',
     targetDurationSec: 60,
     fps: 30,
-    playbackSpeed: 1,
+    playbackSpeed: 1.1,
     templateByAspectRatio: {
       '9:16': 'news_signal_vertical',
       '16:9': 'bold_signal',

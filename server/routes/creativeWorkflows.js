@@ -70,6 +70,8 @@ function getStatusCode(result) {
     || result?.code === 'DRAFT_NOT_FOUND'
     || result?.code === 'EDIT_PLAN_NOT_FOUND'
     || result?.code === 'REVISION_NOT_FOUND'
+    || result?.code === 'AUDIO_TRACK_NOT_FOUND'
+    || result?.code === 'AUDIO_TRACK_FILE_NOT_FOUND'
     || /未找到|不存在/.test(getMessage(result, ''))
   ) return 404;
   return 400;
@@ -833,6 +835,27 @@ router.get('/:workflow_id/html-video-project/frames/:frame_id/narration/file', a
     return res.sendFile(result.file_path);
   } catch (error) {
     return res.status(500).json({ success: false, workflow_id: workflowId, frame_id: frameId, message: `读取旁白音频失败：${error.message}` });
+  }
+});
+
+router.get('/:workflow_id/html-video-project/audio/:track/file', async (req, res) => {
+  const validation = validateWorkflowId(req.params.workflow_id);
+  if (!validation.success) {
+    return res.status(400).json(validation);
+  }
+  const workflowId = validation.workflow_id;
+  const track = String(req.params.track || '').trim();
+
+  try {
+    const service = getService(req);
+    const result = await service.getHtmlVideoProjectAudioTrackFile(workflowId, track);
+    if (!result || result.success === false) {
+      const message = getMessage(result, '读取工程音轨失败。');
+      return res.status(getStatusCode(result)).json({ success: false, code: result?.code, workflow_id: workflowId, track, message });
+    }
+    return res.sendFile(result.file_path);
+  } catch (error) {
+    return res.status(500).json({ success: false, workflow_id: workflowId, track, message: `读取工程音轨失败：${error.message}` });
   }
 });
 

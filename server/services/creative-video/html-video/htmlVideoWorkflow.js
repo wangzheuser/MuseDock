@@ -450,6 +450,15 @@ async function retryContentGraphAfterMismatch({
 }
 
 async function generateContentGraphWithRetry({ model, sceneSpec, creativeContext, target, onProgress, project, projectDir } = {}) {
+  if (Number(creativeContext?.creative_contract?.version) === 2 || Number(creativeContext?.production_spec?.version) === 2) {
+    // V2 的语义已经由 Editorial Plan 锁定；内容图只做确定性投影，禁止再次改写事实。
+    return {
+      success: true,
+      contentGraph: mapSceneSpecToContentGraph(sceneSpec, target),
+      diagnostics: [],
+      inputHash: sha256(JSON.stringify([sceneSpec, creativeContext?.production_spec?.input_hash || ''])),
+    };
+  }
   const originalPrompt = contentGraphAgent.buildContentGraphPrompt({
     sceneSpec,
     creativeContext,
@@ -1087,7 +1096,7 @@ function normalizeFrameHtmlConcurrency(target = {}, projectOptions = {}) {
 }
 
 /**
- * 读取任务默认导出倍速，非法值回退原速。
+ * 读取任务默认导出倍速，非法值回退系统默认倍速。
  * @param {object} target 工作流目标。
  * @returns {number} 合法导出倍速。
  */
@@ -1098,7 +1107,7 @@ function normalizeDefaultPlaybackSpeed(target = {}) {
     && value <= 2
     && Math.abs(value * 10 - Math.round(value * 10)) < 0.000001
     ? value
-    : 1;
+    : 1.1;
 }
 
 function resolveRegistry(input) {
@@ -1519,7 +1528,7 @@ async function generateHtmlVideo(options = {}) {
         template,
         mediaOptions,
       });
-      // 旁白短于目标时，把差额放到最后一帧，确保 HTML 动画收束不会被工程时间轴截断。
+      // 仅允许不超过 1 秒的尾部收束余量，明显时长不足必须回到 TTS 闭环修订。
       const paddedTimeline = padProjectTimelineToTarget({
         project,
         targetDurationSec: templateRenderTarget.duration_sec,

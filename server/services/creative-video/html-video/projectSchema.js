@@ -4,6 +4,7 @@ const { normalizeCaptionsForFrame } = require('./captionLayer');
 const SCHEMA_VERSION = 1;
 const DEFAULT_ENGINE = 'hyperframes-playwright';
 const DEFAULT_OUTPUT_RESOLUTION = { width: 1920, height: 1080 };
+const DEFAULT_PLAYBACK_SPEED = 1.1;
 const SFX_INTENSITIES = new Set(['low', 'medium', 'high']);
 // 持久层统一钳制音效音量（spec §5.4 硬限制），编排/混音层不再各自设防
 const SFX_VOLUME_MIN_DB = -28;
@@ -322,8 +323,8 @@ function normalizeOutput(value) {
       && defaultPlaybackSpeed >= 0.1
       && defaultPlaybackSpeed <= 2
       && Math.abs(defaultPlaybackSpeed * 10 - Math.round(defaultPlaybackSpeed * 10)) < 0.000001
-      ? defaultPlaybackSpeed
-      : 1,
+      ? (defaultPlaybackSpeed === 1 ? DEFAULT_PLAYBACK_SPEED : defaultPlaybackSpeed)
+      : DEFAULT_PLAYBACK_SPEED,
   };
   if (Number.isFinite(duration) && duration > 0) {
     output.duration = duration;

@@ -2448,13 +2448,13 @@ async function readProjectJson(projectDir) {
     },
     targetDurationSec: 30,
   });
-  assert.equal(padded.project.output.duration, 30);
-  assert.equal(padded.project.output.duration_mode, 'tail_padded');
-  assert.equal(padded.project.output.tail_padding_sec, 2);
-  assert.equal(padded.project.timeline.tail_padding_sec, 2);
-  assert.equal(padded.project.frames[1].duration_sec, 23);
-  assert.equal(padded.project.timeline.tracks[0].items[1].duration_sec, 23);
-  assert.equal(padded.project.content_graph.nodes[1].durationSec, 23);
+  assert.equal(padded.project.output.duration, 28);
+  assert.equal(padded.project.output.duration_mode, undefined);
+  assert.equal(padded.project.output.tail_padding_sec, undefined);
+  assert.equal(padded.project.timeline.tail_padding_sec, undefined);
+  assert.equal(padded.project.frames[1].duration_sec, 21);
+  assert.equal(padded.project.timeline.tracks[0].items[1].duration_sec, 21);
+  assert.equal(padded.project.content_graph.nodes[1].durationSec, 21);
 
   console.log('html-video workflow tests passed');
 })();

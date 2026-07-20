@@ -179,6 +179,7 @@ function createSceneSpecFromVoicedStoryboard(creativeContext = {}, target = {}) 
       'viewer_gain', 'viewer_action', 'content_role', 'visual_direction',
       'evidence_points', 'update_subject', 'update_detail', 'update_time',
       'timeliness_status', 'source_attribution', 'workflow_impact', 'test_action',
+      'requirement_ids', 'claim_ids', 'source_ids', 'layout_archetype',
     ].forEach(key => {
       if (scene?.[key] != null && scene[key] !== '') normalized[key] = scene[key];
     });

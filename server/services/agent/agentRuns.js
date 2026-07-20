@@ -20,7 +20,7 @@ const defaultHyperframesSkillContext = require('../hyperframes/hyperframesSkillC
 const defaultHyperframesFreeformAgent = require('../hyperframes/hyperframesFreeformAgent');
 const defaultCreativeVideoWorkflowFacade = require('../creative-video/workflowFacade');
 const { createAgentRunsFreeformWorkflow } = require('./agentRunsFreeformWorkflow');
-const { normalizeFreeformNarrationScenes, resolveFreeformTargetDurationSec, replaceFreeformBriefScenes, fitFreeformNarrationToBudget, compressFreeformNarrationWithModel, repairFreeformNarrationWithModel, mapFreeformProjectFilesToDir } = require('./agentRunsFreeformHelpers');
+const { normalizeFreeformNarrationScenes, resolveFreeformTargetDurationSec, replaceFreeformBriefScenes, fitFreeformNarrationToBudget, compressFreeformNarrationWithModel, repairFreeformNarrationWithModel, fitFreeformNarrationToMeasuredDurationWithModel, mapFreeformProjectFilesToDir } = require('./agentRunsFreeformHelpers');
 
 const TEMPLATE_VIRAL_REWRITE = 'viral_rewrite';
 const MAX_COMMENTS_CHARS = agentTemplates.MAX_COMMENTS_CHARS;
@@ -749,6 +749,7 @@ const freeformWorkflow = createAgentRunsFreeformWorkflow({
   fitFreeformNarrationToBudget,
   compressFreeformNarrationWithModel,
   repairFreeformNarrationWithModel,
+  fitFreeformNarrationToMeasuredDurationWithModel,
   mapFreeformProjectFilesToDir,
   buildHtmlVideoExportFileUrl,
 });

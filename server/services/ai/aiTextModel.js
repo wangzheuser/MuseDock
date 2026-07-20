@@ -252,7 +252,7 @@ function shouldRetryStatus(status) {
   return [408, 429, 502, 503, 504, 524].includes(Number(status));
 }
 
-function buildChatCompletionsBody({ modelId, messages, temperature, stream, tools, tool_choice, response_format }) {
+function buildChatCompletionsBody({ modelId, messages, temperature, stream, tools, tool_choice, response_format, reasoning_effort, max_completion_tokens }) {
   return JSON.stringify({
     model: modelId,
     messages,
@@ -261,6 +261,8 @@ function buildChatCompletionsBody({ modelId, messages, temperature, stream, tool
     ...(tools ? { tools } : {}),
     ...(tool_choice ? { tool_choice } : {}),
     ...(response_format ? { response_format } : {}),
+    ...(reasoning_effort ? { reasoning_effort } : {}),
+    ...(max_completion_tokens ? { max_completion_tokens } : {}),
   });
 }
 
@@ -289,7 +291,7 @@ function getAbortErrorMessage(error, timeoutMs) {
   return `分析模型请求超时：${Math.round(Number(timeoutMs) / 1000)} 秒内未返回结果。`;
 }
 
-async function postChatCompletions({ baseUrl, apiKey, modelId, messages, temperature, stream, fetchImpl, timeoutMs, tools, tool_choice, response_format }) {
+async function postChatCompletions({ baseUrl, apiKey, modelId, messages, temperature, stream, fetchImpl, timeoutMs, tools, tool_choice, response_format, reasoning_effort, max_completion_tokens }) {
   const timeout = createTimeoutSignal(timeoutMs);
   try {
     const response = await fetchImpl(`${baseUrl}/chat/completions`, {
@@ -298,7 +300,7 @@ async function postChatCompletions({ baseUrl, apiKey, modelId, messages, tempera
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
-      body: buildChatCompletionsBody({ modelId, messages, temperature, stream, tools, tool_choice, response_format }),
+      body: buildChatCompletionsBody({ modelId, messages, temperature, stream, tools, tool_choice, response_format, reasoning_effort, max_completion_tokens }),
       signal: timeout.signal,
     });
     if (response && typeof response === 'object') {
@@ -366,6 +368,8 @@ async function callTextModel(options = {}) {
     tools,
     tool_choice,
     response_format,
+    reasoning_effort,
+    max_completion_tokens,
   } = options;
 
   const log = logger && typeof logger === 'object' ? logger : null;
@@ -416,6 +420,8 @@ async function callTextModel(options = {}) {
         tools,
         tool_choice,
         response_format,
+        reasoning_effort,
+        max_completion_tokens,
       });
       lastFetchError = null;
     } catch (error) {
@@ -478,6 +484,8 @@ async function callTextModel(options = {}) {
         tools,
         tool_choice,
         response_format,
+        reasoning_effort,
+        max_completion_tokens,
       });
     } catch (error) {
       const detail = sanitizeErrorDetail(error && error.message, apiKey) || '网络请求异常';
@@ -565,6 +573,8 @@ async function callTextModel(options = {}) {
             tools,
             tool_choice,
             response_format,
+            reasoning_effort,
+            max_completion_tokens,
           });
           if (fallbackResponse.ok) {
             const parsedResponse = await readJsonResponse(fallbackResponse, apiKey);
@@ -680,6 +690,8 @@ async function callTextModel(options = {}) {
         tools,
         tool_choice,
         response_format,
+        reasoning_effort,
+        max_completion_tokens,
       });
     } catch (error) {
       const detail = getFetchErrorDetail(error, apiKey) || '网络请求异常';

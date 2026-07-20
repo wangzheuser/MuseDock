@@ -25,12 +25,13 @@ export const STATUS_TEXT = {
   done: '已完成',
   skipped: '已跳过',
   failed: '失败',
+  needs_input: '等待补充资料',
 };
 
 export function getStatusClass(status) {
   if (status === 'done' || status === 'skipped') return 'done';
   if (status === 'failed') return 'failed';
-  if (status === 'queued' || status === 'pending' || status === 'running') return 'pending';
+  if (status === 'queued' || status === 'pending' || status === 'running' || status === 'needs_input') return 'pending';
   return '';
 }
 

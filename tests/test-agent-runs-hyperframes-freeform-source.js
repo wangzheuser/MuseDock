@@ -48,14 +48,20 @@ async function run() {
   assert.equal(result.run.steps.find(step => step.id === 'comments').status, 'done');
 
   let briefModelCalls = 0;
+  let briefSkillContextOptions = null;
+  const briefModelRequests = [];
   const briefResult = await agentRuns.generateDouyinRunHyperframesFreeformBrief(awemeId, result.run_id, {
     rootDir,
     skillContext: {
-      loadHyperframesSkillContext: async () => ({ success: true, prompt_context: '测试技能上下文' }),
+      loadHyperframesSkillContext: async options => {
+        briefSkillContextOptions = options;
+        return { success: true, prompt_context: '测试技能上下文' };
+      },
     },
     aiTextModel: {
-      callTextModel: async () => {
+      callTextModel: async request => {
         briefModelCalls += 1;
+        briefModelRequests.push(request);
         return briefModelCalls === 1
           ? { success: true, text: '{"title":"不完整"' }
           : { success: true, text: JSON.stringify({ title: '重试成功', summary: '精简策划', storyboard: { scenes: [] } }) };
@@ -64,6 +70,12 @@ async function run() {
   });
   assert.equal(briefResult.success, true);
   assert.equal(briefModelCalls, 2);
+  assert.equal(briefSkillContextOptions.maxChars, 1500);
+  assert.equal(briefModelRequests[0].stream, false);
+  assert.equal(briefModelRequests[0].maxRetries, 0);
+  assert.equal(briefModelRequests[0].requestTimeoutMs, 180000);
+  assert.equal(briefModelRequests[0].fallbackToNonStreamOnGatewayTimeout, undefined);
+  assert.equal(briefModelRequests[1].requestTimeoutMs, 180000);
   assert.equal(briefResult.hyperframes_freeform.brief.data.title, '重试成功');
   console.log('agent runs hyperframes freeform source tests passed');
 }

@@ -1082,8 +1082,9 @@ async function testHtmlVideoLiteCompletesVisibleFinalStages() {
   assert.equal(persisted.result.hyperframes_freeform.render.status, 'rendered');
   assert.equal(persisted.status, 'done');
   const checkStage = persisted.stages.find(item => item.id === 'check');
-  assert.equal(checkStage.status, 'skipped');
-  assert.match(checkStage.message, /跳过旧 HyperFrames/);
+  assert.equal(checkStage.status, 'done');
+  assert.match(checkStage.message, /质量门禁/);
+  assert.ok(checkStage.result?.quality_report);
   for (const stageId of ['render', 'inspect']) {
     const stage = persisted.stages.find(item => item.id === stageId);
     assert.equal(stage.status, 'done');
@@ -2245,6 +2246,26 @@ async function testPersistsFailureFromBriefStage() {
   assert.equal(failedEvent.stage_progress, 100);
 }
 
+async function testMapsBriefGatewayTimeoutToRecoveryMessage() {
+  const { rootDir, mediaRoot } = createTempDirs();
+  const { services } = createFakeServices({
+    agentRuns: {
+      generateDouyinRunHyperframesFreeformBrief: async () => ({
+        success: false,
+        message: 'provider_test 调用失败：第三方模型网关响应异常（HTTP 524）。',
+      }),
+    },
+  });
+
+  await createCreativeWorkflow({ input: '测试导演策划网关超时' }, { rootDir, mediaRoot, services });
+  const run = await runCreativeWorkflow(WORKFLOW_ID, { rootDir, mediaRoot, services });
+
+  assert.equal(run.success, false);
+  assert.equal(run.error.code, 'brief_model_timeout');
+  assert.match(run.error.message, /网关规定时间内/);
+  assert.doesNotMatch(run.error.message, /HTTP 524/);
+}
+
 async function testTaskEventEmitFailureDoesNotFailWorkflow() {
   const { rootDir, mediaRoot } = createTempDirs();
   const { services } = createFakeServices();
@@ -2511,6 +2532,7 @@ async function run() {
   await testRepreparesWhenAnalysisInputFramesAreStale();
   await testDouyinLoginRequirementUsesChineseMessage();
   await testPersistsFailureFromBriefStage();
+  await testMapsBriefGatewayTimeoutToRecoveryMessage();
   await testTaskEventEmitFailureDoesNotFailWorkflow();
   await testStopsWorkflowWhenDeletedDuringGeneration();
   await testMarksStaleBriefStageAsFailedWhenFetched();

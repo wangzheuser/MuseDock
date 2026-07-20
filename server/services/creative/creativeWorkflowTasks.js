@@ -344,6 +344,32 @@ async function startCreativeWorkflowTask(workflowId, options = {}) {
         throw new Error(result.message || '创作任务执行失败。');
       }
 
+      if (result?.status === 'needs_input') {
+        await Promise.allSettled([...pendingEventWrites]);
+        await registry.markDoneAfter(taskId, result.message || '创作任务等待补充资料。', terminalEvent => patchTerminalTaskSummaryOrThrow({
+          registry,
+          taskId,
+          workflowId,
+          operationId,
+          creativeWorkflows,
+          rootDir,
+          patch: {
+            active_task_id: '',
+            active_operation_id: '',
+            task_status: 'done',
+            current_stage: 'research',
+            current_stage_message: result.message || '等待补充关键证据。',
+            current_progress: result.current_progress || 20,
+            status: 'needs_input',
+            message: result.message || '等待补充关键证据。',
+            error: null,
+            last_event_seq: terminalEvent.seq,
+          },
+          failedEventSeq: terminalEvent.seq,
+        }));
+        return;
+      }
+
       await Promise.allSettled([...pendingEventWrites]);
       await registry.markDoneAfter(taskId, '创作任务已完成。', terminalEvent => patchTerminalTaskSummaryOrThrow({
         registry,
@@ -507,6 +533,34 @@ async function startCreativeWorkflowRetryTask(workflowId, options = {}) {
         const error = new Error(result.message || '创作任务重试失败。');
         error.business_failure = true;
         throw error;
+      }
+
+      if (result?.status === 'needs_input') {
+        await Promise.allSettled([...pendingEventWrites]);
+        await registry.markDoneAfter(taskId, result.message || '创作任务等待补充资料。', terminalEvent => patchTerminalTaskSummaryOrThrow({
+          registry,
+          taskId,
+          workflowId,
+          operationId,
+          creativeWorkflows,
+          rootDir,
+          patch: {
+            operation: 'retry',
+            retry_attempt_id: retryAttemptId,
+            active_task_id: '',
+            active_operation_id: '',
+            task_status: 'done',
+            current_stage: 'research',
+            current_stage_message: result.message || '等待补充关键证据。',
+            current_progress: result.current_progress || 20,
+            status: 'needs_input',
+            message: result.message || '等待补充关键证据。',
+            error: null,
+            last_event_seq: terminalEvent.seq,
+          },
+          failedEventSeq: terminalEvent.seq,
+        }));
+        return;
       }
 
       await Promise.allSettled([...pendingEventWrites]);
