@@ -76,13 +76,13 @@ assert.match(deleteBlock, /status: 'ready'/, 'DELETE 失败应恢复 ready');
 assert.match(deleteBlock, /URL\.revokeObjectURL/);
 
 assert.match(page, /const hasPendingAssetRequest = uploadedAssets\.some\(asset => \['uploading', 'updating_requirement', 'deleting'\]\.includes\(asset\.status\)\)/);
-assert.match(page, /const submitDisabled = isBusy \|\| !input\.trim\(\) \|\| hasPendingAssetRequest/);
-assert.match(page, /if \(isBusy \|\| !trimmed \|\| uploadedAssetsRef\.current\.some\(asset => \['uploading', 'updating_requirement', 'deleting'\]\.includes\(asset\.status\)\)\) \{/);
+assert.match(page, /const submitDisabled = isBusy \|\| \(isWhiteboard \? Boolean\(validateWhiteboardDraft\(whiteboardDraft\)\) \|\| modeCatalog\.status !== 'ready' : !input\.trim\(\) \|\| hasPendingAssetRequest\)/);
+assert.match(page, /if \(isBusy \|\| !trimmed \|\| \(!isWhiteboard && uploadedAssetsRef\.current\.some\(asset => \['uploading', 'updating_requirement', 'deleting'\]\.includes\(asset\.status\)\)\)\) \{/);
 assert.match(page, /assetIds: uploadedAssetsRef\.current[\s\S]*filter\(asset => asset\.status === 'ready' && asset\.upload_id\)[\s\S]*map\(asset => asset\.upload_id\)/);
 assert.match(page, /function startNewTask\(\)[\s\S]*clearUploadedAssets\(\{ deleteStaged: true \}\)/, '开始新任务应清理未认领暂存图');
 
 const submitStart = page.indexOf('async function submitCreativeWorkflow');
-const submitEnd = page.indexOf('useEffect(() => {', submitStart);
+const submitEnd = page.indexOf('  async function handleWhiteboardAction', submitStart);
 assert.ok(submitStart > 0 && submitEnd > submitStart, '应截取完整创建任务处理器');
 const submitBlock = page.slice(submitStart, submitEnd);
 const nextWorkflowIdIndex = submitBlock.indexOf('const nextWorkflowId = getWorkflowId(json)');

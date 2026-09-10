@@ -5,6 +5,8 @@ import { CreativeComposer } from '../components/creative/CreativeComposer.jsx';
 import { CreativeSidebar } from '../components/creative/CreativeSidebar.jsx';
 import { CreativeTaskDetail } from '../components/creative/CreativeTaskDetail.jsx';
 import { ConfirmDialog } from '../components/ui/confirm-dialog.jsx';
+import { useCreationModes } from '../components/creative/whiteboard/useCreationModes.js';
+import { WHITEBOARD_MODE, HYPERFRAMES_MODE, createWhiteboardDraft, validateWhiteboardDraft, buildWhiteboardPayload, isWhiteboardPaused } from '../components/creative/whiteboard/whiteboardForm.js';
 import {
   appendWorkflowProgressEvent,
   applyWorkflowStageEvent,
@@ -55,7 +57,10 @@ export function OneClickCreativePage() {
   const uploadedAssetsRef = useRef([]);
   const assetMutationLockedRef = useRef(false);
   const [input, setInput] = useState('');
-  const [mode, setMode] = useState('quick');
+  const [creationModeId, setCreationModeId] = useState(HYPERFRAMES_MODE);
+  const [whiteboardDraft, setWhiteboardDraft] = useState(createWhiteboardDraft);
+  const modeCatalog = useCreationModes();
+  const whiteboardActionRef = useRef(false);
   const [useResearch, setUseResearch] = useState(true);
   const [useResearchTouched, setUseResearchTouched] = useState(false);
   const [workflow, setWorkflow] = useState(null);
@@ -80,7 +85,8 @@ export function OneClickCreativePage() {
   const [, setActiveTask] = useState(null);
   const isBusy = status === 'creating' || status === 'polling' || status === 'deleting';
   const hasPendingAssetRequest = uploadedAssets.some(asset => ['uploading', 'updating_requirement', 'deleting'].includes(asset.status));
-  const submitDisabled = isBusy || !input.trim() || hasPendingAssetRequest;
+  const isWhiteboard = creationModeId === WHITEBOARD_MODE;
+  const submitDisabled = isBusy || (isWhiteboard ? Boolean(validateWhiteboardDraft(whiteboardDraft)) || modeCatalog.status !== 'ready' : !input.trim() || hasPendingAssetRequest);
   const sidebarTasks = useMemo(() => tasks.map(task => ({
     ...task,
     timeLabel: getTaskTimeLabel(getSidebarTaskTimeSource(task)),
@@ -443,12 +449,17 @@ export function OneClickCreativePage() {
       }
 
       if (nextStatus === 'failed' || terminalStatus === 'failed') {
+        if (isWhiteboardPaused(nextStatus)) {
+          setStatus(nextStatus);
+          setMessage(nextMessage);
+          return;
+        }
         setStatus('failed');
         setMessage(nextMessage || '视频生成失败，请查看任务详情。');
         return;
       }
       if (nextStatus === 'done' || terminalStatus === 'done') {
-        setStatus('done');
+        setStatus(isWhiteboardPaused(nextStatus) ? nextStatus : 'done');
         setMessage(nextMessage || '视频生成完成。');
         return;
       }
@@ -493,7 +504,7 @@ export function OneClickCreativePage() {
       const nextStatus = nextWorkflow?.status || (json?.success === false ? 'failed' : 'running');
       const nextMessage = getWorkflowDisplayMessage(nextWorkflow, json?.message || fallbackMessage);
       setWorkflow(nextWorkflow);
-      setStatus(nextStatus === 'done' ? 'done' : nextStatus === 'failed' ? 'failed' : 'polling');
+      setStatus(isWhiteboardPaused(nextStatus) ? nextStatus : nextStatus === 'done' ? 'done' : nextStatus === 'failed' ? 'failed' : 'polling');
       setMessage(nextMessage);
       persistTasks(prev => updateTask(prev, {
         workflow_id: targetWorkflowId,
@@ -532,7 +543,7 @@ export function OneClickCreativePage() {
     setWorkflow(prev => {
       if (!prev) return prev;
       if (prev.workflow_id && event.workflow_id && prev.workflow_id !== event.workflow_id) return prev;
-      if (prev.status === 'done' || prev.status === 'failed') return prev;
+      if (prev.status === 'done' || prev.status === 'failed' || isWhiteboardPaused(prev.status)) return prev;
       const seq = Number(event.seq);
       if (Number.isFinite(seq) && seq > 0 && Number(prev.last_event_seq) >= seq) return prev;
       return applyWorkflowStageEvent({
@@ -683,7 +694,8 @@ export function OneClickCreativePage() {
     navigate('/creative');
     stopTaskStream({ clearStorage: true });
     setInput('');
-    setMode('quick');
+    setCreationModeId(HYPERFRAMES_MODE);
+    setWhiteboardDraft(createWhiteboardDraft());
     setUseResearch(true);
     useResearchTouchedRef.current = false;
     setUseResearchTouched(false);
@@ -872,8 +884,13 @@ export function OneClickCreativePage() {
 
   async function submitCreativeWorkflow(event) {
     event.preventDefault();
-    const trimmed = input.trim();
-    if (isBusy || !trimmed || uploadedAssetsRef.current.some(asset => ['uploading', 'updating_requirement', 'deleting'].includes(asset.status))) {
+    const trimmed = isWhiteboard ? whiteboardDraft.contents[whiteboardDraft.inputMode].trim() : input.trim();
+    if (isWhiteboard && (validateWhiteboardDraft(whiteboardDraft) || modeCatalog.status !== 'ready')) {
+      setStatus('failed');
+      setMessage(validateWhiteboardDraft(whiteboardDraft) || '请等待创作模式加载完成后重试。');
+      return;
+    }
+    if (isBusy || !trimmed || (!isWhiteboard && uploadedAssetsRef.current.some(asset => ['uploading', 'updating_requirement', 'deleting'].includes(asset.status)))) {
       if (!isBusy && !trimmed) {
         setStatus('failed');
         setMessage('请输入视频方向、抖音链接、文章链接或 GitHub 仓库链接');
@@ -884,7 +901,7 @@ export function OneClickCreativePage() {
     assetMutationLockedRef.current = true;
 
     setStatus('creating');
-    setMessage('正在创建创作任务...');
+    setMessage(isWhiteboard ? '正在启动白板创作 Agent，准备内容与制作方案...' : '正在创建创作任务...');
     setWorkflow(null);
     setWorkflowId('');
     finalWorkflowRefreshRef.current = null;
@@ -893,7 +910,8 @@ export function OneClickCreativePage() {
       const overrideEntries = {
         ...(useResearchTouched ? { useResearch } : {}),
       };
-      const requestPayload = {
+      const requestPayload = isWhiteboard ? buildWhiteboardPayload(whiteboardDraft) : {
+        creationModeId: HYPERFRAMES_MODE,
         input: trimmed,
         assetIds: uploadedAssetsRef.current
           .filter(asset => asset.status === 'ready' && asset.upload_id)
@@ -913,11 +931,12 @@ export function OneClickCreativePage() {
         return;
       }
 
-      clearUploadedAssets({ deleteStaged: false });
+      if (!isWhiteboard) clearUploadedAssets({ deleteStaged: false });
       assetMutationLockedRef.current = false;
 
       const task = {
         workflow_id: nextWorkflowId,
+        creationModeId,
         title: getTaskTitle(trimmed),
         input: trimmed,
         status: nextWorkflow?.status || json?.status || 'queued',
@@ -940,7 +959,7 @@ export function OneClickCreativePage() {
     } catch (error) {
       const persistedWorkflowId = String(error?.data?.workflow_id || '').trim();
       if (persistedWorkflowId) {
-        clearUploadedAssets({ deleteStaged: false });
+        if (!isWhiteboard) clearUploadedAssets({ deleteStaged: false });
         assetMutationLockedRef.current = false;
         setStatus('failed');
         setMessage(`任务已创建，但后台启动失败（任务 ID：${persistedWorkflowId}）。请稍后打开任务详情。`);
@@ -949,6 +968,33 @@ export function OneClickCreativePage() {
       assetMutationLockedRef.current = false;
       setStatus('failed');
       setMessage(getErrorMessage(error, '创建创作任务失败，请稍后重试。'));
+    }
+  }
+
+  async function handleWhiteboardAction(payload) {
+    if (whiteboardActionRef.current) return;
+    const targetWorkflowId = selectedWorkflowId || workflowId;
+    whiteboardActionRef.current = true;
+    try {
+      const json = await api.actOnWhiteboardWorkflow(targetWorkflowId, payload);
+      const activeId = currentWorkflowRef.current.routeWorkflowId || currentWorkflowRef.current.selectedWorkflowId;
+      if (activeId !== targetWorkflowId) return;
+      const nextWorkflow = getWorkflowPayload(json);
+      finalWorkflowRefreshRef.current = null;
+      setWorkflow(nextWorkflow);
+      setMessage(nextWorkflow.message || '白板方案已更新。');
+      setStatus(json.task_id ? 'polling' : nextWorkflow.status);
+      persistTasks(prev => updateTask(prev, {
+        workflow_id: targetWorkflowId, creationModeId: WHITEBOARD_MODE,
+        title: getTaskDisplayTitle(nextWorkflow, nextWorkflow.input?.content), workflow: nextWorkflow,
+        status: nextWorkflow.status, message: nextWorkflow.message, updated_at: nextWorkflow.updated_at,
+      }));
+      if (json.task_id) subscribeTaskEvents({ workflow_id: targetWorkflowId, task_id: json.task_id }, { sinceSeq: 0 });
+    } catch (error) {
+      await refreshWorkflowSnapshot({ workflowId: targetWorkflowId });
+      throw error;
+    } finally {
+      whiteboardActionRef.current = false;
     }
   }
 
@@ -1040,6 +1086,12 @@ export function OneClickCreativePage() {
           updated_at: new Date().toISOString(),
         }));
 
+        if (isWhiteboardPaused(nextWorkflow?.status)) {
+          if (activeTaskRef.current?.workflow_id === workflowId) stopTaskStream({ clearStorage: true });
+          setStatus(nextWorkflow.status);
+          setMessage(nextMessage);
+          return;
+        }
         if (nextWorkflow?.status === 'done') {
           if (activeTaskRef.current?.workflow_id === workflowId) {
             stopTaskStream({ clearStorage: true });
@@ -1081,7 +1133,7 @@ export function OneClickCreativePage() {
 
   useEffect(() => {
     const targetWorkflowId = String(workflow?.workflow_id || selectedWorkflowId || workflowId || '').trim();
-    if (workflow?.status !== 'failed' || !targetWorkflowId) {
+    if (workflow?.creationModeId === WHITEBOARD_MODE || workflow?.status !== 'failed' || !targetWorkflowId) {
       resetRetryPlan();
       return undefined;
     }
@@ -1093,6 +1145,7 @@ export function OneClickCreativePage() {
     loadRetryPlan(targetWorkflowId, { cacheKey: failureKey });
     return undefined;
   }, [
+    workflow?.creationModeId,
     workflow?.status,
     workflow?.workflow_id,
     workflow?.last_failure?.code,
@@ -1138,8 +1191,13 @@ export function OneClickCreativePage() {
               <CreativeComposer
                 input={input}
                 setInput={setInput}
-                mode={mode}
-                setMode={setMode}
+                creationModeId={creationModeId}
+                onCreationModeChange={value => { if (!isBusy && !hasPendingAssetRequest) setCreationModeId(value); }}
+                whiteboardDraft={whiteboardDraft}
+                onWhiteboardDraftChange={setWhiteboardDraft}
+                modeCatalog={modeCatalog}
+                status={status}
+                message={message}
                 useResearch={useResearch}
                 setUseResearch={(value) => {
                   useResearchTouchedRef.current = true;
@@ -1171,6 +1229,7 @@ export function OneClickCreativePage() {
             onStopAndDelete={requestStopAndDeleteTask}
             onContinueEdit={continueEdit}
             onRetryWorkflow={handleRetryWorkflow}
+            onWhiteboardAction={handleWhiteboardAction}
             getWorkflowVideoUrl={getWorkflowVideoUrl}
           />
         </div>

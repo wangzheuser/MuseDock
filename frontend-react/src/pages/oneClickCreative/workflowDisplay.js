@@ -73,6 +73,8 @@ export function getWorkflowGeneratedTitle(workflow) {
     || workflow?.scene_spec
     || null;
   return firstText(
+    workflow?.whiteboard?.current?.artifact?.title,
+    workflow?.creationModeId === 'whiteboard-stream-v1' ? workflow?.title : '',
     sceneSpec?.title,
     workflow?.result?.hyperframes_freeform?.project?.title,
     workflow?.result?.hyperframes_freeform?.title,

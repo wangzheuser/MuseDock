@@ -16,6 +16,7 @@ export function loadStoredTasks() {
 export function compactStoredTask(task) {
   return {
     workflow_id: String(task?.workflow_id || '').trim(),
+    creationModeId: task?.creationModeId || task?.workflow?.creationModeId || 'hyperframes-v1',
     title: String(task?.title || ''),
     input: String(task?.input || ''),
     status: String(task?.status || 'queued'),
@@ -90,6 +91,7 @@ export function mergeServerTasks(localTasks, serverItems) {
     byId.set(id, {
       ...prev,
       workflow_id: id,
+      creationModeId: item.creationModeId || prev.creationModeId || 'hyperframes-v1',
       title: prev.title || item.title || getTaskTitle(item.input),
       input: prev.input || item.input || '',
       status: item.status || prev.status || 'queued',

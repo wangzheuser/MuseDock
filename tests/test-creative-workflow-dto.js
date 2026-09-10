@@ -80,6 +80,9 @@ assert.equal(dto.workflow_id, '202607031200000001');
 assert.equal(dto.status, 'done');
 assert.equal(dto.title, '归一标题');
 assert.equal(dto.input, '做一个产品介绍视频');
+assert.equal(dto.creationModeId, 'hyperframes-v1');
+assert.equal(dto.creationModeContractVersion, 1);
+assert.deepEqual(dto.stageSchemaSnapshot.map(stage => stage.id), ['source', 'research', 'assets', 'agent_run', 'brief', 'audio', 'project', 'check', 'render', 'inspect']);
 assert.deepEqual(dto.result.render, {
   output_url: '/api/old-output.mp4',
   output_path: 'D:/tmp/output.mp4',
@@ -91,6 +94,10 @@ assert.deepEqual(dto.result.layout_qa, { status: 'passed' });
 assert.equal(dto.workflow, workflow);
 
 assert.deepEqual(normalizeCreativeWorkflowSummary(workflow), {
+  creationModeId: 'hyperframes-v1',
+  creationModeContractVersion: 1,
+  creationModeDisplayNameSnapshot: 'HyperFrames 动态视频',
+  stageSchemaSnapshot: dto.stageSchemaSnapshot,
   workflow_id: '202607031200000001',
   status: 'done',
   message: '视频生成完成。',

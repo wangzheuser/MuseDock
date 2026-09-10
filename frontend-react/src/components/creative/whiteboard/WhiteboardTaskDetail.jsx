@@ -1,0 +1,170 @@
+import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ArrowUp, Check, FileClock, Loader2, PenLine, Settings2, Trash2 } from 'lucide-react';
+import { api } from '@/api/client.js';
+import { Button } from '@/components/ui/button.jsx';
+import { Textarea } from '@/components/ui/textarea.jsx';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog.jsx';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog.jsx';
+import { cn } from '@/lib/utils.js';
+import { STATUS_TEXT } from '../creativeDisplay.js';
+import { ProductionPlanFields } from './WhiteboardInputFields.jsx';
+import { WhiteboardArtifact } from './WhiteboardArtifact.jsx';
+
+export function WhiteboardTaskDetail({ workflow, message, deletingWorkflowId, onAction, onStopAndDelete }) {
+  const [revision, setRevision] = useState('');
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [planOpen, setPlanOpen] = useState(false);
+  const [editedPlan, setEditedPlan] = useState(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyArtifact, setHistoryArtifact] = useState(null);
+  const [historyBusy, setHistoryBusy] = useState('');
+  const [historyError, setHistoryError] = useState('');
+  const actionLock = useRef(false);
+  const historyRequest = useRef(0);
+  const whiteboard = workflow.whiteboard;
+  const current = whiteboard.current;
+  const attempts = whiteboard.attempts || [];
+  const activeVersion = attempts.find(attempt => attempt.id === current?.attemptId);
+  const artifact = current?.artifact;
+  const allowed = new Set((whiteboard.allowedActions || []).map(action => action.id));
+  const running = ['queued', 'running'].includes(workflow.status);
+  const locked = running || Boolean(busy) || Boolean(deletingWorkflowId);
+  const latest = attempts.at(-1);
+  const title = artifact?.title || workflow.title || '白板创作';
+  const statusMessage = whiteboard.artifactError || workflow.current_stage_message || workflow.message || message;
+
+  useEffect(() => () => { historyRequest.current += 1; }, []);
+
+  async function act(action, extras = {}) {
+    if (actionLock.current || locked || !allowed.has(action)) return;
+    actionLock.current = true;
+    setBusy(action);
+    setError('');
+    try {
+      await onAction({ action, expectedIdentity: current?.identity || '', expectedAttemptId: latest?.id, ...extras });
+      if (action === 'revise') setRevision('');
+      setConfirm('');
+      setPlanOpen(false);
+    } catch (failure) {
+      setError(failure?.data?.message || failure?.message || '操作失败，请刷新当前任务后重试。');
+    } finally {
+      actionLock.current = false;
+      setBusy('');
+    }
+  }
+
+  async function viewVersion(attempt) {
+    if (historyBusy) return;
+    const request = ++historyRequest.current;
+    setHistoryBusy(attempt.id);
+    setHistoryError('');
+    try {
+      const result = await api.getWhiteboardArtifact(workflow.workflow_id, attempt.id);
+      if (historyRequest.current === request) setHistoryArtifact({ ...result, number: attempt.number });
+    } catch (failure) {
+      if (historyRequest.current === request) setHistoryError(failure?.message || '读取版本失败，请稍后重试。');
+    } finally {
+      if (historyRequest.current === request) setHistoryBusy('');
+    }
+  }
+
+  return (
+    <div className="grid w-full min-w-0 gap-6 max-[760px]:[&_button]:min-h-11">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="grid min-w-0 gap-2">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-fg-3"><PenLine size={14} /><span>{workflow.creationModeDisplayNameSnapshot || '线稿白板动画'}</span><span>· 阶段 0</span></div>
+          <h1 className="m-0 break-words text-2xl font-bold leading-snug text-fg-1">{title}</h1>
+          <p className="m-0 text-xs text-fg-3">内容与制作方案确认</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={cn('rounded-full border px-2.5 py-1 text-xs font-semibold', workflow.status === 'phase0_complete' ? 'border-success/30 text-success' : ['failed', 'unknown_external_outcome'].includes(workflow.status) ? 'border-danger/25 text-danger' : 'border-line-2 text-fg-2')}>{STATUS_TEXT[workflow.status] || '处理中'}</span>
+          <Button variant="ghost" size="icon" type="button" aria-label="停止并删除白板任务" className="max-[760px]:min-w-11" disabled={Boolean(deletingWorkflowId) || Boolean(busy)} onClick={() => onStopAndDelete(workflow.workflow_id)}><Trash2 size={16} /></Button>
+        </div>
+      </header>
+
+      <ol className="m-0 grid list-none grid-cols-3 gap-3 p-0" aria-label="白板阶段进度">
+        {workflow.stages.map((stage, index) => (
+          <li key={stage.id} className={cn('grid gap-2 border-t-2 pt-3 text-xs', stage.status === 'done' ? 'border-ink text-fg-1' : stage.status === 'waiting_approval' || stage.status === 'running' ? 'border-ink text-fg-1' : 'border-line-1 text-fg-3')}>
+            <span className="flex items-center gap-2 font-semibold">{stage.status === 'done' ? <Check size={14} /> : <span className="font-mono">0{index + 1}</span>}{stage.label}</span>
+            <span className="text-fg-3">{STATUS_TEXT[stage.status] || '等待中'}</span>
+          </li>
+        ))}
+      </ol>
+
+      <div className="grid min-w-0 grid-cols-[minmax(0,.85fr)_minmax(0,1.15fr)] items-start gap-5 max-[960px]:grid-cols-1">
+        <section className="grid min-w-0 gap-5" aria-label="白板创作 Agent">
+          <div className="flex items-center gap-2 border-b border-line-1 pb-3"><PenLine size={17} /><h2 className="m-0 text-base font-semibold">白板创作 Agent</h2></div>
+          <div className="grid max-h-[45vh] content-start gap-5 overflow-auto pr-1 max-[760px]:max-h-[36vh]" aria-label="创作对话">
+            {whiteboard.messages.map(item => (
+              <article key={item.id} className={cn('grid min-w-0 gap-2', item.role === 'user' && 'rounded-lg bg-surface-2 p-3')}>
+                <div className="text-xs font-semibold text-fg-3">{item.role === 'user' ? '你' : '白板创作 Agent'}</div>
+                <p className="m-0 whitespace-pre-wrap break-words text-sm leading-7 text-fg-2">{item.text}</p>
+              </article>
+            ))}
+          </div>
+          <div className={cn('flex items-start gap-2 rounded-md border border-line-1 bg-surface-2 p-3 text-xs leading-6', whiteboard.artifactError || ['failed', 'unknown_external_outcome'].includes(workflow.status) ? 'text-danger' : 'text-fg-2')} role="status" aria-live="polite">
+            {running || busy ? <Loader2 size={15} className="mt-1 shrink-0 animate-spin" /> : null}
+            <span>{busy ? ({ approve_initial: '正在确认当前内容与制作方案...', update_plan: '正在保存新的制作方案...', revise: '正在创建修改版本...', retry: '正在重新启动方案任务...', authorize_new_attempt: '正在创建新的模型请求...' })[busy] : statusMessage}</span>
+          </div>
+          {error ? <p className="m-0 text-sm text-danger" role="alert">{error}</p> : null}
+          {workflow.error?.code?.startsWith('MODEL_') ? <Link to="/settings" state={{ from: `/creative/${workflow.workflow_id}` }} className="text-sm font-semibold text-ink underline underline-offset-4">打开模型设置</Link> : null}
+
+          {allowed.has('revise') ? (
+            <form className="grid gap-2" onSubmit={event => { event.preventDefault(); if (revision.trim()) act('revise', { message: revision.trim() }); }}>
+              <label htmlFor="whiteboard-revision" className="text-xs font-semibold text-fg-2">修改意见</label>
+              <Textarea id="whiteboard-revision" value={revision} onChange={event => setRevision(event.target.value)} rows={3} maxLength={6000} disabled={locked} placeholder="例如：开头更直接一些，第二幕用生活中的例子来解释。" className="min-h-[96px]" />
+              <div className="flex items-center justify-between gap-3"><span className="text-xs leading-relaxed text-fg-3">修改会生成新版本，并重新等待确认。</span><Button type="submit" size="sm" disabled={locked || !revision.trim()}><ArrowUp size={14} />生成修改版</Button></div>
+            </form>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            {allowed.has('approve_initial') ? <Button type="button" disabled={locked} onClick={() => { setError(''); setConfirm('approve_initial'); }}><Check size={15} />确认内容与制作方案</Button> : null}
+            {allowed.has('update_plan') && artifact ? <Button type="button" variant="outline" disabled={locked} onClick={() => { setEditedPlan({ ...artifact.productionPlan }); setPlanOpen(true); setError(''); }}><Settings2 size={14} />制作设置</Button> : null}
+            {allowed.has('retry') ? <Button type="button" disabled={locked} onClick={() => act('retry')}>重新生成方案</Button> : null}
+            {allowed.has('authorize_new_attempt') ? <Button type="button" variant="outline" disabled={locked} onClick={() => setConfirm('authorize_new_attempt')}>确认后重新请求</Button> : null}
+          </div>
+        </section>
+
+        <section className="grid min-w-0 gap-4 rounded-lg border border-line-1 bg-surface-1 p-5 max-[560px]:p-3" aria-label="当前白板方案">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2"><h2 className="m-0 text-base font-semibold">{current?.stale ? '上一版方案' : '当前方案'}</h2>{activeVersion ? <span className="rounded border border-line-1 px-1.5 py-0.5 font-mono text-xs text-fg-3">v{activeVersion.number}</span> : null}</div>
+            <Button variant="ghost" type="button" size="sm" onClick={() => { setHistoryOpen(true); setHistoryArtifact(null); }}><FileClock size={14} />版本记录</Button>
+          </div>
+          {current?.stale ? <p className="m-0 text-xs leading-6 text-fg-3">此版本已因修改而失效，保留供对照。新方案需要重新确认。</p> : null}
+          {whiteboard.artifactError ? <p className="text-sm text-danger" role="alert">{whiteboard.artifactError}</p> : <WhiteboardArtifact artifact={artifact} />}
+        </section>
+      </div>
+
+      <ConfirmDialog open={Boolean(confirm)} onOpenChange={open => { if (!open) setConfirm(''); }}
+        title={confirm === 'approve_initial' ? `确认第 ${activeVersion?.number || 1} 版内容与制作方案` : '同意发起一次新的模型请求'}
+        description={confirm === 'approve_initial' ? '请确认已检查当前旁白正文、全部分镜和制作设置。确认后阶段 0 结束；本次不会生成音频、图片或视频。' : '上次请求是否已经完成或计费尚不确定。再次请求可能产生重复费用；新请求将保留原版本及记录。'}
+        confirmText={confirm === 'approve_initial' ? '确认当前方案' : '同意新请求与可能的重复费用'} loading={Boolean(busy)}
+        onConfirm={() => act(confirm, { confirmed: true })}>
+        {error ? <p className="m-0 text-sm text-danger" role="alert">{error}</p> : null}
+      </ConfirmDialog>
+
+      <Dialog open={planOpen} onOpenChange={open => { if (!busy) setPlanOpen(open); }}>
+        <DialogContent className="w-[min(480px,calc(100vw-32px))] max-[760px]:[&_button]:min-h-11" showCloseButton={!busy}>
+          <DialogHeader><DialogTitle>调整制作方案</DialogTitle><DialogDescription>保留旁白和分镜，生成新的待确认版本。</DialogDescription></DialogHeader>
+          {editedPlan ? <ProductionPlanFields value={editedPlan} onChange={setEditedPlan} disabled={locked} /> : null}
+          {error ? <p className="m-0 text-sm text-danger" role="alert">{error}</p> : null}
+          <Button type="button" disabled={locked} onClick={() => act('update_plan', { productionPlan: editedPlan })}>{busy ? <Loader2 size={15} className="animate-spin" /> : null}{busy ? '正在保存制作方案...' : '保存为新的待确认版本'}</Button>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent className="max-h-[85vh] w-[min(760px,calc(100vw-32px))] max-w-none overflow-auto max-[760px]:[&_button]:min-h-11" showCloseButton>
+          <DialogHeader><DialogTitle>{historyArtifact ? `第 ${historyArtifact.number} 版方案` : '方案版本记录'}</DialogTitle><DialogDescription>{historyArtifact ? (historyArtifact.current ? '这是当前方案，批准操作请返回任务页完成。' : '历史方案仅供查看，不能作为当前版本批准。') : '每次修改单独保存；历史版本不会覆盖当前方案。'}</DialogDescription></DialogHeader>
+          {historyArtifact ? <><Button variant="ghost" className="justify-self-start" onClick={() => setHistoryArtifact(null)}>返回版本记录</Button><WhiteboardArtifact artifact={historyArtifact.artifact} /></> : (
+            <div className="divide-y divide-line-1">
+              {[...attempts].reverse().map(attempt => <div key={attempt.id} className="flex items-center justify-between gap-3 py-3"><div className="grid gap-1"><span className="text-sm font-semibold">第 {attempt.number} 版{current?.attemptId === attempt.id && !current.stale ? ' · 当前版本' : ''}</span><span className="text-xs text-fg-3">{({ prepared: '等待执行', preparing: '准备中', requesting: '请求模型中', validated: '方案已校验', failed: '生成失败', unknown_external_outcome: '外部结果待核实' })[attempt.status] || '处理中'}{attempt.stale ? ' · 已失效' : ''}</span></div><Button size="sm" variant="outline" disabled={!attempt.binding || Boolean(historyBusy)} onClick={() => viewVersion(attempt)}>{historyBusy === attempt.id ? '正在读取...' : '查看方案'}</Button></div>)}
+            </div>
+          )}
+          {historyError ? <p className="text-sm text-danger" role="alert">{historyError}</p> : null}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

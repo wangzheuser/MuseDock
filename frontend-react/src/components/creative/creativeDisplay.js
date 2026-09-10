@@ -25,11 +25,14 @@ export const STATUS_TEXT = {
   done: '已完成',
   skipped: '已跳过',
   failed: '失败',
+  waiting_approval: '待确认',
+  phase0_complete: '方案已确认',
+  unknown_external_outcome: '外部结果待核实',
 };
 
 export function getStatusClass(status) {
-  if (status === 'done' || status === 'skipped') return 'done';
-  if (status === 'failed') return 'failed';
+  if (status === 'done' || status === 'skipped' || status === 'phase0_complete') return 'done';
+  if (status === 'failed' || status === 'unknown_external_outcome') return 'failed';
   if (status === 'queued' || status === 'pending' || status === 'running') return 'pending';
   return '';
 }

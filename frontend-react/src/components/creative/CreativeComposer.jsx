@@ -1,7 +1,9 @@
 import { useRef } from 'react';
-import { ArrowUp, Globe2, ImagePlus, Loader2, Trash2 } from 'lucide-react';
+import { ArrowUp, Clapperboard, Globe2, ImagePlus, Loader2, PenLine, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs.jsx';
+import { WhiteboardInputFields } from './whiteboard/WhiteboardInputFields.jsx';
 import { cn } from '@/lib/utils.js';
 
 function CreativeHeroHeader() {
@@ -17,7 +19,13 @@ function CreativeHeroHeader() {
 function CreativePromptComposer({
   input,
   setInput,
-  mode,
+  creationModeId = 'hyperframes-v1',
+  onCreationModeChange,
+  whiteboardDraft,
+  onWhiteboardDraftChange,
+  modeCatalog,
+  status,
+  message,
   useResearch,
   setUseResearch,
   isBusy,
@@ -32,9 +40,16 @@ function CreativePromptComposer({
 
   return (
     <form
-      className="grid min-h-0 w-[min(100%,776px)] gap-2.5 rounded-[20px] border border-[#dfe3ea] bg-white px-3 pb-2.5 pt-[17px] shadow-[0_16px_38px_rgba(15,23,42,.07)] max-[760px]:w-full"
+      className="grid min-h-0 w-[min(100%,776px)] gap-3 rounded-[20px] border border-line-2 bg-surface-1 p-4 shadow-[var(--shadow-panel)] max-[760px]:w-full"
       onSubmit={onSubmit}
     >
+      <Tabs value={creationModeId} onValueChange={onCreationModeChange} className="gap-4">
+        <TabsList className="grid h-12 w-full grid-cols-2 bg-surface-2 p-1 max-[760px]:h-14" aria-label="创作模式">
+          <TabsTrigger value="hyperframes-v1" disabled={isBusy} className="min-w-0 gap-2 px-2 text-[13px] max-[760px]:min-h-11 max-[420px]:whitespace-normal max-[420px]:text-xs max-[420px]:leading-4 max-[420px]:[&_svg]:hidden"><Clapperboard size={16} /><span>HyperFrames <span className="max-[420px]:block">动态视频</span></span></TabsTrigger>
+          <TabsTrigger value="whiteboard-stream-v1" disabled={isBusy || modeCatalog?.status !== 'ready'} className="min-w-0 gap-2 px-2 text-[13px] max-[760px]:min-h-11 max-[420px]:whitespace-normal max-[420px]:text-xs max-[420px]:leading-4 max-[420px]:[&_svg]:hidden"><PenLine size={16} /><span>线稿白板动画</span><span className="hidden rounded border border-line-2 px-1 py-0.5 font-mono text-[10px] text-fg-3 sm:inline">Agent</span></TabsTrigger>
+        </TabsList>
+        <TabsContent value="hyperframes-v1" className="grid gap-3">
+          <p className="m-0 px-1 text-xs leading-6 text-fg-3">自动研究和组织素材，生成可继续编辑的动态视频工程。</p>
       <label className="sr-only" htmlFor="creative-input">
         输入视频方向、抖音链接、微信公众号文章或 GitHub 仓库链接
       </label>
@@ -43,7 +58,7 @@ function CreativePromptComposer({
         value={input}
         onChange={event => setInput(event.target.value)}
         disabled={isBusy}
-        className="min-h-[74px] max-h-[220px] resize-y border-0 bg-transparent px-1 py-0 text-base leading-[1.55] text-[#111827] shadow-none placeholder:text-[#a4acb8] focus-visible:ring-0 disabled:text-[#8a93a2]"
+        className="min-h-[74px] max-h-[220px] resize-y border-0 bg-transparent px-1 py-0 text-base leading-[1.55] text-fg-1 shadow-none placeholder:text-fg-3 focus-visible:ring-0 disabled:text-fg-3"
         placeholder="粘贴文章/GitHub 链接，或输入你想生成的视频方向"
         rows={4}
       />
@@ -135,15 +150,26 @@ function CreativePromptComposer({
 
         <Button
           className="flex-none rounded-full bg-ink text-white hover:-translate-y-px hover:bg-ink-strong disabled:opacity-[.64]"
-          size="icon"
+          size="default"
           type="submit"
           disabled={submitDisabled}
-          aria-label="一键生成视频"
-          title="一键生成视频"
+          aria-label="生成动态视频"
+          title="生成动态视频"
         >
           {isBusy ? <Loader2 size={18} className="animate-spin" /> : <ArrowUp size={19} />}
+          <span className="max-[480px]:sr-only">{isBusy ? '正在创建...' : '生成动态视频'}</span>
         </Button>
       </div>
+        </TabsContent>
+        <TabsContent value="whiteboard-stream-v1" className="grid gap-4">
+          <p className="m-0 px-1 text-xs leading-6 text-fg-3">白板创作 Agent 先整理内容、分镜和制作方案，由你确认后完成本阶段。</p>
+          {whiteboardDraft ? <WhiteboardInputFields draft={whiteboardDraft} onChange={onWhiteboardDraftChange} catalog={modeCatalog?.whiteboard} disabled={isBusy} /> : null}
+          <Button type="submit" className="justify-self-end max-[760px]:min-h-11" disabled={submitDisabled}>{isBusy ? <Loader2 size={16} className="animate-spin" /> : <ArrowUp size={16} />}{isBusy ? '正在启动白板创作 Agent...' : '启动白板创作 Agent'}</Button>
+        </TabsContent>
+      </Tabs>
+      {modeCatalog?.status === 'loading' ? <p className="m-0 text-xs text-fg-3" role="status">正在加载创作模式...</p> : null}
+      {modeCatalog?.status === 'failed' ? <div className="flex items-center justify-between gap-3 text-xs text-danger" role="alert"><span>{modeCatalog.error}</span><Button type="button" variant="ghost" size="sm" onClick={modeCatalog.reload} disabled={isBusy}>重新加载模式</Button></div> : null}
+      {message && ['creating', 'failed'].includes(status) ? <p className={cn('m-0 text-xs leading-relaxed', status === 'failed' ? 'text-danger' : 'text-fg-3')} role={status === 'failed' ? 'alert' : 'status'}>{message}</p> : null}
     </form>
   );
 }

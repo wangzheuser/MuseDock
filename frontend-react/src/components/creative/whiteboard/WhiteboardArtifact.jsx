@@ -1,0 +1,57 @@
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs.jsx';
+
+function timeLabel(ms) {
+  const totalSeconds = Math.round(ms / 1000);
+  return `${String(Math.floor(totalSeconds / 60)).padStart(2, '0')}:${String(totalSeconds % 60).padStart(2, '0')}`;
+}
+
+export function WhiteboardArtifact({ artifact }) {
+  if (!artifact) return <p className="m-0 py-10 text-center text-sm text-fg-3">方案准备好后，正文、分镜与制作设置会显示在这里。</p>;
+  const plan = artifact.productionPlan;
+  const cueById = new Map(artifact.cues.map(cue => [cue.id, cue]));
+  return (
+    <Tabs defaultValue="narration" className="min-w-0 gap-4">
+      <TabsList className="grid w-full grid-cols-3 max-[760px]:h-14" aria-label="方案内容">
+        <TabsTrigger value="narration">旁白正文</TabsTrigger>
+        <TabsTrigger value="scenes">分镜 · {artifact.scenes.length}</TabsTrigger>
+        <TabsTrigger value="production">制作方案</TabsTrigger>
+      </TabsList>
+      <TabsContent value="narration" className="max-h-[56vh] min-w-0 overflow-auto pr-1 max-[760px]:max-h-none">
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-fg-3">
+          <span>{artifact.timingKind === 'source_srt' ? 'SRT 原始时间轴' : '草案目标时长'} · {timeLabel(artifact.durationMs)}</span>
+          <span>· {artifact.narrationLanguage === 'zh-CN' ? '简体中文' : artifact.narrationLanguage === 'en-US' ? '英语（美国）' : '英语（英国）'}</span>
+        </div>
+        <div className="whitespace-pre-wrap break-words text-sm leading-8 text-fg-1">{artifact.narrationText}</div>
+        <p className="mt-5 border-t border-line-1 pt-3 text-xs leading-relaxed text-fg-3">当前展示文字方案。本阶段不生成或试听样音；后续首次音频制作将直接生成完整旁白。</p>
+      </TabsContent>
+      <TabsContent value="scenes" className="max-h-[56vh] min-w-0 overflow-auto pr-1 max-[760px]:max-h-none">
+        <div className="divide-y divide-line-1">
+          {artifact.scenes.map((scene, index) => (
+            <article key={scene.id} className="py-4 first:pt-0">
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="m-0 text-sm font-semibold text-fg-1"><span className="mr-2 font-mono text-fg-3">{String(index + 1).padStart(2, '0')}</span>{scene.title}</h3>
+                <span className="shrink-0 font-mono text-xs text-fg-3">{timeLabel(scene.startMs)}–{timeLabel(scene.endMs)}</span>
+              </div>
+              <p className="mb-3 mt-2 whitespace-pre-wrap break-words text-sm leading-7 text-fg-2">{scene.cueIds.map(id => cueById.get(id)?.text).join('\n')}</p>
+              <div className="grid gap-1.5 text-xs leading-6 text-fg-3"><span className="font-semibold text-fg-2">画面构思</span><p className="m-0 whitespace-pre-wrap break-words">{scene.imagePrompt}</p></div>
+            </article>
+          ))}
+        </div>
+        {artifact.timingKind === 'provisional' ? <p className="text-xs leading-relaxed text-fg-3">分镜时间为草案估算。后续以完整旁白和对应字幕的真实时间为准。</p> : null}
+      </TabsContent>
+      <TabsContent value="production">
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-4 text-sm">
+          <dt className="text-fg-3">视觉模板</dt><dd className="m-0 text-fg-1">{artifact.visualStyle.displayName}<p className="mb-0 mt-1 text-xs leading-6 text-fg-3">{artifact.visualStyle.description}</p></dd>
+          <dt className="text-fg-3">画笔</dt><dd className="m-0">{plan.handDisplayMode === 'show' ? '显示画笔' : '隐藏画笔'}</dd>
+          <dt className="text-fg-3">成片字幕</dt><dd className="m-0">{plan.burnSubtitles ? '烧录字幕' : '不烧录字幕'}</dd>
+          <dt className="text-fg-3">背景音乐</dt><dd className="m-0">不使用 BGM</dd>
+          <dt className="text-fg-3">生图方式</dt><dd className="m-0">逐幕独立生成</dd>
+          <dt className="text-fg-3">旁白服务</dt><dd className="m-0">{artifact.narrationService?.displayName || '未配置'}{!artifact.narrationService?.configured ? <p className="mb-0 mt-1 text-xs leading-relaxed text-fg-3">开始旁白制作前需配置服务，并重新确认调用合同。</p> : null}</dd>
+          <dt className="text-fg-3">后续确认</dt><dd className="m-0">{plan.agentApprovalEnabled ? '授权 AI 在允许范围内推进' : '由我逐阶段确认'}</dd>
+          <dt className="text-fg-3">画幅</dt><dd className="m-0">1920 × 1080 · 16:9</dd>
+        </dl>
+        <p className="mb-0 mt-6 border-t border-line-1 pt-3 text-xs leading-relaxed text-fg-3">确认将绑定当前版本的内容、分镜与以上制作设置。当前版本到阶段 0 为止，后续媒体制作尚未接入。</p>
+      </TabsContent>
+    </Tabs>
+  );
+}

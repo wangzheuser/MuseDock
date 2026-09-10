@@ -1,5 +1,5 @@
 {
-  "generated": "2026-07-02T05:22:38.0825643+08:00",
+  "generated": "2026-07-28T10:40:28.5196840+08:00",
   "sections": [
     {
       "id": "mockups",
@@ -11,6 +11,15 @@
             {
               "label": "index.html",
               "path": "mockups/musedock-console-redesign/index.html"
+            }
+          ]
+        },
+        {
+          "slug": "script-approval-flow",
+          "files": [
+            {
+              "label": "index.html",
+              "path": "mockups/script-approval-flow/index.html"
             }
           ]
         },

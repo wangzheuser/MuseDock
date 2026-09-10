@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MuseDock 生成前文案确认</title>
+  <link rel="stylesheet" href="../../design-systems/tech-minimal-product/tokens/colors_and_type.css" />
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--page-bg); color: var(--text-primary); font: var(--body); }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--accent-secondary); outline-offset: 2px; }
+    .app { min-height: 100vh; display: grid; grid-template-columns: 252px minmax(0, 1fr); }
+    .sidebar { position: sticky; top: 0; height: 100vh; display: grid; grid-template-rows: auto auto 1fr auto; gap: 18px; padding: 20px 12px 16px; border-right: 1px solid var(--border-command); background: var(--surface-command); }
+    .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; }
+    .brand-mark { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--line-2); border-radius: 50%; background: #fff; font: var(--code); }
+    .brand strong, .brand small { display: block; }
+    .brand small { margin-top: 1px; color: var(--text-muted); font: var(--caption); }
+    .new-task { min-height: 40px; border: 1px solid var(--border-subtle); border-radius: 999px; background: #fff; color: var(--text-primary); font-weight: var(--weight-strong); }
+    .task-list { min-width: 0; display: grid; align-content: start; gap: 6px; overflow: auto; }
+    .rail-label { padding: 0 8px; color: var(--text-muted); font: var(--caption); }
+    .task { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 56px; padding: 9px 10px; border: 1px solid transparent; border-radius: var(--radius-md); background: transparent; color: var(--text-primary); text-align: left; }
+    .task.active { border-color: var(--line-2); background: var(--surface-primary); }
+    .task strong, .task small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .task small { margin-top: 2px; color: var(--text-muted); font: var(--caption); }
+    .tag { min-height: 24px; display: inline-flex; align-items: center; border-radius: 999px; padding: 0 8px; background: #fffbeb; color: #92400e; font: var(--caption); white-space: nowrap; }
+    .sidebar-actions { display: grid; gap: 6px; padding-top: 12px; border-top: 1px solid var(--border-command); }
+    .rail-button { min-height: 40px; border: 1px solid transparent; border-radius: var(--radius-md); padding: 0 10px; background: transparent; color: var(--text-secondary); text-align: left; font-weight: var(--weight-medium); }
+    .rail-button.active, .rail-button:hover { border-color: var(--border-subtle); background: #fff; color: var(--text-primary); }
+    .screen { display: none; min-width: 0; }
+    .screen.active { display: block; }
+    .page-head { position: sticky; top: 0; z-index: 10; display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 22px 28px 18px; border-bottom: 1px solid var(--border-subtle); background: rgb(255 255 255 / 0.95); backdrop-filter: blur(12px); }
+    .kicker { margin: 0 0 3px; color: var(--text-muted); font: var(--code); }
+    h1 { margin: 0; font: var(--h2); }
+    .page-head p:last-child { margin: 6px 0 0; color: var(--text-secondary); }
+    .head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .button { min-height: 38px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0 15px; background: #fff; color: var(--text-primary); font-weight: var(--weight-medium); }
+    .button.primary { border-color: var(--accent-primary); background: var(--accent-primary); color: #fff; font-weight: var(--weight-strong); }
+    .button:disabled { cursor: not-allowed; opacity: 0.55; }
+    .content { width: min(1180px, 100%); margin: 0 auto; display: grid; gap: 18px; padding: 24px 28px 40px; }
+    .summary { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 20px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: #fff; }
+    .summary h2 { margin: 0; font: var(--h3); }
+    .summary p { margin: 4px 0 0; color: var(--text-secondary); }
+    .status { display: inline-flex; align-items: center; gap: 7px; color: #92400e; font-weight: var(--weight-strong); white-space: nowrap; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--status-warning); box-shadow: 0 0 0 4px rgb(245 158 11 / 0.13); }
+    .stepper { min-width: 0; display: grid; grid-template-columns: repeat(7, minmax(86px, 1fr)); padding: 17px 8px; overflow-x: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: #fff; }
+    .step { position: relative; display: grid; justify-items: center; gap: 7px; min-width: 86px; color: var(--text-muted); text-align: center; font: var(--caption); }
+    .step::before { content: ""; position: absolute; top: 13px; right: calc(50% + 17px); width: calc(100% - 34px); height: 2px; background: var(--border-subtle); }
+    .step:first-child::before { display: none; }
+    .step.done::before, .step.review::before { background: var(--accent-primary); }
+    .step-number { position: relative; z-index: 1; width: 28px; height: 28px; display: grid; place-items: center; border: 2px solid var(--line-2); border-radius: 50%; background: #fff; color: var(--text-muted); }
+    .step.done .step-number { border-color: var(--accent-primary); background: var(--accent-primary); color: #fff; }
+    .step.review .step-number { border-color: var(--accent-primary); color: var(--accent-primary); box-shadow: var(--shadow-focus); }
+    .step strong { color: var(--text-primary); font-size: 12px; }
+    .step.review small { color: #92400e; font-weight: var(--weight-strong); }
+    .approval { overflow: hidden; border: 1px solid var(--line-2); border-radius: var(--radius-lg); background: #fff; box-shadow: var(--shadow-panel); }
+    .approval-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px; border-bottom: 1px solid var(--border-subtle); }
+    .approval-title { display: flex; gap: 12px; }
+    .approval-index { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; border-radius: var(--radius-md); background: var(--accent-primary); color: #fff; font: var(--code); }
+    .approval h2 { margin: 0; font: var(--h3); }
+    .approval-head p { max-width: 720px; margin: 5px 0 0; color: var(--text-secondary); }
+    .metrics { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .metric { min-height: 27px; display: inline-flex; align-items: center; border: 1px solid var(--border-subtle); border-radius: 999px; padding: 0 9px; background: var(--surface-secondary); color: var(--text-secondary); font: var(--caption); white-space: nowrap; }
+    .script { display: grid; }
+    .scene { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; gap: 14px; padding: 16px 20px; border-bottom: 1px solid var(--border-subtle); }
+    .scene:last-child { border-bottom: 0; }
+    .scene-no { color: var(--text-muted); font: var(--code); }
+    .scene-copy strong { display: block; margin-bottom: 5px; font-size: 14px; }
+    .scene-copy p { margin: 0; color: var(--text-secondary); font-size: 14px; line-height: 1.75; }
+    .scene-time { color: var(--text-muted); font: var(--code); white-space: nowrap; }
+    .approval-foot { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 20px; border-top: 1px solid var(--line-2); background: rgb(248 250 252 / 0.97); backdrop-filter: blur(12px); }
+    .approval-message { margin: 0; color: var(--text-secondary); font-size: 13px; }
+    .approval-actions { display: flex; gap: 8px; }
+    .progress-note { padding: 18px 20px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--surface-secondary); color: var(--text-secondary); }
+    .settings-content { width: min(980px, 100%); margin: 0 auto; padding: 24px 28px 40px; }
+    .settings-panel { padding: 20px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: #fff; }
+    .settings-panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+    .settings-panel h2 { margin: 0; font: var(--h3); }
+    .settings-panel-head p { margin: 5px 0 0; color: var(--text-secondary); }
+    .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .setting-card { min-height: 94px; display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 14px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--surface-secondary); }
+    .setting-card.featured { grid-column: 1 / -1; border-color: var(--line-2); background: #fff; }
+    .setting-card strong { display: block; font-size: 14px; }
+    .setting-card p { max-width: 660px; margin: 5px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+    .switch { position: relative; width: 42px; height: 24px; flex: 0 0 auto; border-radius: 999px; background: #c8ced8; transition: 180ms ease; }
+    .switch input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+    .switch span { position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.24); transition: 180ms ease; }
+    .switch.on { background: var(--accent-primary); }
+    .switch.on span { transform: translateX(18px); }
+    .save-state { min-height: 20px; margin: 12px 0 0; color: var(--status-success); font-size: 13px; font-weight: var(--weight-medium); }
+    @media (max-width: 840px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { position: static; width: 100%; height: auto; grid-template-columns: 1fr auto; grid-template-rows: auto auto; }
+      .task-list { display: none; }
+      .new-task { display: none; }
+      .sidebar-actions { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; padding-top: 8px; }
+      .page-head, .approval-head, .approval-foot, .summary { align-items: stretch; flex-direction: column; }
+      .metrics { justify-content: flex-start; }
+      .content, .settings-content { padding: 16px; }
+      .scene { grid-template-columns: 48px minmax(0, 1fr); }
+      .scene-time { grid-column: 2; }
+      .approval-actions { display: grid; grid-template-columns: 1fr; }
+      .button { min-height: 44px; }
+      .settings-grid { grid-template-columns: 1fr; }
+      .setting-card.featured { grid-column: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">MD</span><div><strong>MuseDock</strong><small>本地 AI 视频工作台</small></div></div>
+      <button class="new-task" type="button">＋ 开启新创作</button>
+      <div class="task-list">
+        <span class="rail-label">创作任务</span>
+        <button class="task active" type="button" data-show="review"><span><strong>AI 产品更新解读</strong><small>等待确认 · 刚刚</small></span><span class="tag">待批准</span></button>
+        <button class="task" type="button"><span><strong>GitHub 项目介绍</strong><small>已完成 · 昨天</small></span></button>
+      </div>
+      <nav class="sidebar-actions" aria-label="主导航">
+        <button class="rail-button active" type="button" data-show="review">创作任务</button>
+        <button class="rail-button" type="button" data-show="settings">设置中心</button>
+      </nav>
+    </aside>
+
+    <main>
+      <section class="screen active" id="review">
+        <header class="page-head">
+          <div><p class="kicker">/creative/workflow_8f23a9</p><h1>AI 产品更新解读</h1><p>文案已经准备完成，任务正在等待你的决定。</p></div>
+          <div class="head-actions"><button class="button" type="button">停止并删除</button></div>
+        </header>
+        <div class="content">
+          <section class="summary">
+            <div><h2>生成任务已暂停</h2><p>批准文案后才会继续生成配音、画面和 HTML。</p></div>
+            <span class="status"><span class="status-dot"></span>等待文案确认</span>
+          </section>
+
+          <section class="stepper" aria-label="生成进度">
+            <div class="step done"><span class="step-number">1</span><strong>来源准备</strong><small>已完成</small></div>
+            <div class="step done"><span class="step-number">2</span><strong>联网研究</strong><small>已完成</small></div>
+            <div class="step done"><span class="step-number">3</span><strong>文案改写</strong><small>已完成</small></div>
+            <div class="step review"><span class="step-number">4</span><strong>文案确认</strong><small>等待批准</small></div>
+            <div class="step"><span class="step-number">5</span><strong>配音与画面</strong><small>等待中</small></div>
+            <div class="step"><span class="step-number">6</span><strong>镜头 HTML</strong><small>等待中</small></div>
+            <div class="step"><span class="step-number">7</span><strong>渲染导出</strong><small>等待中</small></div>
+          </section>
+
+          <section class="approval" id="approval-card">
+            <div class="approval-head">
+              <div class="approval-title"><span class="approval-index">04</span><div><h2>确认最终口播文案</h2><p>以下内容已经完成时长压缩和质量检查。批准后，本版本将用于配音和后续画面生成。</p></div></div>
+              <div class="metrics"><span class="metric">6 个镜头</span><span class="metric">286 字</span><span class="metric">预计 58 秒</span></div>
+            </div>
+            <div class="script">
+              <article class="scene"><span class="scene-no">01 / 06</span><div class="scene-copy"><strong>开场：不是又一个聊天框</strong><p>当 AI 产品还在比谁的对话框更聪明时，真正有价值的变化已经发生在工作流里。</p></div><span class="scene-time">00:00–00:08</span></article>
+              <article class="scene"><span class="scene-no">02 / 06</span><div class="scene-copy"><strong>问题：创作过程仍然割裂</strong><p>资料、脚本、素材、配音和画面散落在不同工具中，每一次复制粘贴都在制造新的信息损耗。</p></div><span class="scene-time">00:08–00:18</span></article>
+              <article class="scene"><span class="scene-no">03 / 06</span><div class="scene-copy"><strong>变化：从素材开始规划</strong><p>MuseDock 先理解来源资料和视觉素材，再让文案、镜头与画面围绕同一组事实推进。</p></div><span class="scene-time">00:18–00:29</span></article>
+              <article class="scene"><span class="scene-no">04 / 06</span><div class="scene-copy"><strong>执行：HTML 成为可编辑画布</strong><p>每个镜头都由 HTML、CSS 和动画构成，生成完成后仍然可以检查文字、素材和布局。</p></div><span class="scene-time">00:29–00:40</span></article>
+              <article class="scene"><span class="scene-no">05 / 06</span><div class="scene-copy"><strong>结果：生成不再是黑盒</strong><p>从文案到成片，每个阶段都留下可查看、可恢复、可继续编辑的结果。</p></div><span class="scene-time">00:40–00:50</span></article>
+              <article class="scene"><span class="scene-no">06 / 06</span><div class="scene-copy"><strong>结尾：把决定权留给创作者</strong><p>AI 可以加速创作，但内容什么时候继续、最终说什么，应该始终由你决定。</p></div><span class="scene-time">00:50–00:58</span></article>
+            </div>
+            <footer class="approval-foot">
+              <p class="approval-message" id="approval-message" role="status">批准后将立即开始生成配音和画面。</p>
+              <div class="approval-actions"><button class="button" id="rewrite-button" type="button">重新改写</button><button class="button primary" id="approve-button" type="button">批准并继续</button></div>
+            </footer>
+          </section>
+
+          <div class="progress-note">等待期间可以离开此页面。任务会保留当前文案和生成进度，不会自动继续。</div>
+        </div>
+      </section>
+
+      <section class="screen" id="settings">
+        <header class="page-head">
+          <div><p class="kicker">/settings?section=creative</p><h1>创作默认值</h1><p>设置一键创作默认使用的画面比例、目标时长和生成策略。</p></div>
+          <div class="head-actions"><button class="button primary" id="save-button" type="button">保存创作默认值</button></div>
+        </header>
+        <div class="settings-content">
+          <section class="settings-panel">
+            <div class="settings-panel-head"><div><h2>一键创作</h2><p>这些选项会在新任务创建时固定，不影响已经开始的任务。</p></div></div>
+            <div class="settings-grid">
+              <div class="setting-card"><div><strong>联网研究默认开启</strong><p>创作前获取与主题相关的最新公开资料。</p></div><label class="switch on"><input type="checkbox" checked="checked" /><span></span></label></div>
+              <div class="setting-card"><div><strong>生成旁白音频</strong><p>按最终口播文案生成旁白与字幕时间轴。</p></div><label class="switch on"><input type="checkbox" checked="checked" /><span></span></label></div>
+              <div class="setting-card featured"><div><strong>生成前确认文案</strong><p>开启后，一键创作会在文案完成改写、时长调整和质量检查后暂停。批准文案后，才会继续生成配音、画面和 HTML。</p></div><label class="switch" id="approval-switch"><input id="approval-checkbox" type="checkbox" /><span></span></label></div>
+              <div class="setting-card"><div><strong>生成字幕</strong><p>根据旁白生成并烧录字幕。</p></div><label class="switch on"><input type="checkbox" checked="checked" /><span></span></label></div>
+              <div class="setting-card"><div><strong>自动音效增强</strong><p>为转场和重点提示添加短音效。</p></div><label class="switch on"><input type="checkbox" checked="checked" /><span></span></label></div>
+            </div>
+            <p class="save-state" id="save-state" role="status"></p>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const screens = Array.from(document.querySelectorAll(".screen"));
+    const navButtons = Array.from(document.querySelectorAll("[data-show]"));
+    navButtons.forEach((button) => button.addEventListener("click", () => {
+      const target = button.dataset.show;
+      screens.forEach((screen) => screen.classList.toggle("active", screen.id === target));
+      document.querySelectorAll(".rail-button").forEach((item) => item.classList.toggle("active", item.dataset.show === target));
+    }));
+
+    const approvalCheckbox = document.getElementById("approval-checkbox");
+    const approvalSwitch = document.getElementById("approval-switch");
+    approvalCheckbox.addEventListener("change", () => approvalSwitch.classList.toggle("on", approvalCheckbox.checked));
+
+    document.getElementById("save-button").addEventListener("click", (event) => {
+      event.currentTarget.disabled = true;
+      event.currentTarget.textContent = "正在保存创作默认值...";
+      document.getElementById("save-state").textContent = "";
+      window.setTimeout(() => {
+        event.currentTarget.disabled = false;
+        event.currentTarget.textContent = "保存创作默认值";
+        document.getElementById("save-state").textContent = approvalCheckbox.checked ? "已保存：新任务将在生成前等待文案确认。" : "创作默认值已保存。";
+      }, 900);
+    });
+
+    document.getElementById("rewrite-button").addEventListener("click", (event) => {
+      event.currentTarget.disabled = true;
+      document.getElementById("approve-button").disabled = true;
+      document.getElementById("approval-message").textContent = "正在重新改写文案，请稍候...";
+      window.setTimeout(() => {
+        event.currentTarget.disabled = false;
+        document.getElementById("approve-button").disabled = false;
+        document.getElementById("approval-message").textContent = "新文案已准备完成，请重新检查后批准。";
+      }, 1100);
+    });
+
+    document.getElementById("approve-button").addEventListener("click", (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      document.getElementById("rewrite-button").disabled = true;
+      button.textContent = "正在批准并继续生成...";
+      document.getElementById("approval-message").textContent = "正在批准当前文案版本，请勿重复操作。";
+      window.setTimeout(() => {
+        button.textContent = "已批准，正在继续生成";
+        document.getElementById("approval-message").textContent = "文案已批准，正在生成配音和画面。";
+      }, 1100);
+    });
+  </script>
+</body>
+</html>

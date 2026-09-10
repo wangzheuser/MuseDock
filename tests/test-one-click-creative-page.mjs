@@ -149,7 +149,8 @@ for (const text of [
 for (const text of [
   zh.inputLabel,
   zh.researchToggle,
-  zh.submitButton,
+  '生成动态视频',
+  '启动白板创作 Agent',
   zh.chatGreeting,
   zh.creativeInputPlaceholder,
 ]) {
@@ -401,7 +402,8 @@ assert.match(page, /async function pollWorkflow\(\) \{[\s\S]*persistTasks\(prev 
 assert.doesNotMatch(page, /async function pollWorkflow\(\) \{[\s\S]*persistTasks\(prev => upsertTask\(prev, \{/, 'Polling workflow refreshes should not move the selected task to the top');
 assert.match(page, /const isDetailRoute = Boolean\(routeWorkflowId\)/, 'Creative detail mode should be derived from the route workflow id');
 assert.match(page, /!\s*isDetailRoute\s*&&\s*\(/, 'Creative input composer should be hidden on task detail routes');
-assert.match(page, /<CreativeComposer[\s\S]*setMode=\{setMode\}/, 'OneClickCreativePage should pass setMode into CreativeComposer');
+assert.match(page, /<CreativeComposer[\s\S]*creationModeId=\{creationModeId\}/, 'OneClickCreativePage should pass the selected creation mode into CreativeComposer');
+assert.match(page, /onCreationModeChange=\{value => \{ if \(!isBusy && !hasPendingAssetRequest\) setCreationModeId\(value\); \}\}/, 'Creation mode changes should be blocked during creation and asset requests');
 assert.match(page, /sidebarCollapsed/, 'OneClickCreativePage should track collapsed task sidebar state');
 assert.match(page, /setSidebarCollapsed/, 'OneClickCreativePage should toggle the task sidebar');
 assert.match(creativeSidebar, /aria-label="收起任务列表"/, 'Task sidebar collapse control should be a real button');
@@ -420,18 +422,18 @@ assert.match(page, /<section className="min-h-0 min-w-0 overflow-auto bg-white">
 assert.doesNotMatch(page, /<Bot\s+size=\{15\}/, 'Prompt quick actions should remove the smart video pill in every mode');
 assert.ok(!page.includes('智能成片'), 'Prompt quick actions should not render smart video copy');
 assert.match(page, /const hasPendingAssetRequest = uploadedAssets\.some\(asset => \['uploading', 'updating_requirement', 'deleting'\]\.includes\(asset\.status\)\)/, 'Upload, PATCH, and DELETE requests should participate in submit gating');
-assert.match(page, /const submitDisabled = isBusy \|\| !input\.trim\(\) \|\| hasPendingAssetRequest/, 'Submit should be disabled while busy, input is empty, or an asset request is pending');
+assert.match(page, /const submitDisabled = isBusy \|\| \(isWhiteboard \? Boolean\(validateWhiteboardDraft\(whiteboardDraft\)\) \|\| modeCatalog\.status !== 'ready' : !input\.trim\(\) \|\| hasPendingAssetRequest\)/, 'Submit should validate the selected mode and keep HyperFrames asset requests guarded');
 assert.match(creativeComposer, /disabled=\{submitDisabled\}/, 'Submit button should use the combined disabled state');
 assert.ok(!page.includes(zh.assetNotice), 'Expert mode should not show the future asset-context notice copy');
 assert.doesNotMatch(page, /AssetContextNotice/, 'Expert mode should not render a second asset-context notice below the developing hint');
 // 未激活态样式已迁移到 opendesign token（border-line-1 / text-fg-3），不再用 hex
 assert.match(creativeComposer, /useResearch[\s\S]*?border-line-1 bg-white text-fg-3/, 'Research button should have an explicit inactive state');
-assert.match(page, /if \(isBusy \|\| !trimmed \|\| uploadedAssetsRef\.current\.some\(asset => \['uploading', 'updating_requirement', 'deleting'\]\.includes\(asset\.status\)\)\) \{/, 'Submit handler should independently reject busy, empty, and pending-asset races');
+assert.match(page, /if \(isBusy \|\| !trimmed \|\| \(!isWhiteboard && uploadedAssetsRef\.current\.some\(asset => \['uploading', 'updating_requirement', 'deleting'\]\.includes\(asset\.status\)\)\)\) \{/, 'Submit handler should independently reject busy, empty, and HyperFrames pending-asset races');
 assert.match(page, /assetIds: uploadedAssetsRef\.current[\s\S]*filter\(asset => asset\.status === 'ready' && asset\.upload_id\)[\s\S]*map\(asset => asset\.upload_id\)/, 'Create payload should include only ready staged upload ids');
 assert.match(creativeComposer, /disabled=\{isBusy\}/, 'CreativeComposer should disable controls while busy');
 assert.match(page, /grid h-screen min-h-screen overflow-hidden bg-white/, 'OneClickCreativePage should use a dedicated chat shell');
 assert.match(creativeSidebar, /<aside className="relative grid[^"]*grid-rows-\[auto_auto_auto_minmax\(0,1fr\)_auto\]/, 'CreativeSidebar should render a left task sidebar');
-assert.match(creativeComposer, /className="grid min-h-0 w-\[min\(100%,776px\)\] gap-2\.5/, 'CreativeComposer should render a central prompt composer');
+assert.match(creativeComposer, /className="grid min-h-0 w-\[min\(100%,776px\)\] gap-3/, 'CreativeComposer should render a central prompt composer');
 assert.ok(!styles.includes('.creativeChatShell'), 'creative chat shell layout should be inline Tailwind, not styles.css');
 assert.ok(!styles.includes('.creativeTaskSidebar'), 'creative task sidebar layout should be inline Tailwind, not styles.css');
 assert.match(creativeSidebar, /grid-rows-\[auto_auto_auto_minmax\(0,1fr\)_auto\]/, 'Task sidebar should keep settings visible while only the task list scrolls');

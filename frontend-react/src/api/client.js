@@ -1,5 +1,10 @@
 async function requestJson(url, options) {
-  const response = await fetch(url, options);
+  let response;
+  try {
+    response = await fetch(url, options);
+  } catch (cause) {
+    throw new Error('无法连接服务，请检查网络或确认 MuseDock 服务已启动。', { cause });
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     let message = data.message || data.error || '';
@@ -114,6 +119,17 @@ function streamJsonSse(url, payload, handlers = {}) {
 }
 
 export const api = {
+  getCreationModes() {
+    return requestJson('/api/creative-workflows/modes');
+  },
+  actOnWhiteboardWorkflow(workflowId, payload) {
+    return requestJson(`/api/creative-workflows/${encodeURIComponent(workflowId)}/whiteboard/actions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    });
+  },
+  getWhiteboardArtifact(workflowId, attemptId) {
+    return requestJson(`/api/creative-workflows/${encodeURIComponent(workflowId)}/whiteboard/attempts/${encodeURIComponent(attemptId)}`);
+  },
   getAiModels() {
     return requestJson('/api/config/ai-models');
   },

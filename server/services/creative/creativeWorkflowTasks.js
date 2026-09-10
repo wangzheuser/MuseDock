@@ -263,6 +263,8 @@ async function startCreativeWorkflowTask(workflowId, options = {}) {
       message: '后台创作任务注册表未配置，无法启动创作任务。',
     };
   }
+  const activeTask = registry.activeTaskForWorkflow(workflowId);
+  if (activeTask?.status === 'running') return { success: false, workflow_id: String(workflowId), active_task: activeTask, message: '当前创作任务仍在运行，请等待结束后再操作。' };
   const creativeWorkflows = {
     ...defaultCreativeWorkflows,
     ...(options.services?.creativeWorkflows || {}),
@@ -318,6 +320,7 @@ async function startCreativeWorkflowTask(workflowId, options = {}) {
     try {
       const result = await creativeWorkflows.runCreativeWorkflow(workflowId, {
         ...(options.workflowOptions || {}),
+        rootDir: options.workflowOptions?.rootDir || rootDir,
         taskContext,
       });
       if (result && result.success === false && result.status === 'deleted') {
@@ -349,7 +352,9 @@ async function startCreativeWorkflowTask(workflowId, options = {}) {
       }
 
       await Promise.allSettled([...pendingEventWrites]);
-      await registry.markDoneAfter(taskId, '创作任务已完成。', terminalEvent => patchTerminalTaskSummaryOrThrow({
+      const isWhiteboard = result?.creationModeId === 'whiteboard-stream-v1';
+      const completionMessage = isWhiteboard ? (result.message || '本轮白板方案已处理完成。') : '创作任务已完成。';
+      await registry.markDoneAfter(taskId, completionMessage, terminalEvent => patchTerminalTaskSummaryOrThrow({
         registry,
         taskId,
         workflowId,
@@ -361,10 +366,10 @@ async function startCreativeWorkflowTask(workflowId, options = {}) {
           active_operation_id: '',
           task_status: 'done',
           current_stage: '',
-          current_stage_message: '创作任务已完成。',
+          current_stage_message: completionMessage,
           current_progress: 100,
-          status: 'done',
-          message: '创作任务已完成。',
+          status: isWhiteboard ? result.status : 'done',
+          message: completionMessage,
           error: null,
           last_event_seq: terminalEvent.seq,
         },
@@ -710,7 +715,7 @@ async function recoverOrphanedWorkflows(options = {}) {
   const records = await creativeWorkflows.listCreativeWorkflowRecords({ rootDir });
   let recovered = 0;
   for (const record of records) {
-    if ((record.status === 'done' || record.status === 'failed') && record.active_task_id) {
+    if (['done', 'failed', 'waiting_approval', 'phase0_complete', 'unknown_external_outcome'].includes(record.status) && record.active_task_id) {
       await creativeWorkflows.patchCreativeWorkflowTaskSummary(record.workflow_id, {
         active_task_id: '',
         active_operation_id: '',

@@ -1,3 +1,5 @@
+const { readModeSnapshot } = require('./creationModes');
+
 function isPlainObject(value) {
   if (!value || typeof value !== 'object') {
     return false;
@@ -83,11 +85,12 @@ function normalizeCreativeWorkflowDto(workflow) {
 
   return {
     success: true,
+    ...readModeSnapshot(workflow),
     workflow_id: safeString(workflow.workflow_id),
     status: safeString(workflow.status),
     message: safeString(workflow.message),
-    title: firstString(project.title, hyperframes.title, workflow.title),
-    input: firstString(workflow.creative_context?.input?.raw_text, workflow.input),
+    title: firstString(workflow.whiteboard?.current?.artifact?.title, project.title, hyperframes.title, workflow.title),
+    input: firstString(workflow.creative_context?.input?.raw_text, workflow.input?.content, typeof workflow.input === 'string' ? workflow.input : ''),
     created_at: safeString(workflow.created_at),
     updated_at: safeString(workflow.updated_at),
     active_task: workflow.active_task ?? null,
@@ -109,6 +112,7 @@ function normalizeCreativeWorkflowSummary(workflow) {
   const dto = normalizeCreativeWorkflowDto(workflow);
 
   return {
+    ...(isPlainObject(workflow) ? readModeSnapshot(workflow) : {}),
     workflow_id: dto.workflow_id || safeString(workflow?.workflow_id),
     status: dto.status || safeString(workflow?.status),
     message: dto.message || safeString(workflow?.message),

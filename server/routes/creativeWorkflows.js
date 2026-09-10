@@ -61,6 +61,8 @@ function getMessage(result, fallback) {
 }
 
 function getStatusCode(result) {
+  if (Number.isInteger(result?.statusCode)) return result.statusCode;
+  if (result?.code === 'MODE_ACTION_UNSUPPORTED') return 409;
   if (
     result?.code === 'NOT_FOUND'
     || result?.code === 'NO_SCENE_SPEC'
@@ -169,6 +171,52 @@ router.delete('/assets/uploads/:uploadId', async (req, res) => {
     const detail = safeString(error?.message);
     const message = /^上传|^删除/.test(detail) ? detail : `删除暂存图片失败：${detail || '请重试。'}`;
     return res.status(/已认领/.test(message) ? 409 : 400).json({ success: false, message });
+  }
+});
+
+router.get('/modes', async (req, res) => {
+  const service = getService(req);
+  return res.json(await (service.listCreationModes || defaultCreativeWorkflows.listCreationModes)());
+});
+
+router.post('/:workflow_id/whiteboard/actions', async (req, res) => {
+  const validation = validateWorkflowId(req.params.workflow_id);
+  if (!validation.success) return res.status(400).json(validation);
+  const workflowId = validation.workflow_id;
+  const service = getService(req);
+  if (typeof service.actOnWhiteboardWorkflow !== 'function') return res.status(501).json({ success: false, message: '当前服务尚未支持白板创作，请更新服务端。' });
+  const registry = getTaskRegistry(req);
+  const action = req.body?.action;
+  if (action !== 'ask_status' && registry?.activeTaskForWorkflow(workflowId)?.status === 'running') {
+    return res.status(409).json({ success: false, message: '当前方案仍在处理中，请等待本轮执行结束后再操作。' });
+  }
+  try {
+    const result = await service.actOnWhiteboardWorkflow(workflowId, req.body || {});
+    if (!result?.success) return res.status(getStatusCode(result)).json(result || { success: false, message: '白板操作失败。' });
+    if (!result.startTask) return res.json(result);
+    const started = await getTaskService(req).startCreativeWorkflowTask(workflowId, {
+      registry, services: { creativeWorkflows: service },
+    });
+    if (!started?.success) {
+      await service.patchCreativeWorkflowTaskSummary?.(workflowId, { task_status: 'failed', fail_running_stages: true });
+      return res.status(500).json({ success: false, workflow_id: workflowId, message: started?.message || '白板版本已保存，但后台启动失败，请刷新任务后重试。' });
+    }
+    return res.status(202).json({ ...result, task_id: started.task_id, active_task: started.active_task });
+  } catch {
+    return res.status(500).json({ success: false, workflow_id: workflowId, message: '白板操作失败，请检查服务连接和本地存储后重试。' });
+  }
+});
+
+router.get('/:workflow_id/whiteboard/attempts/:attempt_id', async (req, res) => {
+  const validation = validateWorkflowId(req.params.workflow_id);
+  if (!validation.success) return res.status(400).json(validation);
+  const service = getService(req);
+  if (typeof service.getWhiteboardArtifact !== 'function') return res.status(501).json({ success: false, message: '当前服务尚未支持白板版本读取。' });
+  try {
+    const result = await service.getWhiteboardArtifact(validation.workflow_id, req.params.attempt_id);
+    return res.status(result.success ? 200 : getStatusCode(result)).json(result);
+  } catch {
+    return res.status(500).json({ success: false, message: '读取白板版本失败，请稍后重试。' });
   }
 });
 

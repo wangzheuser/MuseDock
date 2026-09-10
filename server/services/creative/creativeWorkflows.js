@@ -1,5 +1,9 @@
 const fsp = require('fs/promises');
 const path = require('path');
+const { HYPERFRAMES_MODE, WHITEBOARD_MODE, MODES, getCreationMode, createModeSnapshot, readModeSnapshot } = require('./creationModes');
+const whiteboardWorkflows = require('./whiteboard/whiteboardWorkflows');
+const { VISUAL_PRESETS, LANGUAGES, WhiteboardError } = require('./whiteboard/contracts');
+const { getArtifactRoot, readArtifact: readWhiteboardArtifact } = require('./whiteboard/artifactStore');
 
 const creativeContext = require('./creativeContext');
 const defaultResearchService = require('../researchService');
@@ -262,13 +266,13 @@ function summarizeVisualRoute(project = {}) {
 }
 
 function updateStage(record, stageId, patch = {}) {
-  record.stages = normalizeStages(record.stages);
+  record.stages = normalizeStages(record.stages, readModeSnapshot(record).stageSchemaSnapshot);
   record.stages = record.stages.map(stage => (
     stage.id === stageId
       ? {
         ...stage,
         id: stageId,
-        label: STAGE_LABELS[stageId],
+        label: STAGE_LABELS[stageId] || stage.label,
         ...patch,
       }
       : stage
@@ -626,6 +630,7 @@ function buildFreeformTargetOptions(target = {}) {
 
 function createWorkflowSummary(record) {
   return {
+    ...readModeSnapshot(record),
     success: record.success !== false,
     workflow_id: record.workflow_id,
     aweme_id: record.aweme_id,
@@ -640,7 +645,7 @@ function createWorkflowSummary(record) {
     current_stage_message: record.current_stage_message || '',
     current_progress: Number.isFinite(record.current_progress) ? record.current_progress : 0,
     last_event_seq: Number.isFinite(record.last_event_seq) ? record.last_event_seq : 0,
-    stages: normalizeStages(record.stages),
+    stages: normalizeStages(record.stages, readModeSnapshot(record).stageSchemaSnapshot),
     creative_context: record.creative_context,
     source_context: record.source_context,
     research_context: record.research_context,
@@ -652,10 +657,49 @@ function createWorkflowSummary(record) {
   };
 }
 
+function listCreationModes() {
+  return { success: true, modes: structuredClone(MODES), whiteboard: { visualPresets: structuredClone(VISUAL_PRESETS), languages: structuredClone(LANGUAGES) } };
+}
+
+async function actOnWhiteboardWorkflow(workflowId, payload = {}, options = {}) {
+  try {
+    return await whiteboardWorkflows.actOnWhiteboardWorkflow(workflowId, payload, { ...options, services: resolveServices(options) });
+  } catch (error) {
+    return {
+      success: false, workflow_id: workflowId,
+      code: error.code === 'ENOENT' ? 'NOT_FOUND' : (error.code || 'WHITEBOARD_FAILED'),
+      statusCode: error.code === 'ENOENT' ? 404 : (error.statusCode || 500),
+      message: error instanceof WhiteboardError ? error.message : (error.code === 'ENOENT' ? '未找到创作任务。' : '白板操作失败，请检查本地存储后重试。'),
+    };
+  }
+}
+
+async function getWhiteboardArtifact(workflowId, attemptId, options = {}) {
+  try {
+    const record = await readWorkflow(workflowId, options.rootDir);
+    whiteboardWorkflows.assertContract(record);
+    const attempt = record.whiteboard.attempts.find(item => item.id === attemptId);
+    if (!attempt?.binding) return { success: false, code: 'NOT_FOUND', message: '该版本尚未产生有效方案。' };
+    const artifact = await readWhiteboardArtifact(record, attempt.binding, options.rootDir);
+    return { success: true, attemptId, identity: attempt.binding.identity, current: record.whiteboard.current?.attemptId === attemptId && !record.whiteboard.current.stale, artifact };
+  } catch (error) {
+    return { success: false, code: error.code || 'ARTIFACT_INVALID', statusCode: error.statusCode || 404, message: error instanceof WhiteboardError ? error.message : '未找到白板方案文件。' };
+  }
+}
+
 async function createCreativeWorkflow(payload = {}, options = {}) {
   const rootDir = options.rootDir || DEFAULT_ROOT;
   const mediaRoot = options.mediaRoot || DEFAULT_MEDIA_ROOT;
   const services = resolveServices(options);
+  const creationModeId = payload.creationModeId || HYPERFRAMES_MODE;
+  if (!getCreationMode(creationModeId)) return { success: false, code: 'CREATION_MODE_UNSUPPORTED', message: '不支持的创作模式，请重新选择。' };
+  if (creationModeId === WHITEBOARD_MODE) {
+    try {
+      return await whiteboardWorkflows.createWhiteboardWorkflow(payload, { ...options, services });
+    } catch (error) {
+      return { success: false, code: error.code || 'WHITEBOARD_FAILED', message: error instanceof WhiteboardError ? error.message : '创建白板任务失败，请检查本地存储后重试。' };
+    }
+  }
   const now = getNow(services);
   const creativeDefaults = await services.appSettings.getCreativeDefaults(options);
   const snapshot = buildCreativeDefaultsSnapshot(
@@ -726,6 +770,7 @@ async function createCreativeWorkflow(payload = {}, options = {}) {
   sourceStage.message = '来源资料已进入准备队列。';
 
   const record = {
+    ...createModeSnapshot(creationModeId),
     success: true,
     workflow_id: workflowId,
     aweme_id: awemeId,
@@ -949,6 +994,12 @@ async function runCreativeWorkflow(workflowId, options = {}) {
     };
   }
 
+  if (record.creationModeId === WHITEBOARD_MODE) {
+    return whiteboardWorkflows.runWhiteboardWorkflow(workflowId, { ...options, services });
+  }
+  if (record.creationModeId !== HYPERFRAMES_MODE || record.creationModeContractVersion !== 1) {
+    return { success: false, workflow_id: workflowId, code: 'CONTRACT_UNSUPPORTED', message: '当前创作模式或合同版本不受支持，不能继续执行。' };
+  }
   if (options.skipValidation === undefined && record.skipValidation === true) {
     options = { ...options, skipValidation: true };
   }
@@ -1160,6 +1211,9 @@ async function getCreativeWorkflow(workflowId, options = {}) {
   try {
     const record = await readWorkflow(workflowId, rootDir);
     const nextRecord = await markStaleRunningStageFailed(record, rootDir, services, options);
+    if (nextRecord.creationModeId === WHITEBOARD_MODE) {
+      return { success: true, data: await whiteboardWorkflows.getView(nextRecord, { ...options, rootDir }) };
+    }
     const beforeHydrate = assetHydrationFingerprint(nextRecord);
     await syncProjectStageSummariesFromProjectDir(nextRecord, extractHtmlVideoProjectPathFromWorkflow(nextRecord), { mediaRoot });
     const afterHydrate = assetHydrationFingerprint(nextRecord);
@@ -1189,7 +1243,7 @@ function resolveTaskRegistry(rootDir, options = {}) {
 
 function findStaleRunningStage(record, nowMs, timeoutMs) {
   if (record?.status !== 'running') return null;
-  const stages = normalizeStages(record.stages);
+  const stages = normalizeStages(record.stages, readModeSnapshot(record).stageSchemaSnapshot);
   return stages.find(stage => {
     if (stage.status !== 'running') return false;
     const stageTime = parseDateMs(stage.updated_at || stage.started_at || record.updated_at);
@@ -1209,6 +1263,19 @@ async function markStaleRunningStageFailed(record, rootDir, services = {}, optio
   }
   const stage = findStaleRunningStage(record, nowMs, timeoutMs);
   if (!stage) return record;
+  if (record.creationModeId === WHITEBOARD_MODE) {
+    return withWorkflowFileQueue(getWorkflowPath(record.workflow_id, rootDir), async () => {
+      const latest = await readWorkflow(record.workflow_id, rootDir);
+      const latestTask = taskRegistry?.activeTaskForWorkflow?.(latest.workflow_id);
+      if (latestTask?.status === 'running') {
+        latest.active_task = latestTask;
+        return latest;
+      }
+      if (!findStaleRunningStage(latest, nowMs, timeoutMs)) return latest;
+      whiteboardWorkflows.recoverInterruptedRecord(latest, now);
+      return persistWorkflowUnlocked(latest, rootDir);
+    });
+  }
 
   const message = `${stage.label || STAGE_LABELS[stage.id] || '当前阶段'}长时间未更新，后台任务可能已中断，请重新创建任务或稍后重试。`;
   await markStage(record, stage.id, 'failed', message, now, {
@@ -1241,6 +1308,23 @@ async function patchCreativeWorkflowTaskSummaryUnlocked(workflowId, patch = {}, 
     const seq = Number(patch.last_event_seq ?? record.last_event_seq);
     if (Number.isFinite(seq) && seq > 0 && Number(record.last_event_seq) > seq) {
       return { success: true, workflow_id: record.workflow_id, data: record };
+    }
+    if (record.creationModeId === WHITEBOARD_MODE) {
+      // 后台 task 的 done 只表示这一轮执行结束，不能替代业务 Gate 或覆盖用户批准。
+      if (patch.fail_running_stages === true || (patch.task_status === 'failed' && ['queued', 'running'].includes(record.status))) {
+        whiteboardWorkflows.recoverInterruptedRecord(record, now);
+      }
+      record.active_task_id = safeString(patch.active_task_id ?? record.active_task_id);
+      record.active_operation_id = safeString(patch.active_operation_id ?? record.active_operation_id);
+      record.task_status = safeString(patch.task_status ?? record.task_status);
+      record.last_event_seq = Number.isFinite(seq) && seq > 0 ? Math.floor(seq) : 0;
+      if (record.status === 'running' && patch.task_status === 'running' && patch.current_stage === 'content_plan') {
+        record.current_stage_message = safeString(patch.current_stage_message) || record.message;
+        record.current_progress = Math.max(0, Math.min(70, Number(patch.current_progress) || 0));
+      }
+      record.updated_at = now;
+      const persisted = await persistWorkflowUnlocked(record, rootDir, workflowPath);
+      return { success: true, workflow_id: record.workflow_id, data: persisted };
     }
     record.active_task_id = safeString(patch.active_task_id ?? record.active_task_id);
     record.active_operation_id = safeString(patch.active_operation_id ?? record.active_operation_id);
@@ -1325,6 +1409,11 @@ async function deleteCreativeWorkflow(workflowId, options = {}) {
 
   const workflowPath = getWorkflowPath(id, rootDir);
   const mediaDir = path.resolve(mediaRoot, id);
+  if (!isPathInside(mediaDir, mediaRoot)) return { success: false, workflow_id: id, message: '创作任务媒体路径越界。' };
+  return withWorkflowFileQueue(workflowPath, () => deleteCreativeWorkflowUnlocked(id, rootDir, workflowPath, mediaDir));
+}
+
+async function deleteCreativeWorkflowUnlocked(id, rootDir, workflowPath, mediaDir) {
   const deleted = { workflow: false, media: false };
 
   try {
@@ -1338,6 +1427,7 @@ async function deleteCreativeWorkflow(workflowId, options = {}) {
 
   try {
     await fsp.rm(mediaDir, { recursive: true, force: true });
+    await fsp.rm(getArtifactRoot(id, rootDir), { recursive: true, force: true });
     deleted.media = true;
   } catch (error) {
     if (error?.code !== 'ENOENT') {
@@ -1367,6 +1457,14 @@ async function recoverStaleWorkflowsOnStartup(services = {}) {
     let record;
     try { record = await readJson(filePath); } catch { continue; }
     if (!record) continue;
+    if (record.creationModeId === WHITEBOARD_MODE) {
+      if (['queued', 'running'].includes(record.status)) {
+        whiteboardWorkflows.recoverInterruptedRecord(record, now);
+        await persistWorkflow(record, rootDir);
+        recovered++;
+      }
+      continue;
+    }
     record.stages = normalizeStages(record.stages);
 
     // 处理 running 状态：有阶段卡在 running
@@ -2476,6 +2574,9 @@ async function getCreativeWorkflowAssetFile(workflowId, assetId, options = {}) {
 }
 
 module.exports = {
+  listCreationModes,
+  actOnWhiteboardWorkflow,
+  getWhiteboardArtifact,
   STAGE_IDS,
   STAGE_LABELS,
   createCreativeWorkflow,

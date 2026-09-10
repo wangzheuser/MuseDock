@@ -307,6 +307,7 @@ async function readWorkflowAndHtmlVideoProject(workflowId, rootDir) {
   } catch {
     return { record: null, project: null, projectDir: '', error: { success: false, code: 'NOT_FOUND', message: '未找到创作任务。' } };
   }
+  if (record.creationModeId !== 'hyperframes-v1') return { record, project: null, projectDir: '', error: { success: false, code: 'MODE_ACTION_UNSUPPORTED', message: '当前创作模式不能执行 HyperFrames 媒体、编辑或恢复操作。' } };
   const projectDir = extractHtmlVideoProjectPathFromWorkflow(record);
   if (!projectDir) {
     return { record, project: null, projectDir: '', error: null };
@@ -359,6 +360,7 @@ async function loadWorkflowWithHtmlVideoProject(workflowId, rootDir) {
   } catch {
     return { record: null, project: null, projectDir: '', error: { success: false, code: 'NOT_FOUND', message: '未找到创作任务。' } };
   }
+  if (record.creationModeId !== 'hyperframes-v1') return { record, project: null, projectDir: '', error: { success: false, code: 'MODE_ACTION_UNSUPPORTED', message: '当前创作模式不能执行 HyperFrames 媒体、编辑或恢复操作。' } };
   const projectDir = extractHtmlVideoProjectPathFromWorkflow(record);
   if (!projectDir) {
     return { record, project: null, projectDir: '', error: { success: false, code: 'NO_HTML_VIDEO_PROJECT', message: '该创作任务尚未生成 html-video 工程。' } };

@@ -1,6 +1,7 @@
 const fsp = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
+const { HYPERFRAMES_STAGES, readModeSnapshot } = require('./creationModes');
 
 const DEFAULT_ROOT = path.join(require('../../dataRoot'), 'data/creative-workflows');
 const DEFAULT_MEDIA_ROOT = path.join(require('../../dataRoot'), 'data/media/douyin');
@@ -129,38 +130,42 @@ function isPathSameOrInside(child, parent) {
   return !relative || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
-function createStages() {
-  return STAGE_IDS.map(id => ({
+function createStages(schema = HYPERFRAMES_STAGES) {
+  return schema.map(({ id, label }) => ({
       id,
-      label: STAGE_LABELS[id],
+      label,
       status: 'pending',
       message: '',
   }));
 }
 
-function normalizeStages(stages) {
+function normalizeStages(stages, schema = HYPERFRAMES_STAGES) {
   if (Array.isArray(stages)) {
     const byId = new Map(stages.map(stage => [stage && stage.id, stage]));
-    return STAGE_IDS.map(id => ({
+    return schema.map(({ id, label }) => ({
       id,
-      label: STAGE_LABELS[id],
+      label,
       status: 'pending',
       message: '',
       ...(byId.get(id) || {}),
+      id,
+      label,
     }));
   }
 
   if (stages && typeof stages === 'object') {
-    return STAGE_IDS.map(id => ({
+    return schema.map(({ id, label }) => ({
       id,
-      label: STAGE_LABELS[id],
+      label,
       status: 'pending',
       message: '',
       ...(stages[id] || {}),
+      id,
+      label,
     }));
   }
 
-  return createStages();
+  return createStages(schema);
 }
 
 function delay(ms) {
@@ -218,7 +223,8 @@ async function readJson(filePath) {
 async function readWorkflow(workflowId, rootDir) {
   const filePath = getWorkflowPath(workflowId, rootDir);
   const record = await readJson(filePath);
-  record.stages = normalizeStages(record.stages);
+  Object.assign(record, readModeSnapshot(record));
+  record.stages = normalizeStages(record.stages, record.stageSchemaSnapshot);
   return record;
 }
 
@@ -237,7 +243,7 @@ async function persistWorkflow(record, rootDir) {
 }
 
 async function persistWorkflowUnlocked(record, rootDir, filePath = getWorkflowPath(record.workflow_id, rootDir)) {
-  record.stages = normalizeStages(record.stages);
+  record.stages = normalizeStages(record.stages, readModeSnapshot(record).stageSchemaSnapshot);
   const nextRecord = {
     ...record,
     path: filePath,

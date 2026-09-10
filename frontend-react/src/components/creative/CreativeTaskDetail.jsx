@@ -7,6 +7,7 @@ import { CreativeRetryPlan } from './CreativeRetryPlan.jsx';
 import { CreativeVisualWarnings } from './CreativeVisualWarnings.jsx';
 import { CreativeTaskSummary } from './CreativeTaskSummary.jsx';
 import { SourceImageAssetsPanel } from './SourceImageAssetsPanel.jsx';
+import { WhiteboardTaskDetail } from './whiteboard/WhiteboardTaskDetail.jsx';
 
 export function CreativeTaskDetail({
   status,
@@ -23,9 +24,13 @@ export function CreativeTaskDetail({
   onStopAndDelete,
   onContinueEdit,
   onRetryWorkflow,
+  onWhiteboardAction,
   getWorkflowVideoUrl,
 }) {
   if (!workflowId && !workflow) return null;
+  if (workflow?.creationModeId === 'whiteboard-stream-v1' && workflow.whiteboard) {
+    return <WhiteboardTaskDetail key={workflow.workflow_id} workflow={workflow} message={message} deletingWorkflowId={deletingWorkflowId} onAction={onWhiteboardAction} onStopAndDelete={onStopAndDelete} />;
+  }
 
   const videoUrl = getWorkflowVideoUrl?.(workflow) || '';
   const isDone = workflow?.status === 'done';
