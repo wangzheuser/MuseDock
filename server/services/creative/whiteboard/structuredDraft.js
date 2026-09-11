@@ -30,6 +30,7 @@ function buildMessages(task, previousArtifact) {
       `候选 schema：${JSON.stringify(task.candidateSchema)}`,
     ].join('\n') },
     { role: 'user', content: JSON.stringify({
+      responseFormat: 'JSON',
       role: task.role, input, productionPlan: task.productionPlan,
       visualStyle: preset, frozenCues, previousArtifact: previousArtifact || null,
       revisionRequest: task.revisionMessage || '',
@@ -53,7 +54,11 @@ async function generateDraft(task, { services = {}, previousArtifact, onRequest,
     try {
       response = await textModel.callTextModel({
         textConfig, messages, temperature: 0.3, maxTokens: 14000,
-        response_format: { type: 'json_object' }, maxRetries: 0,
+        maxOutputTokens: 14000,
+        reasoningEffort: /^(gpt-(5|6)([.-]|$)|o[134])/i.test(textConfig.modelId) ? 'low' : undefined,
+        // Some Responses-compatible reasoning endpoints reject json_object.
+        // The frozen schema and complete local validator remain authoritative.
+        maxRetries: 0,
         fallbackToNonStreamOnGatewayTimeout: false, requestTimeoutMs: 180000,
         fetchImpl: async (...args) => {
           sent = true;

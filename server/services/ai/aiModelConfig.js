@@ -1,5 +1,6 @@
 const fsp = require('fs/promises');
 const path = require('path');
+const { normalizeDoubaoSettings } = require('./doubaoTts');
 
 const DEFAULT_CONFIG_PATH = path.join(require('../../dataRoot'), 'data/config/ai-models.json');
 
@@ -65,6 +66,7 @@ function normalizeProvider(id, input = {}) {
       entry.voiceId = normalizeString(raw.voiceId) || DEFAULT_MINIMAX_VOICE_ID;
       entry.ttsConcurrency = normalizeInteger(raw.ttsConcurrency, 1, 1, 5);
       entry.ttsQueueIntervalMs = normalizeInteger(raw.ttsQueueIntervalMs, 1800, 0, 10000);
+      entry.doubao = normalizeDoubaoSettings(raw.doubao);
     }
     models[type] = entry;
   }
@@ -129,6 +131,7 @@ function migrateOldConfig(old) {
         firstProvider.models[type].voiceId = normalizeString(m.voiceId) || DEFAULT_MINIMAX_VOICE_ID;
         firstProvider.models[type].ttsConcurrency = normalizeInteger(m.ttsConcurrency, 1, 1, 5);
         firstProvider.models[type].ttsQueueIntervalMs = normalizeInteger(m.ttsQueueIntervalMs, 1800, 0, 10000);
+        firstProvider.models[type].doubao = normalizeDoubaoSettings(m.doubao);
       }
       if (m.enabled && m.modelId) {
         active[type] = `${providerId}/${type}`;
@@ -162,6 +165,7 @@ function toPublicConfig(stored) {
         entry.voiceId = m.voiceId;
         entry.ttsConcurrency = m.ttsConcurrency;
         entry.ttsQueueIntervalMs = m.ttsQueueIntervalMs;
+        entry.doubao = m.doubao;
       }
       publicModels[type] = entry;
     }
@@ -235,6 +239,7 @@ function resolveActiveConfig(type, stored) {
     result.voiceId = model.voiceId;
     result.ttsConcurrency = model.ttsConcurrency;
     result.ttsQueueIntervalMs = model.ttsQueueIntervalMs;
+    result.doubao = model.doubao;
   }
   return result;
 }

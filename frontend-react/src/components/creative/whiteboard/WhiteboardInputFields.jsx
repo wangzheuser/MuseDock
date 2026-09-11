@@ -24,6 +24,7 @@ export function ProductionPlanFields({ value, onChange, disabled = false }) {
   const change = (key, next) => onChange({ ...value, [key]: next });
   return (
     <div className="grid gap-4">
+      <LabeledSelect label="旁白方式" value={value.narrationMode || 'enabled'} disabled={disabled} onChange={next => change('narrationMode', next)} options={[{ id: 'enabled', label: '使用设置中的完整旁白服务' }, { id: 'disabled', label: '静音（仅 SRT 输入）' }]} />
       <LabeledSelect label="画笔显示" value={value.handDisplayMode} disabled={disabled} onChange={next => change('handDisplayMode', next)} options={[{ id: 'show', label: '显示画笔' }, { id: 'hide', label: '隐藏画笔' }]} />
       <LabeledSelect label="成片字幕" value={String(value.burnSubtitles)} disabled={disabled} onChange={next => change('burnSubtitles', next === 'true')} options={[{ id: 'true', label: '烧录字幕' }, { id: 'false', label: '不烧录字幕' }]} />
       <LabeledSelect label="后续确认方式" value={String(value.agentApprovalEnabled)} disabled={disabled} onChange={next => change('agentApprovalEnabled', next === 'true')} options={[{ id: 'false', label: '由我逐阶段确认' }, { id: 'true', label: '授权 AI 在允许范围内推进' }]} />
@@ -32,7 +33,7 @@ export function ProductionPlanFields({ value, onChange, disabled = false }) {
         <dt>生图方式</dt><dd>逐幕独立生成</dd>
         <dt>旁白服务</dt><dd>后续使用设置中启用的服务</dd>
       </dl>
-      <p className="m-0 text-xs leading-relaxed text-fg-3">这些选项会随制作方案一起确认。当前版本完成内容与制作方案后停止，后续媒体制作尚未接入。</p>
+      <p className="m-0 text-xs leading-relaxed text-fg-3">这些选项会随制作方案一起确认。确认后可制作完整旁白、连续落墨动画与成片；豆包完整旁白支持 120 秒以内方案。</p>
     </div>
   );
 }

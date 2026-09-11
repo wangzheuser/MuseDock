@@ -1,0 +1,164 @@
+"""MuseDock deterministic media adapter. No providers, state or approvals."""
+from __future__ import annotations
+
+import functools
+import json
+import math
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+
+import stream_primitives as sr
+from region_renderer import RegionStreamRenderer
+from ffmpeg_frame_sink import FFmpegFrameSink
+
+
+def save_image(destination, image):
+    ok, encoded = cv2.imencode('.png', image)
+    if not ok:
+        raise ValueError('图片编码失败。')
+    with Path(destination).open('xb') as stream:
+        stream.write(encoded.tobytes())
+
+
+def normalize_image(data):
+    source = sr._imread_any(data['input'])
+    if source is None or min(source.shape[:2]) < 128 or source.size > 80_000_000:
+        raise ValueError('图片无法解码、尺寸过小或超过像素限制。')
+    height, width = source.shape[:2]
+    scale = min(1920 / width, 1080 / height)
+    target = np.full((1080, 1920, 3), (215, 235, 245), dtype=np.uint8)
+    resized = cv2.resize(source, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
+    h, w = resized.shape[:2]
+    x, y = (1920 - w) // 2, (1080 - h) // 2
+    target[y:y+h, x:x+w] = resized
+    target = sr.normalize_paper_background(target, sr._hex_to_bgr('#F5EBD7'), sr.Config())
+    if np.count_nonzero(cv2.cvtColor(target, cv2.COLOR_BGR2GRAY) < 150) < 100:
+        raise ValueError('生成图片缺少可绘制的有效线稿。')
+    save_image(data['output'], target)
+    return {'width': 1920, 'height': 1080, 'sourceWidth': width, 'sourceHeight': height}
+
+
+def annotation_preview(data):
+    image = sr._imread_any(data['image'])
+    annotation = data['annotation']
+    renderer = RegionStreamRenderer(image, annotation, sr.Config(), None, True, output_size=(1920, 1080))
+    elements = annotation['elements']
+    covered = np.zeros((1080, 1920), dtype=bool)
+    for index, element in enumerate(elements):
+        allowed = renderer._allowed_mask(element, elements[index+1:])
+        if np.count_nonzero(renderer.ink_pixels & allowed) < 10:
+            raise ValueError('标注中存在没有有效墨迹的区域，请重新规划区域。')
+        covered |= allowed
+    total = np.count_nonzero(renderer.ink_pixels)
+    coverage = np.count_nonzero(renderer.ink_pixels & covered) / max(total, 1)
+    if coverage < 0.97:
+        raise ValueError('标注未完整覆盖线稿，不能在末尾突然显示遗漏内容。')
+    canvas = Image.fromarray(cv2.cvtColor(renderer.color_img, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(canvas)
+    font = ImageFont.truetype(data['font'], 28)
+    colors = ['#D94A35', '#167D9A', '#74713B']
+    for index, element in enumerate(elements):
+        rect = element['region']
+        x, y, w, h = [rect[key] for key in ('x', 'y', 'width', 'height')]
+        color = colors[index % len(colors)]
+        draw.rectangle([x, y, x+w-1, y+h-1], outline=color, width=4)
+        label = f"{index+1}. {element.get('label', '')}"
+        draw.text((x+8, max(4, y+6)), label, font=font, fill=color, stroke_width=2, stroke_fill='#F5EBD7')
+        for protected in element['reveal'].get('protectedRegions', []):
+            px, py, pw, ph = [protected[key] for key in ('x', 'y', 'width', 'height')]
+            draw.rectangle([px, py, px+pw-1, py+ph-1], outline='#6B7280', width=3)
+    with Path(data['output']).open('xb') as stream:
+        canvas.save(stream, format='PNG')
+    return {'coverageRatio': round(coverage, 5), 'regions': len(elements)}
+
+
+def hidden_popen(*args, **kwargs):
+    if os.name == 'nt':
+        kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+    return subprocess.Popen(*args, **kwargs)
+
+
+def render(data):
+    image = sr._imread_any(data['image'])
+    if image is None:
+        raise ValueError('当前线稿无法读取。')
+    annotation = data['annotation']
+    hand = Path(__file__).resolve().parent.parent / 'assets/drawing-hand.png'
+    if data['showHand'] and not hand.is_file():
+        raise ValueError('画笔素材缺失。')
+    config = sr.Config(fps=60, cap_long_edge=1920, ink_path_mode='skeleton', pause_mode='off')
+    renderer = RegionStreamRenderer(image, annotation, config, hand if data['showHand'] else None,
+                                    not data['showHand'], output_size=(1920, 1080))
+    sink = functools.partial(FFmpegFrameSink, ffmpeg_executable=data['ffmpeg'], preset='fast',
+                             encoder_threads=2, popen_factory=hidden_popen)
+    renderer.render_to(Path(data['output']), data['durationMs'], target_frame_count=data['frameCount'],
+                       scene_start_ms=data['startMs'], scene_start_frame=data['startFrame'], sink_factory=sink)
+    return {'width': 1920, 'height': 1080, 'fps': 60, 'frameCount': data['frameCount']}
+
+
+def caption_lines(text, font):
+    text = text.replace('\r', '').strip()
+    explicit = text.split('\n')
+    if len(explicit) <= 2 and all(font.getlength(line) <= 1728 for line in explicit):
+        return explicit
+    text = ' '.join(explicit)
+    candidates = []
+    for index in range(1, len(text)):
+        # Keep English words intact; Chinese can break between characters.
+        if text[index-1].isascii() and text[index].isascii() and text[index-1].isalnum() and text[index].isalnum():
+            continue
+        left, right = text[:index].rstrip(), text[index:].lstrip()
+        a, b = font.getlength(left), font.getlength(right)
+        if max(a, b) <= 1728:
+            candidates.append((abs(a-b), left, right))
+    if not candidates:
+        raise ValueError('单条字幕无法放入两行，请缩短字幕分段。')
+    _, left, right = min(candidates)
+    return [left, right]
+
+
+def ass_time(ms, ceil=False):
+    ticks = math.ceil(ms / 10) if ceil else math.floor(ms / 10)
+    return f'{ticks // 360000}:{ticks // 6000 % 60:02}:{ticks // 100 % 60:02}.{ticks % 100:02}'
+
+
+def compile_subtitles(data):
+    font = ImageFont.truetype(data['font'], 48)
+    header = '[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 2\nScaledBorderAndShadow: yes\n\n'
+    header += '[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n'
+    header += f'Style: Default,{font.getname()[0]},48,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,3,0,2,96,96,54,1\n\n'
+    header += '[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n'
+    for cue in data['cues']:
+        # Source text cannot introduce ASS override commands. Line breaks belong to this compiler.
+        lines = [line.replace('\\', '＼').replace('{', '｛').replace('}', '｝') for line in caption_lines(cue['text'], font)]
+        text = '\\N'.join(lines)
+        header += f"Dialogue: 0,{ass_time(cue['startMs'])},{ass_time(cue['endMs'], True)},Default,,0,0,0,,{text}\n"
+    with Path(data['output']).open('x', encoding='utf-8') as stream:
+        stream.write(header)
+    return {'cueCount': len(data['cues']), 'fontFamily': font.getname()[0]}
+
+
+def main():
+    data = json.load(sys.stdin)
+    commands = {'normalize-image': normalize_image, 'annotation-preview': annotation_preview,
+                'render': render, 'subtitles': compile_subtitles}
+    if data['command'] == 'doctor':
+        result = {'opencv': cv2.__version__, 'numpy': np.__version__, 'python': sys.version.split()[0]}
+    else:
+        result = commands[data['command']](data)
+    print(json.dumps({'success': True, **result}, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as exc:
+        message = str(exc) if isinstance(exc, ValueError) else '白板本地媒体处理失败，请检查运行环境与当前产物。'
+        print(json.dumps({'success': False, 'message': message, 'errorType': type(exc).__name__}, ensure_ascii=False))
+        sys.exit(1)

@@ -29,7 +29,7 @@ export function CreativeTaskDetail({
 }) {
   if (!workflowId && !workflow) return null;
   if (workflow?.creationModeId === 'whiteboard-stream-v1' && workflow.whiteboard) {
-    return <WhiteboardTaskDetail key={workflow.workflow_id} workflow={workflow} message={message} deletingWorkflowId={deletingWorkflowId} onAction={onWhiteboardAction} onStopAndDelete={onStopAndDelete} />;
+    return <WhiteboardTaskDetail key={workflow.workflow_id} workflow={workflow} message={message} deletingWorkflowId={deletingWorkflowId} onAction={onWhiteboardAction} onStopAndDelete={onStopAndDelete} progressEvents={progressEvents} />;
   }
 
   const videoUrl = getWorkflowVideoUrl?.(workflow) || '';

@@ -18,7 +18,7 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node start-server.js",
-    "restart": "powershell -NoProfile -Command \"$pids = Get-NetTCPConnection -LocalPort 3000,5173 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique; if ($pids) { Stop-Process -Id $pids -Force }\" && npm run dev",
+    "restart": "node scripts/restart-dev.cjs",
     "dev:frontend": "vite --config frontend-react/vite.config.js",
     "build:frontend": "vite build --config frontend-react/vite.config.js",
     "electron": "electron .",
@@ -27,6 +27,7 @@
     "test": "node tests/run-all.js",
     "test:filter": "node tests/run-all.js",
     "test:ai-text": "node tests/test-ai-text-model.js",
+    "setup:whiteboard": "node scripts/setup-whiteboard.cjs",
     "eval:quality": "node scripts/quality-eval/index.js"
   },
   "dependencies": {
@@ -67,6 +68,8 @@
       "electron/**/*",
       "server/**/*",
       "!server/**/*.backup",
+      "!server/**/__pycache__/**",
+      "scripts/setup-whiteboard.cjs",
       "frontend-dist/**/*",
       "docs/frame/**/*",
       "assets/**/*"

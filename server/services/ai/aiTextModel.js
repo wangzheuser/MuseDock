@@ -442,16 +442,18 @@ function toAnthropicMessages(messages = [], response_format) {
   return { messages: result, system: system.join('\n\n') };
 }
 
-function buildOpenAiResponsesBody({ modelId, messages, temperature, tools, tool_choice, response_format }) {
+function buildOpenAiResponsesBody({ modelId, messages, temperature, tools, tool_choice, response_format, reasoningEffort, maxOutputTokens }) {
   const { input, instructions } = toOpenAiInput(messages);
   return JSON.stringify({
     model: modelId,
     input,
     ...(instructions ? { instructions } : {}),
-    temperature,
+    ...(reasoningEffort ? {} : { temperature }),
     ...(tools ? { tools: normalizeToolsForOpenAi(tools) } : {}),
     ...(tool_choice ? { tool_choice } : {}),
     ...(response_format ? { text: { format: response_format } } : {}),
+    ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
+    ...(Number.isInteger(maxOutputTokens) && maxOutputTokens > 0 ? { max_output_tokens: maxOutputTokens } : {}),
   });
 }
 
@@ -492,7 +494,7 @@ function getAbortErrorMessage(error, timeoutMs) {
   return `分析模型请求超时：${Math.round(Number(timeoutMs) / 1000)} 秒内未返回结果。`;
 }
 
-async function postModelRequest({ protocol, baseUrl, apiKey, modelId, messages, temperature, fetchImpl, timeoutMs, tools, tool_choice, response_format, maxTokens }) {
+async function postModelRequest({ protocol, baseUrl, apiKey, modelId, messages, temperature, fetchImpl, timeoutMs, tools, tool_choice, response_format, maxTokens, reasoningEffort, maxOutputTokens }) {
   const timeout = createTimeoutSignal(timeoutMs);
   const resolvedProtocol = normalizeProtocol(protocol);
   const isAnthropic = resolvedProtocol === 'anthropic-messages';
@@ -509,7 +511,7 @@ async function postModelRequest({ protocol, baseUrl, apiKey, modelId, messages, 
       },
       body: isAnthropic
         ? buildAnthropicMessagesBody({ modelId, messages, temperature, tools, response_format, maxTokens })
-        : buildOpenAiResponsesBody({ modelId, messages, temperature, tools, tool_choice, response_format }),
+        : buildOpenAiResponsesBody({ modelId, messages, temperature, tools, tool_choice, response_format, reasoningEffort, maxOutputTokens }),
       signal: timeout.signal,
     });
     if (response && typeof response === 'object') {
@@ -578,6 +580,8 @@ async function callTextModel(options = {}) {
     tool_choice,
     response_format,
     maxTokens,
+    reasoningEffort,
+    maxOutputTokens,
   } = options;
 
   const log = logger && typeof logger === 'object' ? logger : null;
@@ -631,6 +635,8 @@ async function callTextModel(options = {}) {
         tool_choice,
         response_format,
         maxTokens,
+        reasoningEffort,
+        maxOutputTokens,
       });
       lastFetchError = null;
     } catch (error) {

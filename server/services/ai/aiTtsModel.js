@@ -1,4 +1,6 @@
 const aiModelConfig = require('./aiModelConfig');
+const { callDoubaoTts, DOUBAO_MODEL, normalizeDoubaoSettings } = require('./doubaoTts');
+const { callMiniMaxNativeTts } = require('./minimaxNativeTts');
 
 const DEFAULT_MIMO_BASE_URL = 'https://api.xiaomimimo.com/v1';
 const DEFAULT_MIMO_TTS_MODEL = 'mimo-v2.5-tts';
@@ -107,16 +109,17 @@ async function resolveTtsRuntime(options = {}) {
   const storedEnabled = storedConfig?.enabled === true && !!storedConfig.apiKey;
   const provider = normalizeProvider(env.TTS_PROVIDER || (storedEnabled ? storedConfig.provider : ''));
   const providerName = normalizeProvider(storedConfig?.providerName);
-  const requestedModelId = env.MINIMAX_TTS_MODEL || env.MIMO_TTS_MODEL || env.TTS_MODEL || storedConfig?.modelId || '';
+  const requestedModelId = env.DOUBAO_TTS_MODEL || env.MINIMAX_TTS_MODEL || env.MIMO_TTS_MODEL || env.TTS_MODEL || storedConfig?.modelId || '';
+  const isDoubao = provider === 'doubao' || providerName === 'doubao' || requestedModelId === DOUBAO_MODEL;
   const isMiniMax = isMiniMaxProvider(provider) || isMiniMaxProvider(providerName)
     || requestedModelId.toLowerCase().startsWith('speech-');
   const isMimo = !isMiniMax && (isMimoProvider(provider) || isMimoProvider(providerName)
     || requestedModelId.toLowerCase().startsWith('mimo'));
-  const resolvedProvider = isMiniMax ? 'minimax' : (isMimo ? 'mimo' : (provider || providerName));
-  const envApiKey = resolvedProvider === 'minimax'
+  const resolvedProvider = isDoubao ? 'doubao' : (isMiniMax ? 'minimax' : (isMimo ? 'mimo' : (provider || providerName)));
+  const envApiKey = isDoubao ? (env.DOUBAO_API_KEY || env.TTS_API_KEY) : resolvedProvider === 'minimax'
     ? (env.MINIMAX_API_KEY || env.TTS_API_KEY)
     : (env.MIMO_API_KEY || env.TTS_API_KEY);
-  const envBaseUrl = resolvedProvider === 'minimax'
+  const envBaseUrl = isDoubao ? env.DOUBAO_BASE_URL : resolvedProvider === 'minimax'
     ? (env.MINIMAX_BASE_URL || env.TTS_BASE_URL)
     : (env.MIMO_BASE_URL || env.TTS_BASE_URL);
 
@@ -127,12 +130,13 @@ async function resolveTtsRuntime(options = {}) {
     baseUrl: normalizeBaseUrl(
       envBaseUrl
       || storedConfig?.baseUrl
-      || (resolvedProvider === 'minimax' ? DEFAULT_MINIMAX_BASE_URL : DEFAULT_MIMO_BASE_URL)
+      || (isDoubao ? 'https://openspeech.bytedance.com' : resolvedProvider === 'minimax' ? DEFAULT_MINIMAX_BASE_URL : DEFAULT_MIMO_BASE_URL)
     ),
-    modelId: requestedModelId || (resolvedProvider === 'minimax' ? DEFAULT_MINIMAX_TTS_MODEL : DEFAULT_MIMO_TTS_MODEL),
+    modelId: requestedModelId || (isDoubao ? DOUBAO_MODEL : resolvedProvider === 'minimax' ? DEFAULT_MINIMAX_TTS_MODEL : DEFAULT_MIMO_TTS_MODEL),
     voiceId: normalizeString(storedConfig?.voiceId) || DEFAULT_MINIMAX_VOICE,
     ttsConcurrency: storedConfig?.ttsConcurrency,
     ttsQueueIntervalMs: storedConfig?.ttsQueueIntervalMs,
+    doubao: isDoubao ? normalizeDoubaoSettings(storedConfig?.doubao) : undefined,
   };
 }
 
@@ -146,6 +150,19 @@ async function callTtsModel(options = {}) {
     ? (requestedVoice && requestedVoice !== DEFAULT_MIMO_VOICE ? requestedVoice : runtime.voiceId)
     : (requestedVoice || DEFAULT_MIMO_VOICE);
   const model = toModelInfo(runtime.provider, runtime.modelId);
+
+  if (text && runtime.provider === 'doubao') {
+    return enqueueTtsRequest(() => callDoubaoTts({ ...options, text, runtime }), {
+      concurrency: 1, intervalMs: runtime.ttsQueueIntervalMs, waitImpl: options.waitImpl,
+      queueKey: `doubao:${runtime.baseUrl}:${runtime.modelId}`,
+    });
+  }
+  if (text && runtime.provider === 'minimax' && options.nativeWordSubtitles === true) {
+    return enqueueTtsRequest(() => callMiniMaxNativeTts({ ...options, text, runtime }), {
+      concurrency: 1, intervalMs: runtime.ttsQueueIntervalMs, waitImpl: options.waitImpl,
+      queueKey: `minimax-native:${runtime.baseUrl}:${runtime.modelId}`,
+    });
+  }
 
   if (!text) {
     return {

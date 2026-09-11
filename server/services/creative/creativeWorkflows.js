@@ -4,6 +4,7 @@ const { HYPERFRAMES_MODE, WHITEBOARD_MODE, MODES, getCreationMode, createModeSna
 const whiteboardWorkflows = require('./whiteboard/whiteboardWorkflows');
 const { VISUAL_PRESETS, LANGUAGES, WhiteboardError } = require('./whiteboard/contracts');
 const { getArtifactRoot, readArtifact: readWhiteboardArtifact } = require('./whiteboard/artifactStore');
+const whiteboardMediaStore = require('./whiteboard/mediaStore');
 
 const creativeContext = require('./creativeContext');
 const defaultResearchService = require('../researchService');
@@ -687,6 +688,18 @@ async function getWhiteboardArtifact(workflowId, attemptId, options = {}) {
   }
 }
 
+async function getWhiteboardMediaFile(workflowId, artifactId, options = {}) {
+  try {
+    const record = await readWorkflow(workflowId, options.rootDir);
+    whiteboardWorkflows.assertContract(record);
+    const result = await whiteboardMediaStore.mediaFile(record, artifactId, options.rootDir);
+    return { success: true, file_path: result.path, artifact: result.artifact };
+  } catch (error) {
+    return { success: false, code: error.code || 'ARTIFACT_INVALID', statusCode: error.statusCode || 404,
+      message: error instanceof WhiteboardError ? error.message : '未找到白板媒体文件。' };
+  }
+}
+
 async function createCreativeWorkflow(payload = {}, options = {}) {
   const rootDir = options.rootDir || DEFAULT_ROOT;
   const mediaRoot = options.mediaRoot || DEFAULT_MEDIA_ROOT;
@@ -1322,6 +1335,9 @@ async function patchCreativeWorkflowTaskSummaryUnlocked(workflowId, patch = {}, 
         record.current_stage_message = safeString(patch.current_stage_message) || record.message;
         record.current_progress = Math.max(0, Math.min(70, Number(patch.current_progress) || 0));
       }
+      if (record.whiteboard.media?.executionId && patch.current_stage === record.whiteboard.media.stage) {
+        record.current_stage_message = safeString(patch.current_stage_message) || record.message;
+      }
       record.updated_at = now;
       const persisted = await persistWorkflowUnlocked(record, rootDir, workflowPath);
       return { success: true, workflow_id: record.workflow_id, data: persisted };
@@ -1415,6 +1431,9 @@ async function deleteCreativeWorkflow(workflowId, options = {}) {
 
 async function deleteCreativeWorkflowUnlocked(id, rootDir, workflowPath, mediaDir) {
   const deleted = { workflow: false, media: false };
+  const workRoot = path.resolve(rootDir, '.whiteboard-work');
+  const workDirectory = path.resolve(workRoot, id);
+  if (!isPathInside(workDirectory, workRoot)) return { success: false, workflow_id: id, message: '白板临时目录路径越界。' };
 
   try {
     await fsp.unlink(workflowPath);
@@ -1428,6 +1447,7 @@ async function deleteCreativeWorkflowUnlocked(id, rootDir, workflowPath, mediaDi
   try {
     await fsp.rm(mediaDir, { recursive: true, force: true });
     await fsp.rm(getArtifactRoot(id, rootDir), { recursive: true, force: true });
+    await fsp.rm(workDirectory, { recursive: true, force: true, maxRetries: 8, retryDelay: 300 });
     deleted.media = true;
   } catch (error) {
     if (error?.code !== 'ENOENT') {
@@ -2577,6 +2597,7 @@ module.exports = {
   listCreationModes,
   actOnWhiteboardWorkflow,
   getWhiteboardArtifact,
+  getWhiteboardMediaFile,
   STAGE_IDS,
   STAGE_LABELS,
   createCreativeWorkflow,

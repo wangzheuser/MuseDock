@@ -19,7 +19,7 @@ assert.match(
 );
 assert.match(
   globalModelSelectorSource,
-  /当前 TTS 功能仅支持小米 MiMo 和 MiniMax 供应商。/
+  /支持小米 MiMo、MiniMax 与豆包 Seed Audio/
 );
 assert.doesNotMatch(
   modelConfigFormSource,

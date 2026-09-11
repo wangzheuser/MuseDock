@@ -220,6 +220,20 @@ router.get('/:workflow_id/whiteboard/attempts/:attempt_id', async (req, res) => 
   }
 });
 
+router.get('/:workflow_id/whiteboard/media/:artifact_id', async (req, res) => {
+  const validation = validateWorkflowId(req.params.workflow_id);
+  if (!validation.success) return res.status(400).json(validation);
+  const service = getService(req);
+  if (typeof service.getWhiteboardMediaFile !== 'function') return res.status(501).json({ success: false, message: '当前服务未启用白板媒体读取。' });
+  const result = await service.getWhiteboardMediaFile(validation.workflow_id, req.params.artifact_id);
+  if (!result.success) return res.status(getStatusCode(result)).json(result);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+  res.type(result.artifact.mime || 'application/octet-stream');
+  if (req.query.download === '1') return res.download(result.file_path, result.artifact.fileName);
+  return res.sendFile(result.file_path);
+});
+
 router.post('/', async (req, res) => {
   const service = getService(req);
 

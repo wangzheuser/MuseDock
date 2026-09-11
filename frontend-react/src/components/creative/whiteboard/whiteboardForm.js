@@ -5,7 +5,7 @@ export function createWhiteboardDraft() {
   return {
     inputMode: 'topic', contents: { topic: '', text: '', srt: '' }, rewritePolicy: 'preserve',
     targetDurationSeconds: 60, narrationLanguage: 'zh-CN', visualStylePreset: 'warm-paper-minimal-v1',
-    productionPlan: { bgmMode: 'disabled', handDisplayMode: 'show', agentApprovalEnabled: false, imageGenerationMode: 'per_scene', burnSubtitles: true },
+    productionPlan: { bgmMode: 'disabled', handDisplayMode: 'show', agentApprovalEnabled: false, imageGenerationMode: 'per_scene', burnSubtitles: true, narrationMode: 'enabled' },
   };
 }
 
@@ -14,6 +14,7 @@ export function validateWhiteboardDraft(draft) {
   if (!text) return '请输入创作内容。';
   if (text.length > 50000) return '创作内容不能超过 50000 个字符。';
   if (draft.inputMode !== 'srt') {
+    if (draft.productionPlan?.narrationMode === 'disabled') return '静音白板需要输入带真实时间的 SRT 字幕。';
     const seconds = Number(draft.targetDurationSeconds);
     if (!Number.isInteger(seconds) || seconds < 15 || seconds > 600) return '目标时长需为 15–600 秒的整数。';
     return '';

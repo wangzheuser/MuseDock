@@ -484,8 +484,8 @@ assert.ok(videoPreviewBlock.includes('videoUrl={videoUrl}'), 'CreativeVideoPrevi
 assert.doesNotMatch(videoPreviewBlock, /onEdit|disabled|title=/, 'CreativeVideoPreview should not own the completed edit action');
 assert.match(taskDetailUnit, /<PencilLine size=\{14\} \/>[\s\S]*<span>二次编辑<\/span>/, 'Completed task detail should show the secondary edit action in the top summary card');
 assert.match(taskDetailUnit, /disabled=\{!editableWorkflowId\}[\s\S]*title=\{editableWorkflowId \? '二次编辑视频' : '缺少创作任务 ID，无法进入编辑器。'\}[\s\S]*onClick=\{continueEdit\}/, 'Top secondary edit action should keep the existing edit navigation guard');
-assert.match(creativeVideoPreview, /CreativeVideoPreview\(\{ videoUrl \}\)/, 'CreativeVideoPreview should only accept the rendered video URL');
-assert.match(creativeVideoPreview, /<video className="[^"]*" src=\{videoUrl\} controls/, 'Creative video preview should render a native controls video element');
+assert.match(creativeVideoPreview, /CreativeVideoPreview\(\{ videoUrl(?:, posterUrl)? \}\)/, '播放器应接收成片地址和可选封面，不承担编辑操作');
+assert.match(creativeVideoPreview, /<video className="[^"]*" src=\{videoUrl\}(?: poster=\{posterUrl \|\| undefined\})? controls/, '视频预览应使用原生播放控件');
 assert.doesNotMatch(creativeVideoPreview, /<Button|继续编辑|二次编辑/, 'Creative video preview should stay focused on playback only');
 assert.match(taskDetailUnit, /workflow\?\.status === 'done' && videoUrl/, 'Creative video preview should render after workflow is done');
 assert.match(taskDetailUnit, /!\s*isDone\s*\? \([\s\S]*<CreativeWorkflowStepper workflow=\{workflow\} \/>[\s\S]*<CreativeProgressPanel/, 'Creative detail should hide stepper and current progress after a task is done');

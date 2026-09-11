@@ -22,9 +22,9 @@ const MODES = [
   },
   {
     id: WHITEBOARD_MODE, displayName: '线稿白板动画', contractVersion: 1,
-    description: '白板创作 Agent 先整理内容、分镜和制作方案，由你确认后完成本阶段。',
+    description: '确认内容与分镜后，生成完整旁白、连续落墨动画和带字幕的最终视频。',
     stageSchema: WHITEBOARD_STAGES, detailView: 'whiteboard-agent',
-    capabilities: { videoProduction: false, phase0Approval: true },
+    capabilities: { videoProduction: true, phase0Approval: true },
   },
 ];
 

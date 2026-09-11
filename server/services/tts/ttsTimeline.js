@@ -202,6 +202,7 @@ module.exports = {
   splitScriptIntoSentences,
   buildCaptionsFromSegments,
   resolveFfprobePath,
+  resolveFfmpegPath,
   readAudioDuration,
   concatenateAudioFiles,
 };

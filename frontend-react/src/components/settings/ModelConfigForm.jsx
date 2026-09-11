@@ -1,7 +1,10 @@
 import { Switch } from './Switch.jsx';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 
 export function ModelConfigForm({ type, info, model, onChange }) {
   const m = model || { enabled: false, modelId: '', note: '' };
+  const isDoubao = m.modelId?.trim() === 'seed-audio-1.0';
   return (
     <div className={`rounded-lg border bg-white p-3 transition ${m.enabled ? 'border-[#111827]' : 'border-[#edf0f4]'}`}>
       <div className="mb-2 flex items-center gap-2">
@@ -17,7 +20,22 @@ export function ModelConfigForm({ type, info, model, onChange }) {
       />
       {type === 'tts' && m.enabled ? (
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <label className="col-span-2 grid gap-1">
+          {isDoubao ? <div className="col-span-2 grid gap-2">
+            <p className="m-0 text-xs leading-5 text-[#69717e]">豆包 Seed Audio 使用新版语音控制台 API Key；Base URL 填 https://openspeech.bytedance.com。单次完整旁白最多 120 秒，声音由下面的描述控制。</p>
+            <label className="grid gap-1"><span className="text-xs">音色与整体表演描述</span>
+              <Textarea aria-label="豆包音色与整体表演描述" maxLength={600} value={m.doubao?.voiceDirection ?? ''}
+                placeholder="一位声音温暖、清晰自然的成年旁白，用交流的口吻讲述。"
+                onChange={e => onChange('doubao', { ...m.doubao, voiceDirection: e.target.value })} />
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {[['speechRate', '语速', -50, 100], ['loudnessRate', '音量', -50, 100], ['pitchRate', '音高', -12, 12]].map(([key, label, min, max]) => (
+                <label key={key} className="grid gap-1"><span className="text-xs">{label}（{min}～{max}）</span>
+                  <Input aria-label={`豆包${label}`} type="number" min={min} max={max} value={m.doubao?.[key] ?? 0}
+                    onChange={e => onChange('doubao', { ...m.doubao, [key]: e.target.value })} />
+                </label>
+              ))}
+            </div>
+          </div> : <label className="col-span-2 grid gap-1">
             <span className="text-[11px] text-[#69717e]">voice_id（仅 MiniMax 支持，其他供应商会忽略）</span>
             <input
               value={m.voiceId ?? ''}
@@ -25,7 +43,7 @@ export function ModelConfigForm({ type, info, model, onChange }) {
               onChange={e => onChange('voiceId', e.target.value)}
               placeholder="Chinese_deep_voiced_male_nv1"
             />
-          </label>
+          </label>}
           <label className="grid gap-1">
             <span className="text-[11px] text-[#69717e]">并发</span>
             <input

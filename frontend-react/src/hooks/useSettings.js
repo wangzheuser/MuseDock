@@ -9,7 +9,7 @@ const MODEL_TYPE_INFO = {
   text:       { title: '分析模型',   placeholder: 'gpt-4o-mini / deepseek-chat' },
   image:      { title: '图片生成',   placeholder: 'seedream-4-0 / gpt-image-2' },
   video:      { title: '视频生成',   placeholder: 'video-model-id' },
-  tts:        { title: 'TTS 语音合成', placeholder: 'mimo-v2.5-tts' },
+  tts:        { title: 'TTS 语音合成', placeholder: 'seed-audio-1.0 / speech-2.8-hd / mimo-v2.5-tts' },
 };
 
 const MODEL_PROTOCOLS = [
@@ -32,6 +32,7 @@ function normalizeServerData(json) {
         models[type].voiceId = m.voiceId || DEFAULT_MINIMAX_VOICE_ID;
         models[type].ttsConcurrency = m.ttsConcurrency ?? 1;
         models[type].ttsQueueIntervalMs = m.ttsQueueIntervalMs ?? 1800;
+        models[type].doubao = { ...m.doubao };
       }
     }
     providers[id] = {
@@ -66,6 +67,7 @@ function toServerPayload(state) {
         models[type].voiceId = m.voiceId || DEFAULT_MINIMAX_VOICE_ID;
         models[type].ttsConcurrency = m.ttsConcurrency ?? 1;
         models[type].ttsQueueIntervalMs = m.ttsQueueIntervalMs ?? 1800;
+        models[type].doubao = { ...m.doubao };
       }
     }
     providers[id] = {

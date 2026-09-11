@@ -1,6 +1,6 @@
 const MODEL_SELECTOR_HELP_TEXT = {
   image: '当前图片生成仅支持火山方舟 Seedream 4.0-5.0 以及 OpenAI gpt-image-2。',
-  tts: '当前 TTS 功能仅支持小米 MiMo 和 MiniMax 供应商。',
+  tts: '支持小米 MiMo、MiniMax 与豆包 Seed Audio。线稿白板的完整旁白使用豆包或 MiniMax 的原生字幕。',
 };
 
 export function GlobalModelSelector({ modelTypes, modelTypeInfo, providerList, activeModels, onChange }) {

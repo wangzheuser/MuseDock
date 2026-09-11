@@ -132,11 +132,11 @@ async function main() {
     const taskUrl = page.url();
     await page.screenshot({ path: path.join(screenshots, 'agent-review-desktop.png'), fullPage: true });
 
-    await page.getByLabel('修改意见').fill('开头更直接，把第一段压缩成一句话。');
-    await page.getByRole('button', { name: '生成修改版', exact: true }).click();
+    await page.getByLabel('与白板创作 Agent 对话').fill('开头更直接，把第一段压缩成一句话。');
+    await page.getByRole('button', { name: '发送', exact: true }).click();
     await page.getByRole('heading', { name: '从两分钟的小动作开始', exact: true }).waitFor();
     await page.getByRole('button', { name: '确认内容与制作方案', exact: true }).waitFor();
-    await page.getByRole('button', { name: '制作设置', exact: true }).click();
+    await page.getByRole('button', { name: '调整制作设置', exact: true }).click();
     await page.getByRole('combobox', { name: '画笔显示' }).click();
     await page.getByRole('option', { name: '隐藏画笔', exact: true }).click();
     await page.getByRole('button', { name: '保存为新的待确认版本', exact: true }).click();

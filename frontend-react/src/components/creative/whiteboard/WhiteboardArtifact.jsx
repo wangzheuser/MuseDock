@@ -22,7 +22,7 @@ export function WhiteboardArtifact({ artifact }) {
           <span>· {artifact.narrationLanguage === 'zh-CN' ? '简体中文' : artifact.narrationLanguage === 'en-US' ? '英语（美国）' : '英语（英国）'}</span>
         </div>
         <div className="whitespace-pre-wrap break-words text-sm leading-8 text-fg-1">{artifact.narrationText}</div>
-        <p className="mt-5 border-t border-line-1 pt-3 text-xs leading-relaxed text-fg-3">当前展示文字方案。本阶段不生成或试听样音；后续首次音频制作将直接生成完整旁白。</p>
+        <p className="mt-5 border-t border-line-1 pt-3 text-xs leading-relaxed text-fg-3">这里保留已确认的旁白正文。首次音频制作直接生成完整旁白，实际时长与字幕请在产物区检查。</p>
       </TabsContent>
       <TabsContent value="scenes" className="max-h-[56vh] min-w-0 overflow-auto pr-1 max-[760px]:max-h-none">
         <div className="divide-y divide-line-1">
@@ -46,11 +46,11 @@ export function WhiteboardArtifact({ artifact }) {
           <dt className="text-fg-3">成片字幕</dt><dd className="m-0">{plan.burnSubtitles ? '烧录字幕' : '不烧录字幕'}</dd>
           <dt className="text-fg-3">背景音乐</dt><dd className="m-0">不使用 BGM</dd>
           <dt className="text-fg-3">生图方式</dt><dd className="m-0">逐幕独立生成</dd>
-          <dt className="text-fg-3">旁白服务</dt><dd className="m-0">{artifact.narrationService?.displayName || '未配置'}{!artifact.narrationService?.configured ? <p className="mb-0 mt-1 text-xs leading-relaxed text-fg-3">开始旁白制作前需配置服务，并重新确认调用合同。</p> : null}</dd>
+          <dt className="text-fg-3">旁白服务</dt><dd className="m-0">{plan.narrationMode === 'disabled' ? '静音 SRT' : artifact.narrationService?.displayName || '未配置'}{plan.narrationMode !== 'disabled' && !artifact.narrationService?.configured ? <p className="mb-0 mt-1 text-xs leading-relaxed text-fg-3">开始旁白制作前需配置服务，并重新确认调用合同。</p> : null}</dd>
           <dt className="text-fg-3">后续确认</dt><dd className="m-0">{plan.agentApprovalEnabled ? '授权 AI 在允许范围内推进' : '由我逐阶段确认'}</dd>
           <dt className="text-fg-3">画幅</dt><dd className="m-0">1920 × 1080 · 16:9</dd>
         </dl>
-        <p className="mb-0 mt-6 border-t border-line-1 pt-3 text-xs leading-relaxed text-fg-3">确认将绑定当前版本的内容、分镜与以上制作设置。当前版本到阶段 0 为止，后续媒体制作尚未接入。</p>
+        <p className="mb-0 mt-6 border-t border-line-1 pt-3 text-xs leading-relaxed text-fg-3">确认绑定当前内容、分镜与以上设置。制作产物可逐阶段检查，也可按本次授权自动推进；修改会使相关下游重新等待确认。</p>
       </TabsContent>
     </Tabs>
   );

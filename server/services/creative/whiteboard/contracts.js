@@ -16,6 +16,7 @@ const LANGUAGES = [{ id: 'zh-CN', label: '简体中文' }, { id: 'en-US', label:
 const DEFAULT_PRODUCTION_PLAN = {
   bgmMode: 'disabled', handDisplayMode: 'show', agentApprovalEnabled: false,
   imageGenerationMode: 'per_scene', burnSubtitles: true,
+  narrationMode: 'enabled',
 };
 
 class WhiteboardError extends Error {
@@ -69,6 +70,7 @@ function normalizeProductionPlan(value = {}) {
   const plan = { ...DEFAULT_PRODUCTION_PLAN, ...value };
   if (plan.bgmMode !== 'disabled' || !['show', 'hide'].includes(plan.handDisplayMode)
     || typeof plan.agentApprovalEnabled !== 'boolean' || plan.imageGenerationMode !== 'per_scene'
+    || !['enabled', 'disabled'].includes(plan.narrationMode)
     || typeof plan.burnSubtitles !== 'boolean') {
     throw new WhiteboardError('INVALID_INPUT', '制作设置无效，请检查画笔、字幕和后续确认方式。');
   }

@@ -76,7 +76,7 @@ async function readLimitedImageBuffer(response, maxBytes = MAX_IMAGE_BYTES) {
 }
 
 async function generateImages(request = {}) {
-  const runtime = await aiModelConfig.getRuntimeConfig('image', { configPath: request.configPath });
+  const runtime = request.imageConfig || await aiModelConfig.getRuntimeConfig('image', { configPath: request.configPath });
   if (!runtime || runtime.enabled !== true || !runtime.apiKey || !runtime.baseUrl || !runtime.modelId) {
     return { success: false, configured: false, images: [], message: '生图模型未配置，已跳过图片生成。' };
   }

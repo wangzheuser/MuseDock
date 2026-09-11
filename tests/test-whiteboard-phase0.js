@@ -147,7 +147,7 @@ const cases = [
     await ctx.action(id, 'approve_initial', { confirmed: true });
     await ctx.bound.patchCreativeWorkflowTaskSummary(id, { task_status: 'done', status: 'done', message: '视频已完成', current_progress: 100 });
     assert.equal((await ctx.read(id)).status, 'phase0_complete');
-    assert.match((await ctx.read(id)).message, /阶段 0/);
+    assert.match((await ctx.read(id)).message, /内容与制作方案已确认/);
   })],
   ['修改保留旧文件，旧批准失效，过期页面不能批准新版', () => fixture(async ctx => {
     const id = await ctx.create();
